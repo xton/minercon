@@ -18,18 +18,18 @@ export class RconController {
 
   public async connect(): Promise<void> {
     this.client = new RconProtocol(this.host, this.port, this.password, this.output);
-    
+
     // Set up error handler
     this.client.on('error', (error: Error) => {
       this.output.appendLine(`RCON error: ${error.message}`);
     });
-    
+
     // Set up close handler
     this.client.on('close', () => {
       this.output.appendLine('RCON connection closed');
       this.client = null;
     });
-    
+
     await this.client.connect();
     this.output.appendLine('RCON session established.');
   }
@@ -38,6 +38,11 @@ export class RconController {
     if (!this.client) { throw new Error('Not connected'); }
     try {
       const res = await this.client.send(cmd);
+
+      if (typeof res !== 'string' && res !== undefined) {
+        this.output.appendLine(`Received non-string response: ${JSON.stringify(res)}`);
+      }
+
       return typeof res === 'string' ? res : JSON.stringify(res);
     } catch (err: any) {
       this.output.appendLine('Error sending command: ' + String(err.message ?? err));

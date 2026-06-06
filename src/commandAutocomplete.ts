@@ -86,13 +86,13 @@ export class CommandAutocomplete {
   private loadingProgress: number = 0;
   private totalCommands: number = 0;
   public isReady: boolean = false;
-  
+
   // Cache configuration
   private cacheDir: string;
   private cacheFile: string;
   private cacheVersion: string = '2.1.0'; // Bumped version for protocol changes
   private serverIdentifier: string;
-  
+
   constructor(
     private sendCommand: (command: string) => Promise<string>,
     private output: vscode.OutputChannel,
@@ -103,7 +103,7 @@ export class CommandAutocomplete {
     this.serverIdentifier = `${serverHost}:${serverPort}`;
     this.cacheDir = path.join(context.globalStorageUri.fsPath, 'command-cache');
     this.cacheFile = path.join(this.cacheDir, `${serverHost}_${serverPort}.json`);
-    
+
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
     }
@@ -129,7 +129,7 @@ export class CommandAutocomplete {
   private stripColors(text: string): string {
     // Handle both § and Â§ encodings (UTF-8 issues)
     return text.replace(/[§Â]§[0-9a-fklmnor]/g, '')
-               .replace(/§[0-9a-fklmnor]/g, '');
+      .replace(/§[0-9a-fklmnor]/g, '');
   }
 
   /**
@@ -138,21 +138,21 @@ export class CommandAutocomplete {
   private parseCommandHelp(helpText: string): Parameter[] {
     const parameters: Parameter[] = [];
     const stripped = this.stripColors(helpText).trim();
-    
+
     // Remove the command name from the beginning if present
     const syntaxMatch = stripped.match(/^\/?\w+\s+(.*)/);
     const paramString = syntaxMatch ? syntaxMatch[1] : stripped;
-    
+
     // Split into tokens - handle nested brackets/parens
     const tokens = this.tokenizeParameterString(paramString);
-    
+
     tokens.forEach((token, index) => {
       const param = this.parseParameter(token, index);
       if (param) {
         parameters.push(param);
       }
     });
-    
+
     return parameters;
   }
 
@@ -164,10 +164,10 @@ export class CommandAutocomplete {
     let current = '';
     let depth = 0;
     let inBrackets = false;
-    
+
     for (let i = 0; i < str.length; i++) {
       const char = str[i];
-      
+
       if ((char === '<' || char === '[' || char === '(')) {
         if (depth === 0) {
           if (current.trim()) {
@@ -196,11 +196,11 @@ export class CommandAutocomplete {
         current += char;
       }
     }
-    
+
     if (current.trim()) {
       tokens.push(current.trim());
     }
-    
+
     return tokens;
   }
 
@@ -217,7 +217,7 @@ export class CommandAutocomplete {
         optional: false,
         position: idx
       } as Parameter));
-      
+
       return {
         type: ParameterType.CHOICE_LIST,
         choices,
@@ -225,7 +225,7 @@ export class CommandAutocomplete {
         position
       };
     }
-    
+
     // Check for optional argument [name] or [<name>]
     if (token.startsWith('[') && token.endsWith(']')) {
       let name = token.slice(1, -1); // Remove [ and ]
@@ -238,7 +238,7 @@ export class CommandAutocomplete {
           optional: true,
           position
         };
-      }  
+      }
       // For [literal] without angle brackets, this could be an optional subcommand
       // Return as LITERAL but we'll handle it specially in loadCommandDetails
       return {
@@ -248,7 +248,7 @@ export class CommandAutocomplete {
         position
       };
     }
-    
+
     // Check for required argument <name>
     if (token.startsWith('<') && token.endsWith('>')) {
       const name = token.slice(1, -1);
@@ -259,7 +259,7 @@ export class CommandAutocomplete {
         position
       };
     }
-    
+
     // Otherwise it's a literal (could be a subcommand name)
     // We'll determine if it's actually a subcommand later when we see it has members
     return {
@@ -277,11 +277,11 @@ export class CommandAutocomplete {
     onProgress?: (progress: number, message: string) => void,
     forceRefresh: boolean = false
   ): Promise<void> {
-    if (this.isLoading) {return;}
-    
+    if (this.isLoading) { return; }
+
     this.isLoading = true;
     this.loadingProgress = 0;
-    
+
     try {
       // Try to load from cache first
       if (!forceRefresh && this.loadFromCache()) {
@@ -289,19 +289,19 @@ export class CommandAutocomplete {
         this.isReady = true;
         return;
       }
-      
+
       // Fetch commands from server
       onProgress?.(10, 'Fetching root commands...');
       await this.fetchRootCommands();
-      
+
       // Load details for each command
       const commands = Array.from(this.rootCommands.keys());
       this.output.appendLine(`Loading details for ${commands.length} commands...`);
-      
+
       for (let i = 0; i < commands.length; i++) {
         const progress = 10 + (80 * (i / commands.length));
         onProgress?.(progress, `Loading ${commands[i]}...`);
-        
+
         const node = this.rootCommands.get(commands[i])!;
         try {
           await this.loadCommandDetails(node, node.parameters);
@@ -310,20 +310,40 @@ export class CommandAutocomplete {
           // Continue with other commands even if one fails
         }
       }
-      
+
       // Save to cache
       this.saveToCache();
       onProgress?.(100, 'Commands loaded and cached');
       this.isReady = true;
-      
+
     } catch (error) {
       this.output.appendLine(`Error initializing commands: ${error}`);
-      
+
       // Try to provide basic functionality even if initialization fails
       this.isReady = true; // Mark as ready with whatever we have
       throw error;
     } finally {
       this.isLoading = false;
+    }
+  }
+
+  async fetchPaginatedCommand(command: string): Promise<string> {
+    var output = await this.sendCommand(command);
+    const match = output.match(/Help:\s+.*?\((\d+)\/(\d+)\)/i);
+    if (!match) {
+      return output; // No pagination info, return original output
+    } else {
+      const pageCount = parseInt(match[2]);
+      this.output.appendLine(`Detected paginated output: ${pageCount} pages total`);
+
+      for (let page = 2; page <= pageCount; page++) {
+        const pageOutput = await this.sendCommand(`${command} ${page}`);
+        if (output) {
+          this.output.appendLine(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
+          output += pageOutput;
+        }
+      }
+      return output;
     }
   }
 
@@ -333,11 +353,11 @@ export class CommandAutocomplete {
   private async fetchRootCommands(): Promise<void> {
     try {
       this.output.appendLine('Fetching root commands with /help...');
-      const response = await this.sendCommand('help');
-      
+      const response = await this.sendCommand('minecraft:help');
+
       // Debug: Log response info
       this.output.appendLine(`Help response received: ${response.length} bytes`);
-      
+
       if (!response || response.length === 0) {
         this.output.appendLine('Warning: Empty response from help command');
         // Try alternative help format
@@ -351,7 +371,7 @@ export class CommandAutocomplete {
       } else {
         this.parseHelpResponse(response);
       }
-      
+
     } catch (error) {
       this.output.appendLine(`Error fetching root commands: ${error}`);
       // Provide fallback common commands if help fails
@@ -364,18 +384,22 @@ export class CommandAutocomplete {
    * Parse help response to extract commands
    */
   private parseHelpResponse(response: string): void {
-    const lines = response.split('\n');
+    const modified = response.replace(/\//g, "\n/"); // Replace slashes with newlines to isolate commands
+    const lines = modified.split('\n');
     this.output.appendLine(`Processing ${lines.length} lines from help response`);
-    
+
+    this.output.appendLine(`everything:\n${modified}`);
+
+
     let commandCount = 0;
     for (const line of lines) {
       const stripped = this.stripColors(line).trim();
-      
+
       // Skip empty lines and headers
       if (!stripped || stripped.startsWith('---') || stripped.startsWith('===')) {
         continue;
       }
-      
+
       // Try multiple patterns to match commands
       // Pattern 1: /command (with or without hyphens/underscores)
       // Pattern 2: command: (with or without hyphens/underscores)
@@ -383,27 +407,27 @@ export class CommandAutocomplete {
       // Pattern 4: just the command name at start of line
       const patterns = [
         /^\/([a-zA-Z0-9_-]+)/,           // /command or /command-with-hyphens
-        /^([a-zA-Z0-9_-]+):/,            // command: or command-with-hyphens:
+        /^([a-zA-Z0-9_\:-]+):\s/,            // command: or command-with-hyphens:
         /^[-*]\s*([a-zA-Z0-9_-]+)/,      // - command or * command
-        /^([a-zA-Z0-9_-]+)\s+[-<\[\(]/   // command followed by args
+        /^([a-zA-Z0-9_\:-]+)\s+[-<\[\(]/   // command followed by args
       ];
-      
+
       let matched = false;
       for (const pattern of patterns) {
         const match = stripped.match(pattern);
         if (match) {
           const commandName = match[1];
-          
+
           // Skip common non-command words
           if (['usage', 'help', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
             continue;
           }
-          
+
           // Debug: Log hyphenated commands specifically
           if (commandName.includes('-')) {
             this.output.appendLine(`  Found hyphenated command: ${commandName}`);
           }
-          
+
           // Create root command node
           this.rootCommands.set(commandName, {
             name: commandName,
@@ -417,22 +441,23 @@ export class CommandAutocomplete {
         }
       }
     }
-    
-    this.output.appendLine(`Found ${commandCount} root commands`);
-    
+
+    let altCommandCount = this.rootCommands.size;
+    this.output.appendLine(`Found ${commandCount} root commands (or is it ${altCommandCount}?)`);
+
     // Debug: List all commands with hyphens
     const hyphenatedCommands = Array.from(this.rootCommands.keys()).filter(cmd => cmd.includes('-'));
     if (hyphenatedCommands.length > 0) {
       this.output.appendLine(`Hyphenated commands found: ${hyphenatedCommands.join(', ')}`);
     }
-    
+
     if (commandCount === 0) {
       this.output.appendLine('Warning: No commands found in help response');
       this.output.appendLine('First few lines of response:');
       lines.slice(0, 10).forEach(line => {
         this.output.appendLine(`  > ${this.stripColors(line)}`);
       });
-      
+
       // Add fallback commands
       this.addFallbackCommands();
     }
@@ -443,7 +468,7 @@ export class CommandAutocomplete {
    */
   private addFallbackCommands(): void {
     this.output.appendLine('Adding common Minecraft commands as fallback...');
-    
+
     const commonCommands = [
       'gamemode', 'give', 'tp', 'teleport', 'kill', 'kick', 'ban', 'pardon',
       'op', 'deop', 'whitelist', 'reload', 'save-all', 'save-on', 'save-off',
@@ -457,7 +482,7 @@ export class CommandAutocomplete {
       'bossbar', 'data', 'datapack', 'debug', 'forceload', 'locatebiome', 'loot',
       'publish', 'schedule', 'spreadplayers', 'spectate'
     ];
-    
+
     for (const cmd of commonCommands) {
       if (!this.rootCommands.has(cmd)) {
         this.rootCommands.set(cmd, {
@@ -468,7 +493,7 @@ export class CommandAutocomplete {
         });
       }
     }
-    
+
     this.output.appendLine(`Added ${commonCommands.length} fallback commands`);
   }
 
@@ -483,60 +508,60 @@ export class CommandAutocomplete {
     } else if ('literal' in parent && parent.literal) {
       commandPath = parent.literal;
     }
-    
+
     try {
-      const helpResponse = await this.sendCommand(`help ${commandPath}`);
-      
+      const helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
+
       // Check if we got a valid response
       if (!helpResponse || helpResponse.length === 0) {
         this.output.appendLine(`Empty help response for: ${commandPath}`);
         return;
       }
-      
+
       this.output.appendLine(`Loading details for command: ${commandPath}`);
       const lines = helpResponse.split('\n');
-      
+
       // Track variants of this command (different syntax lines)
       const variants: Map<string, Parameter[]> = new Map();
       let hasDirectParameters = false;
-      
+
       for (const line of lines) {
         const stripped = this.stripColors(line).trim();
-        if (!stripped || stripped.startsWith('---')) {continue;}
-        
+        if (!stripped || stripped.startsWith('---')) { continue; }
+
         // Match command pattern - allow hyphens and underscores in names
         // Also handle potential spaces or different formats
         const cmdPatterns = [
-          /^\/([a-zA-Z0-9_-]+)(?:\s+(.+))?$/,  // Standard format: /command args
+          /^\/([a-zA-Z0-9_\:-]+)(?:\s+(.+))?$/,  // Standard format: /command args
           /^([a-zA-Z0-9_-]+)(?:\s+(.+))?$/,     // Without slash: command args
-          /^\/([a-zA-Z0-9_-]+):?\s*(.*)$/       // With optional colon: /command: args
+          /^\/([a-zA-Z0-9_\:-]+):?\s*(.*)$/       // With optional colon: /command: args
         ];
-        
+
         let match = null;
         for (const pattern of cmdPatterns) {
           match = stripped.match(pattern);
-          if (match) {break;}
+          if (match) { break; }
         }
-        
+
         if (match) {
           const matchedCommand = match[1];
-          
+
           // Normalize command names for comparison (case-insensitive, trim)
           const normalizedMatch = matchedCommand.toLowerCase().trim();
           const normalizedPath = commandPath.toLowerCase().trim();
-          
+
           // Debug output
           this.output.appendLine(`  Checking: "${matchedCommand}" vs "${commandPath}"`);
-          
+
           if (normalizedMatch === normalizedPath) {
             const afterCommand = match[2] || '';
             this.output.appendLine(`  Found match! Parameters: "${afterCommand}"`);
-            
+
             if (afterCommand) {
               // Tokenize everything after the command
               const tokens = this.tokenizeParameterString(afterCommand);
               this.output.appendLine(`  Tokens: ${JSON.stringify(tokens)}`);
-              
+
               if (tokens.length > 0) {
                 const firstToken = tokens[0];
 
@@ -560,19 +585,19 @@ export class CommandAutocomplete {
                   // (choice1|choice2) - choice list, treat as argument
                   isArgument = true;
                 }
-                
+
                 if (!isArgument) {
                   // First token is a literal/subcommand - this is a subcommand variant
                   let subcommandName = firstToken;
-                  
+
                   // Strip optional brackets if present
                   if (subcommandName.startsWith('[') && subcommandName.endsWith(']')) {
                     subcommandName = subcommandName.slice(1, -1); // Remove [ and ]
                   }
-                  
+
                   // Create parameter list for this variant
                   const variantParams: Parameter[] = [];
-                  
+
                   // Parse remaining tokens as the subcommand's parameters
                   for (let i = 1; i < tokens.length; i++) {
                     const param = this.parseParameter(tokens[i], i - 1);
@@ -580,18 +605,18 @@ export class CommandAutocomplete {
                       variantParams.push(param);
                     }
                   }
-                  
+
                   // Store this variant
                   variants.set(subcommandName, variantParams);
-                  
+
                 } else {
                   // First token is an argument - these are direct parameters
                   // IMPORTANT: Parse ALL tokens as parameters for this command
                   hasDirectParameters = true;
-                  
+
                   // Clear and rebuild parameters to ensure we get ALL of them
                   parameters.length = 0; // Clear existing
-                  
+
                   for (let i = 0; i < tokens.length; i++) {
                     const param = this.parseParameter(tokens[i], i);
                     if (param) {
@@ -608,15 +633,15 @@ export class CommandAutocomplete {
           }
         }
       }
-      
+
       // Build final parameter structure only if we haven't already set direct parameters
       if (!hasDirectParameters) {
         parameters.length = 0; // Clear existing parameters
-        
+
         // If we have variants (subcommands), create proper structure
         if (variants.size > 0) {
           const subcommandChoices: Parameter[] = [];
-          
+
           for (const [subcommandName, subParams] of variants) {
             // Create a SUBCOMMAND parameter for each variant
             const subcommandParam: Parameter = {
@@ -630,7 +655,7 @@ export class CommandAutocomplete {
             };
             subcommandChoices.push(subcommandParam);
           }
-          
+
           // If there's only one variant, add it directly
           // Otherwise, create a choice list
           if (subcommandChoices.length === 1) {
@@ -647,7 +672,7 @@ export class CommandAutocomplete {
           }
         }
       }
-      
+
       // Debug: Log final parameters
       this.output.appendLine(`  Final parameters for ${commandPath}: ${JSON.stringify(parameters.map(p => ({
         type: p.type,
@@ -655,12 +680,12 @@ export class CommandAutocomplete {
         literal: p.literal,
         optional: p.optional
       })))}`);
-      
+
       // Mark as complete
       if ('isComplete' in parent) {
         parent.isComplete = true;
       }
-      
+
       // Recursively load details for all subcommands
       for (const param of parameters) {
         if (param.type === ParameterType.CHOICE_LIST && param.choices) {
@@ -675,7 +700,7 @@ export class CommandAutocomplete {
           await this.loadSubcommandDetails(commandPath, param);
         }
       }
-      
+
     } catch (error) {
       this.output.appendLine(`Error loading details for ${commandPath}: ${error}`);
       // Mark as complete even on error to avoid infinite loops
@@ -689,48 +714,48 @@ export class CommandAutocomplete {
    * Load details for a subcommand by fetching its help
    */
   private async loadSubcommandDetails(parentPath: string, subcommand: Parameter): Promise<void> {
-    if (subcommand.type !== ParameterType.SUBCOMMAND || !subcommand.name) {return;}
-    
+    if (subcommand.type !== ParameterType.SUBCOMMAND || !subcommand.name) { return; }
+
     // Build the full command path for this subcommand
     const fullPath = `${parentPath} ${subcommand.name}`;
-    
+
     try {
       // Get help for this specific subcommand path
       const helpResponse = await this.sendCommand(`help ${fullPath}`);
-      
+
       // Check for valid response
       if (!helpResponse || helpResponse.length === 0) {
         subcommand.isComplete = true;
         return;
       }
-      
+
       const lines = helpResponse.split('\n');
-      
+
       // Clear existing members to avoid duplicates
       if (!subcommand.members) {
         subcommand.members = [];
       }
-      
+
       // Track variants of this subcommand (different syntax lines)
       const variants: Map<string, Parameter[]> = new Map();
       let hasDirectParameters = false;
-      
+
       // Parse ALL lines to collect ALL variants (not just the first one!)
       for (const line of lines) {
         const stripped = this.stripColors(line).trim();
-        if (!stripped || stripped.startsWith('---')) {continue;}
-        
+        if (!stripped || stripped.startsWith('---')) { continue; }
+
         // Look for lines that match this specific subcommand path
         const pattern = new RegExp(`^/${fullPath.replace(' ', '\\s+')}\\s+(.+)$`);
         const match = stripped.match(pattern);
-        
+
         if (match) {
           const afterSubcommand = match[1];
           const tokens = this.tokenizeParameterString(afterSubcommand);
-          
+
           if (tokens.length > 0) {
             const firstToken = tokens[0];
-            
+
             // Determine if first token is a literal/subcommand or an argument
             // FIXED: Better detection for optional subcommands vs optional arguments
             let isArgument = false;
@@ -746,19 +771,19 @@ export class CommandAutocomplete {
             } else if (firstToken.startsWith('(') && firstToken.endsWith(')')) {
               isArgument = true;
             }
-            
+
             if (!isArgument) {
               // First token is a literal - this is a nested subcommand variant
               let nestedSubcommandName = firstToken;
-              
+
               // Strip optional brackets if present
               if (nestedSubcommandName.startsWith('[') && nestedSubcommandName.endsWith(']')) {
                 nestedSubcommandName = nestedSubcommandName.slice(1, -1);
               }
-              
+
               // Create parameter list for this variant
               const variantParams: Parameter[] = [];
-              
+
               // Parse remaining tokens as the nested subcommand's parameters
               for (let i = 1; i < tokens.length; i++) {
                 const param = this.parseParameter(tokens[i], i - 1);
@@ -766,17 +791,17 @@ export class CommandAutocomplete {
                   variantParams.push(param);
                 }
               }
-              
+
               // Store this variant - CONTINUE to find more variants!
               variants.set(nestedSubcommandName, variantParams);
-              
+
             } else {
               // First token is an argument - these are direct parameters
               hasDirectParameters = true;
-              
+
               // Clear and rebuild members for direct parameters
               subcommand.members.length = 0;
-              
+
               // Parse ALL tokens as parameters for this subcommand
               for (let i = 0; i < tokens.length; i++) {
                 const param = this.parseParameter(tokens[i], i);
@@ -784,22 +809,22 @@ export class CommandAutocomplete {
                   subcommand.members.push(param);
                 }
               }
-              
+
               // For direct parameters, we can break after finding them
               break;
             }
           }
         }
       }
-      
+
       // Build final parameter structure
       if (!hasDirectParameters) {
         subcommand.members.length = 0; // Clear existing members
-        
+
         // If we have variants (nested subcommands), create proper structure
         if (variants.size > 0) {
           const nestedSubcommandChoices: Parameter[] = [];
-          
+
           for (const [nestedName, nestedParams] of variants) {
             // Create a SUBCOMMAND parameter for each variant
             const nestedSubcommand: Parameter = {
@@ -813,7 +838,7 @@ export class CommandAutocomplete {
             };
             nestedSubcommandChoices.push(nestedSubcommand);
           }
-          
+
           // If there's only one variant, add it directly
           // Otherwise, create a choice list
           if (nestedSubcommandChoices.length === 1) {
@@ -830,9 +855,9 @@ export class CommandAutocomplete {
           }
         }
       }
-      
+
       subcommand.isComplete = true;
-      
+
       // Recursively load any nested subcommands
       if (subcommand.members) {
         for (const member of subcommand.members) {
@@ -849,7 +874,7 @@ export class CommandAutocomplete {
           }
         }
       }
-      
+
     } catch (error) {
       // Subcommand might not have its own help, that's okay
       subcommand.isComplete = true;
@@ -863,16 +888,16 @@ export class CommandAutocomplete {
     if (!this.isReady) {
       return { suggestions: [], argumentHelp: undefined, commandPath: undefined };
     }
-    
+
     const trimmed = input.trim();
     if (!trimmed.startsWith('/')) {
       return { suggestions: [], argumentHelp: undefined, commandPath: undefined };
     }
-    
+
     const hasTrailingSpace = input.endsWith(' ');
     const parts = trimmed.slice(1).split(' ').filter(p => p.length > 0);
     const commandName = parts[0];
-    
+
     // Handle root command suggestions
     if (parts.length === 0 || (parts.length === 1 && !hasTrailingSpace)) {
       const suggestions = Array.from(this.rootCommands.keys())
@@ -880,28 +905,28 @@ export class CommandAutocomplete {
         .sort();
       return { suggestions, argumentHelp: undefined, commandPath: '/' + (commandName || '') };
     }
-    
+
     // Find the command node
     const rootNode = this.rootCommands.get(commandName);
     if (!rootNode) {
       return { suggestions: [], argumentHelp: undefined, commandPath: '/' + commandName };
     }
-    
+
     // Navigate through the parameter tree
     let currentParameters = rootNode.parameters;
     let commandPath = '/' + commandName;
     let paramIndex = 1; // Start after the command name
-    
+
     // Navigate through completed parts (not including what we're currently typing)
     const partsToNavigate = hasTrailingSpace ? parts.length : parts.length - 1;
-    
+
     while (paramIndex < partsToNavigate && currentParameters.length > 0) {
       const currentPart = parts[paramIndex];
       let navigated = false;
-      
+
       // Get the first parameter at this position
       const firstParam = currentParameters[0];
-      
+
       if (firstParam.type === ParameterType.SUBCOMMAND) {
         // Direct subcommand
         if (firstParam.name === currentPart || firstParam.literal === currentPart) {
@@ -912,8 +937,8 @@ export class CommandAutocomplete {
       } else if (firstParam.type === ParameterType.CHOICE_LIST && firstParam.choices) {
         // Choice list - find matching choice and navigate into it
         for (const choice of firstParam.choices) {
-          if (choice.type === ParameterType.SUBCOMMAND && 
-              (choice.name === currentPart || choice.literal === currentPart)) {
+          if (choice.type === ParameterType.SUBCOMMAND &&
+            (choice.name === currentPart || choice.literal === currentPart)) {
             commandPath += ' ' + currentPart;
             // IMPORTANT: Navigate into the selected choice's members
             currentParameters = choice.members || [];
@@ -933,20 +958,20 @@ export class CommandAutocomplete {
         currentParameters = currentParameters.slice(1);
         navigated = true;
       }
-      
+
       paramIndex++;
       if (!navigated) {
         // It's an argument value, skip to next position
         currentParameters = currentParameters.slice(1);
       }
     }
-    
+
     // Build argument help from current position
     const argumentHelp = this.buildArgumentHelp(currentParameters);
-    
+
     // Generate suggestions based on current position
     let suggestions: string[] = [];
-    
+
     if (hasTrailingSpace) {
       // We want suggestions for the NEXT parameter
       suggestions = this.generateSuggestionsForNextPosition(currentParameters);
@@ -955,7 +980,7 @@ export class CommandAutocomplete {
       const currentPart = parts[parts.length - 1] || '';
       suggestions = this.generateSuggestionsForCurrentPart(currentParameters, currentPart);
     }
-    
+
     return { suggestions, argumentHelp, commandPath };
   }
 
@@ -968,7 +993,7 @@ export class CommandAutocomplete {
     currentPart: string
   ): string[] {
     const suggestions: string[] = [];
-    
+
     for (const param of parameters) {
       if (param.type === ParameterType.SUBCOMMAND) {
         // Direct subcommand
@@ -1000,7 +1025,7 @@ export class CommandAutocomplete {
       // We only process the first parameter position
       break;
     }
-    
+
     return suggestions.sort();
   }
 
@@ -1012,11 +1037,11 @@ export class CommandAutocomplete {
     parameters: Parameter[]
   ): string[] {
     const suggestions: string[] = [];
-    
-    if (parameters.length === 0) {return suggestions;}
-    
+
+    if (parameters.length === 0) { return suggestions; }
+
     const firstParam = parameters[0];
-    
+
     if (firstParam.type === ParameterType.SUBCOMMAND) {
       // Direct subcommand
       suggestions.push(firstParam.name || firstParam.literal || '');
@@ -1033,7 +1058,7 @@ export class CommandAutocomplete {
       suggestions.push(firstParam.literal || '');
     }
     // Don't suggest anything for ARGUMENT types
-    
+
     return suggestions.sort();
   }
 
@@ -1041,8 +1066,8 @@ export class CommandAutocomplete {
    * Build argument help string from parameters
    */
   private buildArgumentHelp(parameters: Parameter[]): string {
-    if (parameters.length === 0) {return '';}
-    
+    if (parameters.length === 0) { return ''; }
+
     return parameters.map(param => {
       if (param.type === ParameterType.ARGUMENT) {
         return param.optional ? `[<${param.name}>]` : `<${param.name}>`;
@@ -1070,16 +1095,16 @@ export class CommandAutocomplete {
         commands: {},
         aliases: {}
       };
-      
+
       // Convert Map to object for serialization
       this.rootCommands.forEach((node, name) => {
         cache.commands[name] = this.serializeNode(node);
       });
-      
+
       this.commandAliases.forEach((target, alias) => {
         cache.aliases[alias] = target;
       });
-      
+
       fs.writeFileSync(this.cacheFile, JSON.stringify(cache, null, 2));
       this.output.appendLine(`Command cache saved to ${this.cacheFile}`);
     } catch (error) {
@@ -1107,17 +1132,17 @@ export class CommandAutocomplete {
       if (!fs.existsSync(this.cacheFile)) {
         return false;
       }
-      
+
       const cacheContent = fs.readFileSync(this.cacheFile, 'utf-8');
       const cache: CommandCache = JSON.parse(cacheContent);
-      
+
       // Check cache validity
-      if (cache.version !== this.cacheVersion || 
-          cache.serverIdentifier !== this.serverIdentifier) {
+      if (cache.version !== this.cacheVersion ||
+        cache.serverIdentifier !== this.serverIdentifier) {
         this.output.appendLine('Cache version or server mismatch, will refresh');
         return false;
       }
-      
+
       // Check age (optional - could add max age check here)
       const cacheAge = Date.now() - new Date(cache.lastUpdated).getTime();
       const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -1125,22 +1150,22 @@ export class CommandAutocomplete {
         this.output.appendLine('Cache too old, will refresh');
         return false;
       }
-      
+
       // Load commands
       this.rootCommands.clear();
       Object.entries(cache.commands).forEach(([name, serialized]) => {
         this.rootCommands.set(name, this.deserializeNode(serialized));
       });
-      
+
       // Load aliases
       this.commandAliases.clear();
       Object.entries(cache.aliases).forEach(([alias, target]) => {
         this.commandAliases.set(alias, target);
       });
-      
+
       this.output.appendLine(`Commands loaded from cache (${this.rootCommands.size} commands)`);
       return true;
-      
+
     } catch (error) {
       this.output.appendLine(`Error loading cache: ${error}`);
       return false;
@@ -1167,10 +1192,10 @@ export class CommandAutocomplete {
       if (!fs.existsSync(this.cacheFile)) {
         return { exists: false, age: 'No cache' };
       }
-      
+
       const stats = fs.statSync(this.cacheFile);
       const ageMs = Date.now() - stats.mtime.getTime();
-      
+
       let age: string;
       if (ageMs < 60000) {
         age = 'Less than a minute';
@@ -1181,7 +1206,7 @@ export class CommandAutocomplete {
       } else {
         age = `${Math.floor(ageMs / 86400000)} days`;
       }
-      
+
       return {
         exists: true,
         age,

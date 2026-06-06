@@ -14,6 +14,7 @@ dist/
 !.vscode/extensions.json
 *.code-workspace
 .history/
+.vscode-test
 
 # Environment
 .env
