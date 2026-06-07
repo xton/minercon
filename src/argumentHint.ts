@@ -2,9 +2,8 @@
 //
 // Pure formatting for the "argument hint" display: given a command's usage
 // string (e.g. "gamemode <mode> [<target>]") and the line the user has typed
-// so far, work out which argument position they're at, which parts of the
-// usage are already typed, and what (if any) contextual hint to show for the
-// argument they're currently entering.
+// so far, work out which argument position they're at and which token in the
+// usage string corresponds to it (so it can be highlighted).
 //
 // This is presentation logic, not decision logic — it has no notion of
 // fetching, timing, or staleness — so it lives apart from completionEngine's
@@ -19,8 +18,6 @@ export interface ArgumentHintDisplay {
   tokens: string[];
   /** Index into `tokens` of the argument currently being typed, or -1 if still on the command path. */
   currentArgIndex: number;
-  /** A short contextual hint for the current argument, if we have one for its shape. */
-  hint: string | null;
 }
 
 /** Returns null when there's no usage text to show anything for. */
@@ -50,31 +47,5 @@ export function formatArgumentHint(usage: string, line: string): ArgumentHintDis
     currentArgIndex = argumentCount - 1;   // currently typing this argument
   }
 
-  const hint = (currentArgIndex >= 0 && currentArgIndex < tokens.length)
-    ? hintForToken(tokens[currentArgIndex])
-    : null;
-
-  return { commandPrefixText, tokens, currentArgIndex, hint };
-}
-
-function hintForToken(token: string): string | null {
-  if (token.startsWith('(') && token.endsWith(')')) {
-    return 'Choose one: ' + token.slice(1, -1).replace(/\|/g, ', ');
-  }
-
-  const argName = token.replace(/[<>[\]()]/g, '');
-  if (argName.includes('player') || argName.includes('target')) { return 'Player name or @selector (@p, @a, @r, @e, @s)'; }
-  if (argName.includes('team')) { return 'Team name or identifier'; }
-  if (argName.includes('key')) { return 'Configuration key or setting name'; }
-  if (argName.includes('value')) { return 'Value for the specified option'; }
-  if (argName.includes('item')) { return 'Item ID (e.g., minecraft:diamond, stone, iron_sword)'; }
-  if (argName.includes('block')) { return 'Block ID (e.g., minecraft:stone, dirt, oak_planks)'; }
-  if (argName.includes('count') || argName.includes('amount')) { return 'Number (1-64 for most items)'; }
-  if (argName.includes('data')) { return 'Data value or NBT tags'; }
-  if (argName.includes('pos') || argName.includes('x') || argName.includes('y') || argName.includes('z')) { return 'Coordinates (x y z) or relative (~x ~y ~z)'; }
-  if (argName.includes('message') || argName.includes('text')) { return 'Text string (use quotes for spaces)'; }
-  if (argName.includes('mode')) { return 'Game mode option'; }
-  if (argName.includes('rule')) { return 'Game rule name'; }
-  if (argName === 'args' || argName === 'arguments') { return 'Additional arguments specific to this command'; }
-  return null;
+  return { commandPrefixText, tokens, currentArgIndex };
 }

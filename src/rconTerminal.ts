@@ -1143,11 +1143,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
         : grayColor + display.tokens[i] + resetColor;
     }
 
-    const lines = [usageLine];
-    if (display.hint) {
-      lines.push('  \x1b[3m' + grayColor + display.hint + resetColor);
-    }
-    return lines;
+    return [usageLine];
   }
 
   private clearArgumentDisplay(): void {

@@ -19,16 +19,14 @@ suite('formatArgumentHint', () => {
     assert.deepStrictEqual(d!.tokens, ['<property>', '<value>']);
   });
 
-  test('still typing the command/subcommand: currentArgIndex is -1, no hint', () => {
+  test('still typing the command/subcommand: currentArgIndex is -1', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemo');
     assert.strictEqual(d!.currentArgIndex, -1);
-    assert.strictEqual(d!.hint, null);
   });
 
   test('trailing space after the command: ready for the first argument', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemode ');
     assert.strictEqual(d!.currentArgIndex, 0);
-    assert.strictEqual(d!.hint, 'Game mode option');
   });
 
   test('mid-way through typing the first argument: still on argument 0', () => {
@@ -39,31 +37,16 @@ suite('formatArgumentHint', () => {
   test('trailing space after the first argument: argument 0 completed, on argument 1', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemode creative ');
     assert.strictEqual(d!.currentArgIndex, 1);
-    assert.strictEqual(d!.hint, 'Player name or @selector (@p, @a, @r, @e, @s)');
   });
 
-  test('choice-list tokens produce a "Choose one:" hint', () => {
-    const d = formatArgumentHint('gamerule <rule> (true|false)', '/gamerule keepInventory ');
-    assert.strictEqual(d!.currentArgIndex, 1);
-    assert.strictEqual(d!.hint, 'Choose one: true, false');
-  });
-
-  test('unrecognized argument shapes yield no hint, but still report position', () => {
-    const d = formatArgumentHint('foo <bar>', '/foo ');
-    assert.strictEqual(d!.currentArgIndex, 0);
-    assert.strictEqual(d!.hint, null);
-  });
-
-  test('usage with no argument tokens at all: empty token list, no hint', () => {
+  test('usage with no argument tokens at all: empty token list', () => {
     const d = formatArgumentHint('reload', '/reload');
     assert.deepStrictEqual(d!.tokens, []);
     assert.strictEqual(d!.commandPrefixText, '/reload');
-    assert.strictEqual(d!.hint, null);
   });
 
-  test('past the end of the documented arguments: currentArgIndex beyond tokens, no hint', () => {
+  test('past the end of the documented arguments: currentArgIndex beyond tokens', () => {
     const d = formatArgumentHint('gamemode <mode>', '/gamemode creative extra ');
     assert.strictEqual(d!.currentArgIndex, 2);
-    assert.strictEqual(d!.hint, null);
   });
 });
