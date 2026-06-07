@@ -105,9 +105,52 @@ suite('completionEngine: typing flow', () => {
     assert.strictEqual(render.usage, null);
   });
 
-  test('empty completions response closes the list', () => {
+  test('empty completions with nothing to show usage for closes the list', () => {
     let m = createMachine();
-    let r = step(m, { kind: 'lineChanged', line: '/bogus' });
+    let r = step(m, { kind: 'lineChanged', line: '/' });
+    m = r.machine;
+    const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
+
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [], now: 1000 });
+    m = r.machine;
+    assert.strictEqual(m.phase.kind, 'closed');
+    assert.deepStrictEqual(kinds(r.effects), ['hide']);
+  });
+
+  test('empty completions but a usage line to show opens a hint-only display instead of closing', () => {
+    let m = createMachine();
+    let r = step(m, { kind: 'lineChanged', line: '/gamemode creative ' });
+    m = r.machine;
+    const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
+
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [], now: 1000 });
+    m = r.machine;
+    assert.strictEqual(m.phase.kind, 'open');
+    if (m.phase.kind === 'open') {
+      assert.deepStrictEqual(m.phase.items, []);
+      assert.strictEqual(m.phase.usage.kind, 'loading');
+    }
+    assert.deepStrictEqual(kinds(r.effects), ['fetchUsage', 'render']);
+    const usageFetch = find(r.effects, 'fetchUsage')!;
+    assert.strictEqual(usageFetch.query, 'gamemode creative');
+    const render = find(r.effects, 'render')!;
+    assert.deepStrictEqual(render.items, []);
+    assert.strictEqual(render.usage, null);     // not loaded yet
+
+    // usage arrives — re-renders with the hint text, list still empty
+    r = step(m, { kind: 'usageResult', requestId: usageFetch.requestId, text: 'gamemode <mode> [<target>]' });
+    m = r.machine;
+    if (m.phase.kind === 'open') {
+      assert.strictEqual(m.phase.usage.kind, 'ready');
+    }
+    const render2 = find(r.effects, 'render')!;
+    assert.deepStrictEqual(render2.items, []);
+    assert.strictEqual(render2.usage, 'gamemode <mode> [<target>]');
+  });
+
+  test('Tab on a line with no completions and no prior list does nothing (no hint phase from Tab)', () => {
+    let m = createMachine();
+    let r = step(m, { kind: 'tab', line: '/gamemode creative ', now: 1000 });
     m = r.machine;
     const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
 

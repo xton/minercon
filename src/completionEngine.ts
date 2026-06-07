@@ -318,7 +318,27 @@ function onCompletionsResult(m: Machine, requestId: number, items: string[], now
     return fetchCompletionsFor(m, queued.line, queued.reason);
   }
 
-  if (items.length === 0) { return closeAndHide(m); }
+  if (items.length === 0) {
+    if (purpose.reason !== 'typing') { return closeAndHide(m); }
+
+    // No completions for this input, but it still looks like a command in
+    // progress — rather than closing, show what argument comes next (e.g.
+    // "/gamemode creative " has no completions for the target selector, but
+    // there's still a usage hint worth displaying). Mirrors the "open with an
+    // empty item list, fill in usage in the background" shape used elsewhere.
+    const usageQuery = buildUsageQuery(forLine);
+    if (usageQuery === null) { return closeAndHide(m); }
+
+    const usageRequestId = m.seq + 1;
+    const phase: OpenPhase = {
+      kind: 'open', query: forLine, items: [], selectedIndex: -1,
+      usage: { kind: 'loading', forQuery: forLine }, mode: { kind: 'preview' },
+    };
+    return {
+      machine: { seq: usageRequestId, phase, fetch: { kind: 'busy', requestId: usageRequestId, purpose: { kind: 'usage' }, forLine, queued: null } },
+      effects: [{ kind: 'fetchUsage', requestId: usageRequestId, query: usageQuery }, renderEffect(phase)],
+    };
+  }
 
   if (purpose.reason === 'typing') {
     // Preserve the existing selection across re-fetches if still in range —

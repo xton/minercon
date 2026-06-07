@@ -4,8 +4,10 @@ import { RconController } from './rconClient';
 import { CommandAutocomplete } from './commandAutocomplete';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
-  createMachine, step, parseCompletionsResponse, parseUsageResponse,
+  createMachine, step,
 } from './completionEngine';
+import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
+import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
 
 export class RconTerminal implements vscode.Pseudoterminal {
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -45,17 +47,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private currentSuggestions: string[] = [];
   private suggestionIndex: number = -1;
   private isShowingSuggestions: boolean = false;
-  private originalInput: string = '';
   private currentArgumentHelp: string = '';
-  private previousCommand: string = '';
-  private currentCommandPath: string = '';  // NEW: Track the determined command path
-  
-  // Cache for full argument patterns per command
-  private commandArgumentCache: Map<string, string> = new Map();
-  
-  // Tab mode tracking for Minecraft-style autocomplete
-  private tabMode: boolean = false;
-  private lastTabTime: number = 0;
   private suggestionListLines: number = 0;
   
   // Paging for suggestions
@@ -63,15 +55,22 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private maxVisibleSuggestions: number = 10;
   private currentPage: number = 1;
 
-  // Plugin mode (server-side tab complete via RconTabComplete plugin).
-  // Driven by the pure completionEngine state machine — see dispatchToEngine
-  // and executeEngineEffect below. The fields above (currentSuggestions,
-  // suggestionIndex, isShowingSuggestions, currentArgumentHelp, paging, ...)
-  // remain the single rendering model for *both* modes; in plugin mode they're
-  // populated from the machine's `render`/`hide` effects rather than written
-  // to directly, so the existing display code needs no plugin-mode branches.
+  // Tab completion — server-side (RconTabComplete plugin) or local (command
+  // tree built from `help` output) — is driven entirely by the pure
+  // completionEngine state machine; see dispatchToEngine/executeEngineEffect
+  // below. `pluginMode` selects which CompletionsBackend answers the engine's
+  // fetchCompletions/fetchUsage effects — that's the *only* place either mode
+  // is named. Everything downstream (dispatch, effect execution, rendering)
+  // is mode-blind: currentSuggestions/suggestionIndex/isShowingSuggestions/
+  // currentArgumentHelp/paging are populated purely from the machine's
+  // render/hide effects.
   private pluginMode: boolean = false;
   private engine: Machine = createMachine();
+  private rconBackend: CompletionsBackend;
+  private localBackend: CompletionsBackend;
+  private get completionsBackend(): CompletionsBackend {
+    return this.pluginMode ? this.rconBackend : this.localBackend;
+  }
 
   // For handling terminal resize
   private lastCommandOutputLines: number = 0;
@@ -111,6 +110,9 @@ export class RconTerminal implements vscode.Pseudoterminal {
       host,
       port
     );
+
+    this.rconBackend = new RconCompletionsBackend(this.controller);
+    this.localBackend = new LocalCompletionsBackend(this.autocomplete);
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
@@ -283,19 +285,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     // Handle Escape - cancel autocomplete or clear line
     if (data === '\x1b') {
       if (this.isShowingSuggestions) {
-        if (this.pluginMode) {
-          this.dispatchToEngine({ kind: 'escape' });
-        } else {
-          // Restore original input if in tab mode
-          if (this.tabMode && this.originalInput) {
-            this.currentLine = this.originalInput;
-            this.cursorPosition = this.originalInput.length;
-            this.writeEmitter.fire('\r\x1b[K');
-            this.showPrompt();
-            this.writeEmitter.fire(this.currentLine);
-          }
-          this.hideSuggestions();
-        }
+        this.dispatchToEngine({ kind: 'escape' });
         return;
       } else if (data.length === 1) {
         this.clearAndResetLine();
@@ -397,11 +387,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     if (data === '\x1b[A') {
       if (this.isShowingSuggestions) {
         // Navigate suggestions instead of history
-        if (this.pluginMode) {
-          this.dispatchToEngine({ kind: 'arrow', direction: 'up' });
-        } else {
-          this.navigateSuggestions('up');
-        }
+        this.dispatchToEngine({ kind: 'arrow', direction: 'up' });
         return;
       }
       // Normal history navigation
@@ -417,11 +403,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     if (data === '\x1b[B') {
       if (this.isShowingSuggestions) {
         // Navigate suggestions instead of history
-        if (this.pluginMode) {
-          this.dispatchToEngine({ kind: 'arrow', direction: 'down' });
-        } else {
-          this.navigateSuggestions('down');
-        }
+        this.dispatchToEngine({ kind: 'arrow', direction: 'down' });
         return;
       }
       // Normal history navigation
@@ -738,14 +720,14 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.insertText(data);
   }
 
-  // ── plugin-mode completion: drive the pure completionEngine state machine ──
+  // ── tab completion: drive the pure completionEngine state machine ──
   //
   // dispatchToEngine feeds an event through the reducer, adopts the resulting
   // machine state, and executes whatever Effects come back. Everything that
   // used to be scattered mutable-flag bookkeeping (isLoadingCompletions,
-  // tabMode, lastTabTime, originalInput, staleness checks against currentLine)
-  // for *plugin mode* now lives in completionEngine.ts as a pure, testable
-  // reducer — this is just the imperative shell that runs its effects.
+  // tabMode, lastTabTime, originalInput, staleness checks against currentLine,
+  // commandArgumentCache, ...) now lives in completionEngine.ts as a pure,
+  // testable reducer — this is just the imperative shell that runs its effects.
 
   private dispatchToEngine(event: EngineEvent): void {
     const { machine, effects } = step(this.engine, event);
@@ -758,22 +740,29 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private executeEngineEffect(effect: EngineEffect): void {
     switch (effect.kind) {
       case 'fetchCompletions':
-        this.runEngineCompletionsFetch(effect.requestId, effect.query);
+        this.runEngineCompletionsFetch(effect.requestId);
         break;
       case 'fetchUsage':
-        this.runEngineUsageFetch(effect.requestId, effect.query);
+        this.runEngineUsageFetch(effect.requestId);
         break;
       case 'applySuggestion': {
         const query = this.engine.phase.kind === 'open' ? this.engine.phase.query : this.currentLine;
-        this.applyPluginSuggestionText(query, effect.text);
+        this.applySuggestionText(query, effect.text);
         break;
       }
       case 'render':
         this.currentSuggestions = effect.items;
         this.suggestionIndex = effect.selectedIndex;
         this.currentArgumentHelp = effect.usage ?? '';
-        this.isShowingSuggestions = true;
-        this.showSuggestionList();
+        this.clearSuggestionDisplay();
+        if (effect.items.length > 0) {
+          this.isShowingSuggestions = true;
+          this.showSuggestionList();
+        } else {
+          this.isShowingSuggestions = false;
+          const display = effect.usage ? formatArgumentHint(effect.usage, this.currentLine) : null;
+          if (display) { this.showArgumentHint(display); }
+        }
         break;
       case 'hide':
         this.hideSuggestions();
@@ -788,26 +777,29 @@ export class RconTerminal implements vscode.Pseudoterminal {
     }
   }
 
-  // RCON serializes requests — the machine guarantees at most one of these is
-  // outstanding at a time, so we can just fire-and-forget and feed the result
-  // back in as an event (with a fresh timestamp/requestId pairing it to the
-  // request that's still current by the time it resolves).
-  private async runEngineCompletionsFetch(requestId: number, query: string): Promise<void> {
+  // The engine guarantees at most one completions fetch and one usage fetch
+  // is outstanding at a time (that's what makes RCON-serialization safe), so
+  // we can fire-and-forget through whichever backend is current and feed the
+  // result back in as an event — the requestId pairs it to whatever request
+  // is still current by the time it resolves, so stale answers are ignored.
+  // `forLine` (not `effect.query`, which is backend-specific wire format) is
+  // the raw input line both backends actually need.
+  private async runEngineCompletionsFetch(requestId: number): Promise<void> {
+    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.currentLine;
     let items: string[] = [];
     try {
-      const response = await this.controller.send(`tabcomplete ${query}`);
-      items = parseCompletionsResponse(response ?? undefined);
+      items = await this.completionsBackend.fetchCompletions(line);
     } catch {
       items = [];
     }
     this.dispatchToEngine({ kind: 'completionsResult', requestId, items, now: Date.now() });
   }
 
-  private async runEngineUsageFetch(requestId: number, query: string): Promise<void> {
+  private async runEngineUsageFetch(requestId: number): Promise<void> {
+    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.currentLine;
     let text = '';
     try {
-      const response = await this.controller.send(`cmdusage ${query}`);
-      text = parseUsageResponse(response ?? undefined);
+      text = await this.completionsBackend.fetchUsage(line);
     } catch {
       text = '';
     }
@@ -818,7 +810,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
   // was before any suggestion got applied) the same way Minecraft's own
   // client does: replace the last space-delimited word, preserving the
   // leading "/" on the first word and appending after a trailing space.
-  private applyPluginSuggestionText(query: string, suggestionText: string): void {
+  private applySuggestionText(query: string, suggestionText: string): void {
     const parts = query.split(' ');
     if (query.endsWith(' ')) {
       this.currentLine = query + suggestionText;
@@ -837,183 +829,11 @@ export class RconTerminal implements vscode.Pseudoterminal {
   }
 
   private handleTabComplete(): void {
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'tab', line: this.currentLine, now: Date.now() });
-      return;
-    }
-
-    if (!this.autocomplete.isReady) {return;}
-
-    const now = Date.now();
-    const timeSinceLastTab = now - this.lastTabTime;
-    this.lastTabTime = now;
-
-    // First tab press or tab after delay - complete the selected suggestion
-    if (!this.tabMode || timeSinceLastTab > 500) {
-      if (!this.isShowingSuggestions) {
-        // Initialize suggestions
-        const result = this.autocomplete.getSuggestions(this.currentLine);
-        if (result.suggestions.length === 0) {return;}
-        
-        this.currentSuggestions = result.suggestions;
-        this.isShowingSuggestions = true;
-        this.suggestionIndex = 0;
-        this.originalInput = this.currentLine;
-      }
-      
-      // Enter tab mode and complete first suggestion
-      this.tabMode = true;
-      this.completeSelectedSuggestion();
-    } else {
-      // Subsequent tab - cycle and complete next suggestion
-      this.suggestionIndex = (this.suggestionIndex + 1) % this.currentSuggestions.length;
-      this.completeSelectedSuggestion();
-    }
-    
-    // Update the list display
-    this.showSuggestionList();
+    this.dispatchToEngine({ kind: 'tab', line: this.currentLine, now: Date.now() });
   }
 
   private handleShiftTab(): void {
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'shiftTab', line: this.currentLine, now: Date.now() });
-      return;
-    }
-
-    if (!this.autocomplete.isReady) {return;}
-    
-    const now = Date.now();
-    this.lastTabTime = now;
-    
-    if (!this.isShowingSuggestions) {
-      // Initialize suggestions
-      const result = this.autocomplete.getSuggestions(this.currentLine);
-      if (result.suggestions.length === 0) {return;}
-      
-      this.currentSuggestions = result.suggestions;
-      this.isShowingSuggestions = true;
-      this.suggestionIndex = result.suggestions.length - 1; // Start from end
-      this.originalInput = this.currentLine;
-      this.tabMode = true;
-      this.completeSelectedSuggestion();
-    } else {
-      // Reverse cycle
-      this.tabMode = true;
-      this.suggestionIndex--;
-      if (this.suggestionIndex < 0) {
-        this.suggestionIndex = this.currentSuggestions.length - 1;
-      }
-      this.completeSelectedSuggestion();
-    }
-    
-    this.showSuggestionList();
-  }
-
-  private completeSelectedSuggestion(): void {
-    if (!this.isShowingSuggestions || this.suggestionIndex < 0) {return;}
-    
-    const suggestion = this.currentSuggestions[this.suggestionIndex];
-    
-    // Apply the suggestion to the input
-    const parts = this.originalInput.split(' ');
-    
-    if (this.originalInput.endsWith(' ')) {
-      this.currentLine = this.originalInput + suggestion;
-    } else if (parts.length > 0) {
-      const lastPart = parts[parts.length - 1];
-      if (lastPart.startsWith('/')) {
-        parts[parts.length - 1] = '/' + suggestion;
-      } else {
-        parts[parts.length - 1] = suggestion;
-      }
-      this.currentLine = parts.join(' ');
-    } else {
-      this.currentLine = '/' + suggestion;
-    }
-    
-    this.cursorPosition = this.currentLine.length;
-    
-    // Redraw the line
-    this.writeEmitter.fire('\r\x1b[K');
-    this.showPrompt();
-    this.writeEmitter.fire(this.currentLine);
-  }
-
-  // Local (non-plugin) mode only — plugin mode routes line changes through
-  // dispatchToEngine({ kind: 'lineChanged', ... }) instead (see insertText/handleBackspace).
-  private showInlineSuggestions(): void {
-    if (!this.autocomplete.isReady) {return;}
-
-    // Get suggestions for current input
-    const result = this.autocomplete.getSuggestions(this.currentLine);
-    
-    // Store the command path from the result
-    this.currentCommandPath = result.commandPath || '';
-    
-    // Extract the command name from the current line
-    const commandMatch = this.currentLine.match(/^(\/?\w+)/);
-    const commandName = commandMatch ? commandMatch[1] : '';
-    
-    // Check if we switched to a different command
-    if (commandName !== this.previousCommand) {
-      this.commandArgumentCache.delete(this.previousCommand); // Clear old cache
-      this.currentArgumentHelp = ''; // Clear help when switching commands
-      this.previousCommand = commandName;
-    }
-    
-    // Store filtered suggestions
-    this.currentSuggestions = result.suggestions;
-    
-    // Clear previous display
-    this.clearSuggestionDisplay();
-    
-    if (result.suggestions.length === 0) {
-      this.isShowingSuggestions = false;
-      
-      // Handle argument help
-      if (result.argumentHelp) {
-        // Store the FULL argument help if this is the first time we see it for this command
-        // This is the key fix - we cache the full argument list per command
-        if (!this.commandArgumentCache.has(commandName)) {
-          this.commandArgumentCache.set(commandName, result.argumentHelp);
-        }
-        // Always use the cached full version if available
-        this.currentArgumentHelp = this.commandArgumentCache.get(commandName) || result.argumentHelp;
-        
-        this.showArgumentsInList();
-      } else {
-        // Try to use cached argument help for this command
-        const cachedHelp = this.commandArgumentCache.get(commandName);
-        if (cachedHelp) {
-          this.currentArgumentHelp = cachedHelp;
-          this.showArgumentsInList();
-        } else {
-          // No argument help at all
-          this.clearArgumentDisplay();
-        }
-      }
-      return;
-    }
-
-    // Show suggestions
-    this.isShowingSuggestions = true;
-    
-    // Default to first item selected (index 0)
-    if (this.suggestionIndex < 0 || this.suggestionIndex >= result.suggestions.length) {
-      this.suggestionIndex = 0;
-    }
-    
-    // Reset paging to show the selected item
-    this.visibleSuggestionsStart = 0;
-    this.currentPage = 1;
-    
-    // Store original input if not in tab mode
-    if (!this.tabMode) {
-      this.originalInput = this.currentLine;
-    }
-    
-    // Show the list below
-    this.showSuggestionList();
+    this.dispatchToEngine({ kind: 'shiftTab', line: this.currentLine, now: Date.now() });
   }
 
   // UPDATED: Better suggestion list rendering
@@ -1055,18 +875,6 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.writeEmitter.fire('\r\n');
 
     let lineCount = 1;
-
-    // In plugin mode, show usage from cmdusage as a header above the completions
-    if (this.pluginMode && this.currentArgumentHelp) {
-      const usageLines = this.currentArgumentHelp.split('\n');
-      for (const usageLine of usageLines) {
-        const trimmed = usageLine.trim();
-        if (!trimmed) { continue; }
-        this.writeEmitter.fire('\x1b[2K');
-        this.writeEmitter.fire('\x1b[36m' + CommandAutocomplete.formatMinecraftColors(trimmed) + '\x1b[0m\r\n');
-        lineCount++;
-      }
-    }
 
     // Get only the completed parts of the command (everything before the last space or the whole line if no space)
     let completedText = '';
@@ -1212,111 +1020,31 @@ export class RconTerminal implements vscode.Pseudoterminal {
     }
   }
 
-  private navigateSuggestions(direction: 'up' | 'down'): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-    
-    // Arrow keys don't enter tab mode and don't complete
-    this.tabMode = false;
-    
-    if (direction === 'up') {
-      this.suggestionIndex--;
-      if (this.suggestionIndex < 0) {
-        this.suggestionIndex = this.currentSuggestions.length - 1;
-      }
-    } else {
-      this.suggestionIndex++;
-      if (this.suggestionIndex >= this.currentSuggestions.length) {
-        this.suggestionIndex = 0;
-      }
-    }
-    
-    // Just update the list display, don't change input
-    this.showSuggestionList();
-  }
-  
   private jumpToFirstSuggestion(): void {
     if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'selectIndex', index: 0 });
-      return;
-    }
-
-    this.tabMode = false;
-    this.suggestionIndex = 0;
-    this.currentPage = 1;
-    this.visibleSuggestionsStart = 0;
-    this.showSuggestionList();
+    this.dispatchToEngine({ kind: 'selectIndex', index: 0 });
   }
 
   private jumpToLastSuggestion(): void {
     if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'selectIndex', index: this.currentSuggestions.length - 1 });
-      return;
-    }
-
-    this.tabMode = false;
-    this.suggestionIndex = this.currentSuggestions.length - 1;
-    this.currentPage = this.totalPages;
-    this.visibleSuggestionsStart = (this.currentPage - 1) * this.maxVisibleSuggestions;
-    this.showSuggestionList();
+    this.dispatchToEngine({ kind: 'selectIndex', index: this.currentSuggestions.length - 1 });
   }
 
   private nextPage(): void {
     if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
 
-    // Calculate the next page
     const nextPageStart = this.currentPage * this.maxVisibleSuggestions;
-
-    if (this.pluginMode) {
-      const targetIndex = nextPageStart < this.currentSuggestions.length ? nextPageStart : 0;
-      this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
-      return;
-    }
-
-    this.tabMode = false;
-
-    if (nextPageStart < this.currentSuggestions.length) {
-      this.currentPage++;
-      this.visibleSuggestionsStart = nextPageStart;
-      this.suggestionIndex = nextPageStart;
-      this.showSuggestionList();
-    } else {
-      // Wrap to first page
-      this.currentPage = 1;
-      this.visibleSuggestionsStart = 0;
-      this.suggestionIndex = 0;
-      this.showSuggestionList();
-    }
+    const targetIndex = nextPageStart < this.currentSuggestions.length ? nextPageStart : 0;
+    this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
   }
 
   private previousPage(): void {
     if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
 
-    if (this.pluginMode) {
-      const targetIndex = this.currentPage > 1
-        ? (this.currentPage - 2) * this.maxVisibleSuggestions
-        : (this.totalPages - 1) * this.maxVisibleSuggestions;
-      this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
-      return;
-    }
-
-    this.tabMode = false;
-
-    if (this.currentPage > 1) {
-      this.currentPage--;
-      this.visibleSuggestionsStart = (this.currentPage - 1) * this.maxVisibleSuggestions;
-      this.suggestionIndex = this.visibleSuggestionsStart;
-      this.showSuggestionList();
-    } else {
-      // Wrap to last page
-      this.currentPage = this.totalPages;
-      this.visibleSuggestionsStart = (this.currentPage - 1) * this.maxVisibleSuggestions;
-      this.suggestionIndex = this.visibleSuggestionsStart;
-      this.showSuggestionList();
-    }
+    const targetIndex = this.currentPage > 1
+      ? (this.currentPage - 2) * this.maxVisibleSuggestions
+      : (this.totalPages - 1) * this.maxVisibleSuggestions;
+    this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
   }
 
   private hideSuggestions(): void {
@@ -1325,11 +1053,9 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.isShowingSuggestions = false;
     this.suggestionIndex = -1;
     this.currentSuggestions = [];
-    this.originalInput = '';
-    this.tabMode = false;
     this.visibleSuggestionsStart = 0; // Reset paging
     this.currentPage = 1; // Reset current page
-    // Don't clear currentArgumentHelp or commandArgumentCache here - preserve it for the command
+    // Don't clear currentArgumentHelp here - preserve it for the command
   }
 
   // UPDATED: Clear the input line when typing starts
@@ -1351,11 +1077,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
     
     const filteredText = text.replace(/[\x00-\x08\x0a-\x1f\x7f]/g, '');
     if (filteredText.length === 0) {return;}
-    
-    // Clear tab mode when typing
-    this.tabMode = false;
-    
-    this.currentLine = this.currentLine.slice(0, this.cursorPosition) + 
+
+    this.currentLine = this.currentLine.slice(0, this.cursorPosition) +
                       filteredText + 
                       this.currentLine.slice(this.cursorPosition);
     
@@ -1371,14 +1094,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.clearSelection();
 
     // Update suggestions immediately for instant feedback
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
-    } else if (this.currentLine.startsWith('/')) {
-      this.showInlineSuggestions();
-    } else {
-      // Clear suggestions and arguments if not typing a command
-      this.hideSuggestions();
-    }
+    this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
   }
 
   private handleBackspace(): void {
@@ -1386,44 +1102,39 @@ export class RconTerminal implements vscode.Pseudoterminal {
       this.deleteSelection();
       this.redrawLineWithSelection();
     } else if (this.cursorPosition > 0) {
-      // Clear tab mode
-      this.tabMode = false;
-      
-      this.currentLine = this.currentLine.slice(0, this.cursorPosition - 1) + 
+      this.currentLine = this.currentLine.slice(0, this.cursorPosition - 1) +
                         this.currentLine.slice(this.cursorPosition);
       this.cursorPosition--;
-      
+
       this.writeEmitter.fire('\b');
       const restOfLine = this.currentLine.slice(this.cursorPosition);
       this.writeEmitter.fire(restOfLine + ' ');
       if (restOfLine.length + 1 > 0) {
         this.writeEmitter.fire('\x1b[' + (restOfLine.length + 1) + 'D');
       }
-      
+
       // Update suggestions immediately
-      if (this.pluginMode) {
-        this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
-      } else if (this.currentLine.startsWith('/')) {
-        this.showInlineSuggestions();
-      } else {
-        this.hideSuggestions();
-      }
+      this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
     }
   }
 
-  // UPDATED: Better argument display rendering
-  private showArgumentsInList(): void {
-    if (!this.currentArgumentHelp) {return;}
-    
-    // NEW: Handle large previous outputs
+  // Renders the argument-hint display: the usage line with completed parts
+  // concealed and the current argument highlighted, plus a contextual hint
+  // for that argument. Shown in place of the suggestion list when a command
+  // has no completions to offer but does have argument structure to show
+  // (e.g. "/gamemode creative " — nothing to complete for the target selector,
+  // but worth showing what comes next). The actual parsing of `usage`/`line`
+  // into positions and hint text is pure — see argumentHint.ts — this is just
+  // the ANSI rendering of that already-computed structure.
+  private showArgumentHint(display: ArgumentHintDisplay): void {
     if (this.needsClearBeforeSuggestions) {
       this.writeEmitter.fire('\x1b[J'); // Clear from cursor to end
       this.needsClearBeforeSuggestions = false;
     }
-    
+
     // Save cursor position
     this.writeEmitter.fire('\x1b7');
-    
+
     // Clear old list area
     if (this.suggestionListLines > 0) {
       this.writeEmitter.fire('\r\n');
@@ -1437,150 +1148,44 @@ export class RconTerminal implements vscode.Pseudoterminal {
         this.writeEmitter.fire(`\x1b[${this.suggestionListLines}A`);
       }
     }
-    
+
     // Move to next line for argument display
     this.writeEmitter.fire('\r\n');
-    
+
     let lineCount = 1;
-    
-    // Use the command path from getSuggestions
-    const fullCommandPath = this.currentCommandPath || this.currentLine.split(' ')[0] || '/';
-    
-    // Parse the current input to determine argument position
-    const parts = this.currentLine.trim().split(' ').filter(p => p.length > 0);
-    const hasTrailingSpace = this.currentLine.endsWith(' ');
-    
-    // Count how many parts of the command path we have
-    const commandParts = fullCommandPath.substring(1).split(' ').filter(p => p.length > 0);
-    const commandPartCount = commandParts.length;
-    
-    // Count arguments - everything after the command path
-    const argumentParts = parts.slice(commandPartCount);
-    
-    // Determine how many arguments are COMPLETED (followed by space)
-    let completedArgCount = 0;
-    if (hasTrailingSpace) {
-      // If we have trailing space, all typed arguments are completed
-      completedArgCount = argumentParts.length;
-    } else if (argumentParts.length > 0) {
-      // If we're typing an argument, all previous ones are completed
-      completedArgCount = argumentParts.length - 1;
-    }
-    
-    // Determine which argument is currently being typed/active
-    let currentArgIndex = -1;
-    if (argumentParts.length === 0 && !hasTrailingSpace) {
-      // Still typing command/subcommand
-      currentArgIndex = -1;
-    } else if (hasTrailingSpace) {
-      // Ready for next argument after what we've typed
-      currentArgIndex = argumentParts.length;
-    } else {
-      // Currently typing an argument
-      currentArgIndex = argumentParts.length - 1;
-    }
-    
-    // Parse argument help string
-    const argPattern = /(<[^>]+>|\[[^\]]+\]|\([^)]+\))/g;
-    const tokens = this.currentArgumentHelp.match(argPattern) || [];
-    
-    // Build the usage line
-    let usageLine = '  ';
-    
-    // Use concealed attribute to hide the command path and completed args
+
     const concealedText = '\x1b[8m';
     const resetColor = '\x1b[0m';
     const grayColor = '\x1b[90m';
     const boldWhite = '\x1b[1;97m';
-    
+
     // Clear the line first
     this.writeEmitter.fire('\x1b[2K');
-    
-    // Hide the command path
-    usageLine += concealedText + fullCommandPath + resetColor;
-    
-    // Process each token in the argument list
-    for (let i = 0; i < tokens.length; i++) {
-      usageLine += ' '; // Space before each argument
-      
-      if (i < completedArgCount) {
-        // This argument position has been completed - hide the typed value
-        usageLine += concealedText + argumentParts[i] + resetColor;
+
+    let usageLine = '  ' + concealedText + display.commandPrefixText + resetColor;
+
+    for (let i = 0; i < display.tokens.length; i++) {
+      usageLine += ' ';
+      if (i < display.completedArgCount) {
+        usageLine += concealedText + display.argumentParts[i] + resetColor;
+      } else if (i === display.currentArgIndex) {
+        usageLine += boldWhite + display.tokens[i] + resetColor;
       } else {
-        // This argument position hasn't been completed - show the token
-        const token = tokens[i];
-        
-        if (i === currentArgIndex) {
-          // This is the current/active argument - make it bold and bright
-          usageLine += boldWhite + token + resetColor;
-        } else {
-          // Future arguments - show in gray
-          usageLine += grayColor + token + resetColor;
-        }
+        usageLine += grayColor + display.tokens[i] + resetColor;
       }
     }
-    
+
     this.writeEmitter.fire(usageLine + '\r\n');
     lineCount++;
-    
-    // Show hint for the current argument
-    let hintArgIndex = currentArgIndex;
-    
-    if (hintArgIndex >= 0 && hintArgIndex < tokens.length) {
-      const currentToken = tokens[hintArgIndex];
-      
-      if (currentToken) {
-        let hint = '';
-        
-        // Extract argument info and provide hint
-        if (currentToken.startsWith('(') && currentToken.endsWith(')')) {
-          // Choice list
-          hint = 'Choose one: ' + currentToken.slice(1, -1).replace(/\|/g, ', ');
-        } else {
-          // Regular argument - extract name
-          const argName = currentToken.replace(/[<>\[\]()]/g, '');
-          
-          // Provide context-aware hints (keeping existing hint logic)
-          if (argName.includes('player') || argName.includes('target')) {
-            hint = 'Player name or @selector (@p, @a, @r, @e, @s)';
-          } else if (argName.includes('team')) {
-            hint = 'Team name or identifier';
-          } else if (argName.includes('key')) {
-            hint = 'Configuration key or setting name';
-          } else if (argName.includes('value')) {
-            hint = 'Value for the specified option';
-          } else if (argName.includes('item')) {
-            hint = 'Item ID (e.g., minecraft:diamond, stone, iron_sword)';
-          } else if (argName.includes('block')) {
-            hint = 'Block ID (e.g., minecraft:stone, dirt, oak_planks)';
-          } else if (argName.includes('count') || argName.includes('amount')) {
-            hint = 'Number (1-64 for most items)';
-          } else if (argName.includes('data')) {
-            hint = 'Data value or NBT tags';
-          } else if (argName.includes('pos') || argName.includes('x') || argName.includes('y') || argName.includes('z')) {
-            hint = 'Coordinates (x y z) or relative (~x ~y ~z)';
-          } else if (argName.includes('message') || argName.includes('text')) {
-            hint = 'Text string (use quotes for spaces)';
-          } else if (argName.includes('mode')) {
-            hint = 'Game mode option';
-          } else if (argName.includes('rule')) {
-            hint = 'Game rule name';
-          } else if (argName === 'args' || argName === 'arguments') {
-            hint = 'Additional arguments specific to this command';
-          }
-        }
-        
-       if (hint) {
-          // Clear line and show italicized hint text in gray
-          this.writeEmitter.fire('\x1b[2K');
-          this.writeEmitter.fire('  \x1b[3m' + grayColor + hint + resetColor + '\r\n');
-          lineCount++;
-        }
-      }
+
+    if (display.hint) {
+      this.writeEmitter.fire('\x1b[2K');
+      this.writeEmitter.fire('  \x1b[3m' + grayColor + display.hint + resetColor + '\r\n');
+      lineCount++;
     }
-    
+
     this.suggestionListLines = lineCount - 1;
-    
+
     // Restore cursor position
     this.writeEmitter.fire('\x1b8');
   }
@@ -1600,7 +1205,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
       this.writeEmitter.fire('\x1b8'); // Restore cursor
       this.suggestionListLines = 0;
     }
-    // DON'T clear currentArgumentHelp or commandArgumentCache here - we want to preserve it!
+    // DON'T clear currentArgumentHelp here - we want to preserve it!
   }
 
   private handleDisconnect(): void {
@@ -1642,9 +1247,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.historyIndex = -1;
     this.tempLine = '';
     this.clearSelection();
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'lineChanged', line: '' });
-    }
+    this.dispatchToEngine({ kind: 'lineChanged', line: '' });
 
     if (command) {
       // Handle special commands
@@ -1812,10 +1415,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.currentLine = '';
     this.cursorPosition = 0;
     this.clearSelection();
-    if (this.pluginMode) {
-      this.dispatchToEngine({ kind: 'lineChanged', line: '' });
-    }
-    // Don't clear commandArgumentCache - preserve it across line clears
+    this.dispatchToEngine({ kind: 'lineChanged', line: '' });
   }
 
   private navigateHistory(direction: 'up' | 'down'): void {

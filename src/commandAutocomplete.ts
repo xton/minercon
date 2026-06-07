@@ -76,7 +76,6 @@ interface CommandCache {
 export interface SuggestionResult {
   suggestions: string[];
   argumentHelp?: string;
-  commandPath?: string;           // NEW: The actual command path determined
 }
 
 export class CommandAutocomplete {
@@ -886,12 +885,12 @@ export class CommandAutocomplete {
    */
   getSuggestions(input: string): SuggestionResult {
     if (!this.isReady) {
-      return { suggestions: [], argumentHelp: undefined, commandPath: undefined };
+      return { suggestions: [], argumentHelp: undefined };
     }
 
     const trimmed = input.trim();
     if (!trimmed.startsWith('/')) {
-      return { suggestions: [], argumentHelp: undefined, commandPath: undefined };
+      return { suggestions: [], argumentHelp: undefined };
     }
 
     const hasTrailingSpace = input.endsWith(' ');
@@ -903,18 +902,17 @@ export class CommandAutocomplete {
       const suggestions = Array.from(this.rootCommands.keys())
         .filter(cmd => cmd.startsWith(commandName || ''))
         .sort();
-      return { suggestions, argumentHelp: undefined, commandPath: '/' + (commandName || '') };
+      return { suggestions, argumentHelp: undefined };
     }
 
     // Find the command node
     const rootNode = this.rootCommands.get(commandName);
     if (!rootNode) {
-      return { suggestions: [], argumentHelp: undefined, commandPath: '/' + commandName };
+      return { suggestions: [], argumentHelp: undefined };
     }
 
     // Navigate through the parameter tree
     let currentParameters = rootNode.parameters;
-    let commandPath = '/' + commandName;
     let paramIndex = 1; // Start after the command name
 
     // Navigate through completed parts (not including what we're currently typing)
@@ -930,7 +928,6 @@ export class CommandAutocomplete {
       if (firstParam.type === ParameterType.SUBCOMMAND) {
         // Direct subcommand
         if (firstParam.name === currentPart || firstParam.literal === currentPart) {
-          commandPath += ' ' + currentPart;
           currentParameters = firstParam.members || [];
           navigated = true;
         }
@@ -939,13 +936,11 @@ export class CommandAutocomplete {
         for (const choice of firstParam.choices) {
           if (choice.type === ParameterType.SUBCOMMAND &&
             (choice.name === currentPart || choice.literal === currentPart)) {
-            commandPath += ' ' + currentPart;
             // IMPORTANT: Navigate into the selected choice's members
             currentParameters = choice.members || [];
             navigated = true;
             break;
           } else if (choice.type === ParameterType.LITERAL && choice.literal === currentPart) {
-            commandPath += ' ' + currentPart;
             // For literal choices, move to next parameter position
             currentParameters = currentParameters.slice(1);
             navigated = true;
@@ -954,7 +949,6 @@ export class CommandAutocomplete {
         }
       } else if (firstParam.type === ParameterType.LITERAL && firstParam.literal === currentPart) {
         // Literal parameter
-        commandPath += ' ' + currentPart;
         currentParameters = currentParameters.slice(1);
         navigated = true;
       }
@@ -981,7 +975,7 @@ export class CommandAutocomplete {
       suggestions = this.generateSuggestionsForCurrentPart(currentParameters, currentPart);
     }
 
-    return { suggestions, argumentHelp, commandPath };
+    return { suggestions, argumentHelp };
   }
 
   /**
