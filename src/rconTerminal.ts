@@ -59,6 +59,10 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private maxVisibleSuggestions: number = 10;
   private currentPage: number = 1;
 
+  // Plugin mode (server-side tab complete via RconTabComplete plugin)
+  private pluginMode: boolean = false;
+  private isLoadingCompletions: boolean = false;
+
   // For handling terminal resize
   private lastCommandOutputLines: number = 0;
   private needsClearBeforeSuggestions: boolean = false;
@@ -107,9 +111,25 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.writeEmitter.fire('  \x1b[2mCtrl+L: Clear screen  |  Ctrl+C: Cancel input\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mUp/Down: Command history  |  Esc: Clear line\x1b[0m\r\n\r\n');
     
-    // Initialize commands in background
-    this.initializeCommands();
-    
+    // Detect plugin or load command tree
+    this.detectAndInitialize();
+
+  }
+
+  private async detectAndInitialize(): Promise<void> {
+    try {
+      const response = await this.controller.send('tabcomplete');
+      if (response && response.includes('Returns tab completions for a partial command string')) {
+        this.pluginMode = true;
+        this.autocomplete.isReady = true;
+        this.writeEmitter.fire('\r\n\x1b[32m✓ Server tab-complete plugin detected — using server-side completions\x1b[0m\r\n\r\n');
+        this.showPrompt();
+        return;
+      }
+    } catch {
+      // probe failed, fall through to normal init
+    }
+    await this.initializeCommands();
   }
 
   private async initializeCommands(forceRefresh: boolean = false): Promise<void> {
@@ -696,7 +716,117 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.insertText(data);
   }
 
-  private handleTabComplete(): void {
+  private async queryPluginCompletions(input: string): Promise<string[]> {
+    if (!input.startsWith('/')) { return []; }
+    const withoutSlash = input.slice(1);
+    const trimmed = withoutSlash.trim();
+
+    const hasTrailingSpace = withoutSlash.endsWith(' ');
+    const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
+
+    // "-" signals a trailing space to the plugin; with no parts it requests root completions
+    let query: string;
+    if (parts.length === 0) {
+      query = '-';
+    } else {
+      query = parts.join(' ');
+      if (hasTrailingSpace) { query += ' -'; }
+    }
+
+    try {
+      const response = await this.controller.send(`tabcomplete ${query}`);
+      if (!response || response.trim().startsWith('(')) { return []; }
+      return response.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private async queryPluginUsage(input: string): Promise<string> {
+    if (!input.startsWith('/')) { return ''; }
+    const withoutSlash = input.slice(1).trim();
+    if (!withoutSlash) { return ''; }
+
+    try {
+      const response = await this.controller.send(`cmdusage ${withoutSlash}`);
+      if (!response || response.trim().startsWith('(')) { return ''; }
+      return response.trim();
+    } catch {
+      return '';
+    }
+  }
+
+  private async handleTabComplete(): Promise<void> {
+    if (this.pluginMode) {
+      const now = Date.now();
+      const timeSinceLastTab = now - this.lastTabTime;
+      this.lastTabTime = now;
+
+      // Quick re-tab while suggestions are visible: just cycle forward
+      if (this.isShowingSuggestions && this.currentSuggestions.length > 0 && timeSinceLastTab < 500) {
+        this.tabMode = true;
+        this.suggestionIndex = (this.suggestionIndex + 1) % this.currentSuggestions.length;
+        this.completeSelectedSuggestion();
+        this.showSuggestionList();
+        return;
+      }
+
+      // We already have suggestions fetched for exactly this input — they were
+      // pulled live as the user typed (showInlineSuggestions), so there's no
+      // need to hit `tabcomplete` again. Just start tab-completing through them.
+      if (this.isShowingSuggestions && this.currentSuggestions.length > 0 && this.originalInput === this.currentLine) {
+        this.tabMode = true;
+        this.suggestionIndex = 0;
+        this.completeSelectedSuggestion();
+        this.showSuggestionList();
+
+        if (!this.isLoadingCompletions) {
+          this.isLoadingCompletions = true;
+          const queriedLine = this.originalInput;
+          try {
+            const usage = await this.queryPluginUsage(queriedLine);
+            if (this.isShowingSuggestions && this.originalInput === queriedLine) {
+              this.currentArgumentHelp = usage;
+              this.showSuggestionList();
+            }
+          } finally {
+            this.isLoadingCompletions = false;
+          }
+        }
+        return;
+      }
+
+      if (this.isLoadingCompletions) { return; }
+      this.isLoadingCompletions = true;
+      try {
+        // RCON serializes requests — concurrent sends on the same connection
+        // cause the server to drop it, so query one at a time. But don't make
+        // the user wait on the (purely supplementary) usage line before the
+        // completion itself is applied — apply it as soon as it's ready, then
+        // patch the usage header in afterwards.
+        const completions = await this.queryPluginCompletions(this.currentLine);
+        if (completions.length === 0) { this.hideSuggestions(); return; }
+        this.currentSuggestions = completions;
+        this.currentArgumentHelp = '';
+        this.isShowingSuggestions = true;
+        this.suggestionIndex = 0;
+        const queriedLine = this.currentLine;
+        this.originalInput = queriedLine;
+        this.tabMode = true;
+        this.completeSelectedSuggestion();
+        this.showSuggestionList();
+
+        const usage = await this.queryPluginUsage(queriedLine);
+        if (this.isShowingSuggestions && this.originalInput === queriedLine) {
+          this.currentArgumentHelp = usage;
+          this.showSuggestionList();
+        }
+      } finally {
+        this.isLoadingCompletions = false;
+      }
+      return;
+    }
+
     if (!this.autocomplete.isReady) {return;}
 
     const now = Date.now();
@@ -729,7 +859,52 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.showSuggestionList();
   }
 
-  private handleShiftTab(): void {
+  private async handleShiftTab(): Promise<void> {
+    if (this.pluginMode) {
+      const now = Date.now();
+      this.lastTabTime = now;
+
+      // Suggestions already visible: just cycle backward
+      if (this.isShowingSuggestions && this.currentSuggestions.length > 0) {
+        this.tabMode = true;
+        this.suggestionIndex--;
+        if (this.suggestionIndex < 0) { this.suggestionIndex = this.currentSuggestions.length - 1; }
+        this.completeSelectedSuggestion();
+        this.showSuggestionList();
+        return;
+      }
+
+      if (this.isLoadingCompletions) { return; }
+      this.isLoadingCompletions = true;
+      try {
+        // RCON serializes requests — concurrent sends on the same connection
+        // cause the server to drop it, so query one at a time. But don't make
+        // the user wait on the (purely supplementary) usage line before the
+        // completion itself is applied — apply it as soon as it's ready, then
+        // patch the usage header in afterwards.
+        const completions = await this.queryPluginCompletions(this.currentLine);
+        if (completions.length === 0) { this.hideSuggestions(); return; }
+        this.currentSuggestions = completions;
+        this.currentArgumentHelp = '';
+        this.isShowingSuggestions = true;
+        this.suggestionIndex = completions.length - 1;
+        const queriedLine = this.currentLine;
+        this.originalInput = queriedLine;
+        this.tabMode = true;
+        this.completeSelectedSuggestion();
+        this.showSuggestionList();
+
+        const usage = await this.queryPluginUsage(queriedLine);
+        if (this.isShowingSuggestions && this.originalInput === queriedLine) {
+          this.currentArgumentHelp = usage;
+          this.showSuggestionList();
+        }
+      } finally {
+        this.isLoadingCompletions = false;
+      }
+      return;
+    }
+
     if (!this.autocomplete.isReady) {return;}
     
     const now = Date.now();
@@ -790,6 +965,45 @@ export class RconTerminal implements vscode.Pseudoterminal {
   }
 
   private showInlineSuggestions(): void {
+    if (this.pluginMode) {
+      // The input just changed, so any usage line fetched for the previous
+      // input/command is now stale — drop it until the next Tab press refetches it
+      this.currentArgumentHelp = '';
+
+      // Skip if a query is already in-flight — RCON serializes requests, and we
+      // don't want to flood the server with one round trip per keystroke
+      if (this.isLoadingCompletions) { return; }
+      this.isLoadingCompletions = true;
+      const lineAtStart = this.currentLine;
+      (async () => {
+        const completions = await this.queryPluginCompletions(lineAtStart);
+        this.isLoadingCompletions = false;
+
+        // Input changed while we were waiting — discard and re-query for the latest
+        if (this.currentLine !== lineAtStart) {
+          this.showInlineSuggestions();
+          return;
+        }
+
+        this.clearSuggestionDisplay();
+        if (completions.length === 0) {
+          this.isShowingSuggestions = false;
+          this.clearArgumentDisplay();
+          return;
+        }
+        this.currentSuggestions = completions;
+        this.isShowingSuggestions = true;
+        if (this.suggestionIndex < 0 || this.suggestionIndex >= completions.length) {
+          this.suggestionIndex = 0;
+        }
+        this.visibleSuggestionsStart = 0;
+        this.currentPage = 1;
+        if (!this.tabMode) { this.originalInput = this.currentLine; }
+        this.showSuggestionList();
+      })();
+      return;
+    }
+
     if (!this.autocomplete.isReady) {return;}
 
     // Get suggestions for current input
@@ -901,9 +1115,21 @@ export class RconTerminal implements vscode.Pseudoterminal {
     
     // Move to next line for list
     this.writeEmitter.fire('\r\n');
-    
+
     let lineCount = 1;
-    
+
+    // In plugin mode, show usage from cmdusage as a header above the completions
+    if (this.pluginMode && this.currentArgumentHelp) {
+      const usageLines = this.currentArgumentHelp.split('\n');
+      for (const usageLine of usageLines) {
+        const trimmed = usageLine.trim();
+        if (!trimmed) { continue; }
+        this.writeEmitter.fire('\x1b[2K');
+        this.writeEmitter.fire('\x1b[36m' + CommandAutocomplete.formatMinecraftColors(trimmed) + '\x1b[0m\r\n');
+        lineCount++;
+      }
+    }
+
     // Get only the completed parts of the command (everything before the last space or the whole line if no space)
     let completedText = '';
     if (this.currentLine.includes(' ')) {
@@ -1464,21 +1690,36 @@ export class RconTerminal implements vscode.Pseudoterminal {
       } else if (command === '/help') {
         this.showHelp();
       } else if (command === '/reload-commands' || command === '/refresh-commands') {
-        this.initializeCommands(true); // Force refresh
-      } else if (command === '/clear-cache') {
-        this.autocomplete.clearCache();
-        this.writeEmitter.fire('\x1b[33mCommand cache cleared.\x1b[0m\r\n\r\n');
-        this.showPrompt();
-      } else if (command === '/cache-info') {
-        const info = this.autocomplete.getCacheInfo();
-        if (info.exists) {
-          this.writeEmitter.fire('\x1b[36mCache Status:\x1b[0m\r\n');
-          this.writeEmitter.fire('  Age: ' + info.age + '\r\n');
-          this.writeEmitter.fire('  Last updated: ' + info.lastUpdated?.toLocaleString() + '\r\n\r\n');
+        if (this.pluginMode) {
+          this.writeEmitter.fire('\x1b[33mUsing server-side tab completion — no command cache to reload.\x1b[0m\r\n\r\n');
+          this.showPrompt();
         } else {
-          this.writeEmitter.fire('\x1b[33mNo cache found.\x1b[0m\r\n\r\n');
+          this.initializeCommands(true); // Force refresh
         }
-        this.showPrompt();
+      } else if (command === '/clear-cache') {
+        if (this.pluginMode) {
+          this.writeEmitter.fire('\x1b[33mUsing server-side tab completion — no cache.\x1b[0m\r\n\r\n');
+          this.showPrompt();
+        } else {
+          this.autocomplete.clearCache();
+          this.writeEmitter.fire('\x1b[33mCommand cache cleared.\x1b[0m\r\n\r\n');
+          this.showPrompt();
+        }
+      } else if (command === '/cache-info') {
+        if (this.pluginMode) {
+          this.writeEmitter.fire('\x1b[33mUsing server-side tab completion — no cache.\x1b[0m\r\n\r\n');
+          this.showPrompt();
+        } else {
+          const info = this.autocomplete.getCacheInfo();
+          if (info.exists) {
+            this.writeEmitter.fire('\x1b[36mCache Status:\x1b[0m\r\n');
+            this.writeEmitter.fire('  Age: ' + info.age + '\r\n');
+            this.writeEmitter.fire('  Last updated: ' + info.lastUpdated?.toLocaleString() + '\r\n\r\n');
+          } else {
+            this.writeEmitter.fire('\x1b[33mNo cache found.\x1b[0m\r\n\r\n');
+          }
+          this.showPrompt();
+        }
       } else {
         // Add to history if not duplicate
         if (this.history.length === 0 || this.history[this.history.length - 1] !== command) {
