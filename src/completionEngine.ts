@@ -45,13 +45,44 @@ function isFailureResponse(response: string | undefined): boolean {
   return !response || response.trim().startsWith('(');
 }
 
+/**
+ * `cmdusage` echoes the command's help text verbatim, Minecraft `§` color
+ * codes and all (e.g. "§b§bmvp create§b §a <portal-name> [destination]"). The
+ * hint display applies its own ANSI styling on top of the plain usage string,
+ * so any embedded color codes need to come out here, at the parsing boundary
+ * — otherwise they show up as literal `§b` noise mixed in with our own escapes.
+ */
+function stripMinecraftColorCodes(text: string): string {
+  // Handle both § and Â§ encodings (UTF-8 mangling some servers produce).
+  return text.replace(/[§Â]§[0-9a-fklmnor]/g, '').replace(/§[0-9a-fklmnor]/g, '');
+}
+
 export function parseCompletionsResponse(response: string | undefined): string[] {
   if (isFailureResponse(response)) { return []; }
   return response!.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 }
 
+/**
+ * `cmdusage` resolves an input to one of three shapes: a clean failure like
+ * "(too broad — use /help mvp or provide a subcommand)" (caught above), a
+ * single matching command's usage line, or — when the input is still an
+ * ambiguous prefix of multiple subcommands (e.g. "mvp c" matching both "mvp
+ * create" and "mvp config") — one usage line per candidate, newline-separated.
+ *
+ * Only the single-match shape represents *the* usage for what's been typed —
+ * multiple candidates means the command still hasn't resolved to one thing,
+ * so (same as the explicit failure case) there's nothing unambiguous to show
+ * yet. This is the actual "is there a single usage line" signal — the server
+ * already does the resolution; we just need to recognize its shape.
+ */
 export function parseUsageResponse(response: string | undefined): string {
-  return isFailureResponse(response) ? '' : response!.trim();
+  if (isFailureResponse(response)) { return ''; }
+
+  const lines = response!.split('\n')
+    .map(line => stripMinecraftColorCodes(line).trim())
+    .filter(line => line.length > 0);
+
+  return lines.length === 1 ? lines[0] : '';
 }
 
 // ─────────────────────────────── state types ───────────────────────────────
@@ -63,6 +94,25 @@ export type Usage =
 
 function usageMatches(usage: Usage, line: string): boolean {
   return usage.kind !== 'none' && usage.forQuery === line;
+}
+
+/**
+ * Once a command has resolved to a single usage line, that usage stays valid
+ * across further keystrokes that only change the *arguments* — the command
+ * portion itself doesn't change, and `formatArgumentHint` already recomputes
+ * which argument is highlighted purely from `(usage, line)`. "Covers" means
+ * the cached query's words are a prefix of the current line's words, i.e. the
+ * command portion hasn't changed (only what comes after it has, or the user
+ * is still extending it). An empty-text usage (ambiguous prefix or "too
+ * broad") never covers anything — there's nothing resolved to stick to, so
+ * the next natural pause point should ask again.
+ */
+function usageCoversLine(usage: Usage, line: string): boolean {
+  if (usage.kind !== 'ready' || usage.text === '') { return false; }
+  const cachedWords = usage.forQuery.trim().split(/\s+/).filter(w => w.length > 0);
+  const lineWords = line.trim().split(/\s+/).filter(w => w.length > 0);
+  if (lineWords.length < cachedWords.length) { return false; }
+  return cachedWords.every((word, i) => word === lineWords[i]);
 }
 
 export type Mode =
@@ -345,8 +395,38 @@ function onCompletionsResult(m: Machine, requestId: number, items: string[], now
     // keeps arrow-key navigation stable while the user keeps typing.
     const previous = m.phase.kind === 'open' ? m.phase.selectedIndex : -1;
     const selectedIndex = (previous >= 0 && previous < items.length) ? previous : 0;
-    const phase: OpenPhase = { kind: 'open', query: forLine, items, selectedIndex, usage: { kind: 'none' }, mode: { kind: 'preview' } };
-    return { machine: { ...m, phase, fetch: { kind: 'idle' } }, effects: [renderEffect(phase)] };
+
+    // Sticky usage: once a command has resolved to a single usage line, keep
+    // showing it across further keystrokes within that same command — only
+    // the highlighted argument changes, which formatArgumentHint derives
+    // purely from (usage, line), no fetch needed. A new command (or one that
+    // hasn't resolved yet) starts fresh — the old usage no longer applies.
+    const carriedUsage: Usage = (m.phase.kind === 'open' && usageCoversLine(m.phase.usage, forLine))
+      ? m.phase.usage
+      : { kind: 'none' };
+
+    const basePhase: OpenPhase = { kind: 'open', query: forLine, items, selectedIndex, usage: carriedUsage, mode: { kind: 'preview' } };
+
+    // Nothing resolved for this command yet, but the line looks like a
+    // natural pause point — the user just finished a token (trailing space),
+    // the same "word boundary" signal the empty-completions hint-phase above
+    // keys off. Worth asking whether it's now resolved to a single command.
+    // (Asking on *every* keystroke would double the round trips per
+    // character typed — the sticky cache plus this pause-point trigger keeps
+    // it to roughly one usage fetch per command, not one per character.)
+    if (carriedUsage.kind === 'none' && forLine.endsWith(' ')) {
+      const usageQuery = buildUsageQuery(forLine);
+      if (usageQuery !== null) {
+        const usageRequestId = m.seq + 1;
+        const phase: OpenPhase = { ...basePhase, usage: { kind: 'loading', forQuery: forLine } };
+        return {
+          machine: { seq: usageRequestId, phase, fetch: { kind: 'busy', requestId: usageRequestId, purpose: { kind: 'usage' }, forLine, queued: null } },
+          effects: [{ kind: 'fetchUsage', requestId: usageRequestId, query: usageQuery }, renderEffect(phase)],
+        };
+      }
+    }
+
+    return { machine: { ...m, phase: basePhase, fetch: { kind: 'idle' } }, effects: [renderEffect(basePhase)] };
   }
 
   // purpose.reason is 'tab' or 'shiftTab': apply a suggestion right away and

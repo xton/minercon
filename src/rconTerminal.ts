@@ -750,20 +750,35 @@ export class RconTerminal implements vscode.Pseudoterminal {
         this.applySuggestionText(query, effect.text);
         break;
       }
-      case 'render':
+      case 'render': {
         this.currentSuggestions = effect.items;
         this.suggestionIndex = effect.selectedIndex;
         this.currentArgumentHelp = effect.usage ?? '';
         this.clearSuggestionDisplay();
+
+        // `effect.usage` is only ever a single, resolved usage line — the
+        // engine (parseUsageResponse) already collapses "(too broad...)"
+        // failures *and* multi-candidate ambiguous-prefix responses (e.g.
+        // "mvp c" matching both "mvp create" and "mvp config") down to empty,
+        // so a non-null `display` here means the command portion is fully
+        // resolved. That's true independent of how many *argument*-level
+        // completions remain — so show it alongside the list whenever it's
+        // available, not just when the list itself has narrowed to one item.
+        const display = effect.usage ? formatArgumentHint(effect.usage, this.currentLine) : null;
+        let lines: string[] = [];
         if (effect.items.length > 0) {
           this.isShowingSuggestions = true;
-          this.showSuggestionList();
+          lines = this.buildSuggestionListLines();
+          if (display) {
+            lines = lines.concat(this.buildArgumentHintLines(display));
+          }
         } else {
           this.isShowingSuggestions = false;
-          const display = effect.usage ? formatArgumentHint(effect.usage, this.currentLine) : null;
-          if (display) { this.showArgumentHint(display); }
+          if (display) { lines = this.buildArgumentHintLines(display); }
         }
+        this.renderSuggestionArea(lines);
         break;
+      }
       case 'hide':
         this.hideSuggestions();
         break;
@@ -837,44 +852,18 @@ export class RconTerminal implements vscode.Pseudoterminal {
   }
 
   // UPDATED: Better suggestion list rendering
-  private showSuggestionList(): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-    
+  /**
+   * Builds the suggestion list's content lines — fully ANSI-styled, but with
+   * no `\x1b[2K`/`\r\n` baked in. `renderSuggestionArea` is the single place
+   * that turns a list of content strings into clear-and-draw ANSI, whether
+   * it's drawing the list alone, the hint alone, or (when there's exactly one
+   * suggestion left) both stacked together in one frame.
+   */
+  private buildSuggestionListLines(): string[] {
     // Calculate the visible window based on the selected index
     this.updateVisibleWindow();
-    
-    // NEW: Handle large previous outputs by using absolute positioning
-    if (this.needsClearBeforeSuggestions) {
-      // Clear any residual rendering artifacts
-      this.writeEmitter.fire('\x1b[J'); // Clear from cursor to end of screen
-      this.needsClearBeforeSuggestions = false;
-    }
-    
-    // Save cursor position - use more reliable method
-    this.writeEmitter.fire('\x1b7'); // Save cursor
-    
-    // Clear old list area first if it exists
-    if (this.suggestionListLines > 0) {
-      // Move to the start of the suggestion area
-      this.writeEmitter.fire('\r\n');
-      for (let i = 0; i < this.suggestionListLines; i++) {
-        this.writeEmitter.fire('\x1b[2K'); // Clear entire line
-        if (i < this.suggestionListLines - 1) {
-          this.writeEmitter.fire('\r\n');
-        }
-      }
-      // Move back up
-      if (this.suggestionListLines > 0) {
-        this.writeEmitter.fire(`\x1b[${this.suggestionListLines}A`);
-      }
-      // Move back to saved position
-      this.writeEmitter.fire('\r');
-    }
-    
-    // Move to next line for list
-    this.writeEmitter.fire('\r\n');
 
-    let lineCount = 1;
+    const lines: string[] = [];
 
     // Get only the completed parts of the command (everything before the last space or the whole line if no space)
     let completedText = '';
@@ -882,74 +871,80 @@ export class RconTerminal implements vscode.Pseudoterminal {
       // If there's a space, get everything up to and including the last space
       const lastSpaceIndex = this.currentLine.lastIndexOf(' ');
       completedText = this.currentLine.substring(0, lastSpaceIndex + 1);
-    } else {
-      // No space yet, don't add any concealed text (list appears right after prompt)
-      completedText = '';
     }
-    
+
     const concealedText = '\x1b[8m'; // Concealed/hidden text
     const resetColor = '\x1b[0m';
-    
+    const prefix = completedText ? concealedText + completedText + resetColor : '';
+
     // Show indicator if there are items above the visible window
     if (this.visibleSuggestionsStart > 0) {
-      this.writeEmitter.fire('\x1b[2K'); // Clear line first
-      if (completedText) {
-        this.writeEmitter.fire(concealedText + completedText + resetColor);
-      }
-      this.writeEmitter.fire('\x1b[90m  ▲ (' + this.visibleSuggestionsStart + ' more above)\x1b[0m\r\n');
-      lineCount++;
+      lines.push(prefix + '\x1b[90m  ▲ (' + this.visibleSuggestionsStart + ' more above)\x1b[0m');
     }
-    
+
     // Show visible suggestions in vertical list
     const visibleEnd = Math.min(
       this.visibleSuggestionsStart + this.maxVisibleSuggestions,
       this.currentSuggestions.length
     );
-    
+
     for (let i = this.visibleSuggestionsStart; i < visibleEnd; i++) {
-      this.writeEmitter.fire('\x1b[2K'); // Clear line first
-      
-      // Add concealed text for alignment (only completed parts)
-      if (completedText) {
-        this.writeEmitter.fire(concealedText + completedText + resetColor);
-      }
-      
       // Show selection indicator and item
       if (i === this.suggestionIndex) {
         // Yellow for selected item with arrow indicator
-        this.writeEmitter.fire('\x1b[93m→ ' + this.currentSuggestions[i] + '\x1b[0m\r\n');
+        lines.push(prefix + '\x1b[93m→ ' + this.currentSuggestions[i] + '\x1b[0m');
       } else {
         // Gray for other items with space for alignment
-        this.writeEmitter.fire('\x1b[90m  ' + this.currentSuggestions[i] + '\x1b[0m\r\n');
+        lines.push(prefix + '\x1b[90m  ' + this.currentSuggestions[i] + '\x1b[0m');
       }
-      lineCount++;
     }
-    
+
     // Show indicator if there are items below the visible window
     if (visibleEnd < this.currentSuggestions.length) {
       const remaining = this.currentSuggestions.length - visibleEnd;
-      this.writeEmitter.fire('\x1b[2K'); // Clear line first
-      if (completedText) {
-        this.writeEmitter.fire(concealedText + completedText + resetColor);
-      }
-      this.writeEmitter.fire('\x1b[90m  ▼ (' + remaining + ' more below)\x1b[0m\r\n');
-      lineCount++;
+      lines.push(prefix + '\x1b[90m  ▼ (' + remaining + ' more below)\x1b[0m');
     }
-    
+
     // Show current position and page indicator at bottom
-    this.writeEmitter.fire('\x1b[2K'); // Clear line first
-    if (completedText) {
-      this.writeEmitter.fire(concealedText + completedText + resetColor);
-    }
-    this.writeEmitter.fire('\x1b[90m  [' + (this.suggestionIndex + 1) + '/' + this.currentSuggestions.length + '] ');
-    this.writeEmitter.fire('Page ' + this.currentPage + '/' + this.totalPages + '\x1b[0m');
-    
-    this.suggestionListLines = lineCount;
-    
-    // Restore cursor position
-    this.writeEmitter.fire('\x1b8');
+    lines.push(
+      prefix + '\x1b[90m  [' + (this.suggestionIndex + 1) + '/' + this.currentSuggestions.length + '] ' +
+      'Page ' + this.currentPage + '/' + this.totalPages + '\x1b[0m'
+    );
+
+    return lines;
   }
-  
+
+  /**
+   * Draws a single frame of suggestion-area content — one save/clear/restore
+   * cycle, regardless of whether `lines` came from the list, the hint, or
+   * both stacked together. `clearSuggestionDisplay` (called centrally before
+   * this, by `executeEngineEffect`'s `render` case) has already erased
+   * whatever was there before, so this only ever draws onto a blank area —
+   * each line gets its own `\x1b[2K` defensively, but there's no "clear the
+   * old N lines" dance to duplicate here.
+   */
+  private renderSuggestionArea(lines: string[]): void {
+    if (lines.length === 0) { return; }
+
+    if (this.needsClearBeforeSuggestions) {
+      this.writeEmitter.fire('\x1b[J'); // Clear from cursor to end of screen
+      this.needsClearBeforeSuggestions = false;
+    }
+
+    this.writeEmitter.fire('\x1b7'); // Save cursor
+    this.writeEmitter.fire('\r\n');  // Move to the display area
+
+    for (let i = 0; i < lines.length; i++) {
+      this.writeEmitter.fire('\x1b[2K'); // Clear line first
+      this.writeEmitter.fire(lines[i]);
+      if (i < lines.length - 1) { this.writeEmitter.fire('\r\n'); }
+    }
+
+    this.suggestionListLines = lines.length;
+
+    this.writeEmitter.fire('\x1b8'); // Restore cursor
+  }
+
   private updateVisibleWindow(): void {
     // Keep a buffer of 2 items above and below the selected item when possible
     const buffer = 2;
@@ -1118,76 +1113,41 @@ export class RconTerminal implements vscode.Pseudoterminal {
     }
   }
 
-  // Renders the argument-hint display: the usage line with completed parts
-  // concealed and the current argument highlighted, plus a contextual hint
-  // for that argument. Shown in place of the suggestion list when a command
-  // has no completions to offer but does have argument structure to show
-  // (e.g. "/gamemode creative " — nothing to complete for the target selector,
-  // but worth showing what comes next). The actual parsing of `usage`/`line`
-  // into positions and hint text is pure — see argumentHint.ts — this is just
-  // the ANSI rendering of that already-computed structure.
-  private showArgumentHint(display: ArgumentHintDisplay): void {
-    if (this.needsClearBeforeSuggestions) {
-      this.writeEmitter.fire('\x1b[J'); // Clear from cursor to end
-      this.needsClearBeforeSuggestions = false;
-    }
-
-    // Save cursor position
-    this.writeEmitter.fire('\x1b7');
-
-    // Clear old list area
-    if (this.suggestionListLines > 0) {
-      this.writeEmitter.fire('\r\n');
-      for (let i = 0; i < this.suggestionListLines; i++) {
-        this.writeEmitter.fire('\x1b[2K'); // Clear entire line
-        if (i < this.suggestionListLines - 1) {
-          this.writeEmitter.fire('\r\n');
-        }
-      }
-      if (this.suggestionListLines > 0) {
-        this.writeEmitter.fire(`\x1b[${this.suggestionListLines}A`);
-      }
-    }
-
-    // Move to next line for argument display
-    this.writeEmitter.fire('\r\n');
-
-    let lineCount = 1;
-
-    const concealedText = '\x1b[8m';
+  /**
+   * Builds the argument-hint's content lines: the usage line, shown in full
+   * and literally — with the argument the user is currently editing bolded
+   * and everything else (command prefix and other tokens alike) gray — plus
+   * an optional contextual-hint line for that argument. Same "fully-styled
+   * content strings, no \x1b[2K/\r\n" convention as `buildSuggestionListLines`,
+   * so `renderSuggestionArea` can draw either or both in one frame.
+   *
+   * Shown alongside or in place of the suggestion list when a command has
+   * argument structure worth showing — e.g. "/gamemode creative " (nothing
+   * left to complete for the target selector, but worth showing what comes
+   * next), or "/gamemode cr" (one match left — "creative" — where seeing the
+   * full usage helps confirm that's the right command to commit to). The
+   * actual parsing of `usage`/`line` into positions and hint text is pure —
+   * see argumentHint.ts — this is just the ANSI rendering of that
+   * already-computed structure.
+   */
+  private buildArgumentHintLines(display: ArgumentHintDisplay): string[] {
     const resetColor = '\x1b[0m';
     const grayColor = '\x1b[90m';
     const boldWhite = '\x1b[1;97m';
 
-    // Clear the line first
-    this.writeEmitter.fire('\x1b[2K');
-
-    let usageLine = '  ' + concealedText + display.commandPrefixText + resetColor;
-
+    let usageLine = '  ' + grayColor + display.commandPrefixText + resetColor;
     for (let i = 0; i < display.tokens.length; i++) {
       usageLine += ' ';
-      if (i < display.completedArgCount) {
-        usageLine += concealedText + display.argumentParts[i] + resetColor;
-      } else if (i === display.currentArgIndex) {
-        usageLine += boldWhite + display.tokens[i] + resetColor;
-      } else {
-        usageLine += grayColor + display.tokens[i] + resetColor;
-      }
+      usageLine += (i === display.currentArgIndex)
+        ? boldWhite + display.tokens[i] + resetColor
+        : grayColor + display.tokens[i] + resetColor;
     }
 
-    this.writeEmitter.fire(usageLine + '\r\n');
-    lineCount++;
-
+    const lines = [usageLine];
     if (display.hint) {
-      this.writeEmitter.fire('\x1b[2K');
-      this.writeEmitter.fire('  \x1b[3m' + grayColor + display.hint + resetColor + '\r\n');
-      lineCount++;
+      lines.push('  \x1b[3m' + grayColor + display.hint + resetColor);
     }
-
-    this.suggestionListLines = lineCount - 1;
-
-    // Restore cursor position
-    this.writeEmitter.fire('\x1b8');
+    return lines;
   }
 
   private clearArgumentDisplay(): void {

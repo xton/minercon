@@ -22,28 +22,23 @@ suite('formatArgumentHint', () => {
   test('still typing the command/subcommand: currentArgIndex is -1, no hint', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemo');
     assert.strictEqual(d!.currentArgIndex, -1);
-    assert.strictEqual(d!.completedArgCount, 0);
     assert.strictEqual(d!.hint, null);
   });
 
   test('trailing space after the command: ready for the first argument', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemode ');
     assert.strictEqual(d!.currentArgIndex, 0);
-    assert.strictEqual(d!.completedArgCount, 0);
     assert.strictEqual(d!.hint, 'Game mode option');
   });
 
   test('mid-way through typing the first argument: still on argument 0', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemode crea');
     assert.strictEqual(d!.currentArgIndex, 0);
-    assert.deepStrictEqual(d!.argumentParts, ['crea']);
-    assert.strictEqual(d!.completedArgCount, 0);
   });
 
   test('trailing space after the first argument: argument 0 completed, on argument 1', () => {
     const d = formatArgumentHint('gamemode <mode> [<target>]', '/gamemode creative ');
     assert.strictEqual(d!.currentArgIndex, 1);
-    assert.strictEqual(d!.completedArgCount, 1);
     assert.strictEqual(d!.hint, 'Player name or @selector (@p, @a, @r, @e, @s)');
   });
 

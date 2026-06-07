@@ -13,14 +13,10 @@
 const ARGUMENT_TOKEN_PATTERN = /(<[^>]+>|\[[^\]]+\]|\([^)]+\))/g;
 
 export interface ArgumentHintDisplay {
-  /** The literal command-path prefix (with leading slash) to render concealed, e.g. "/gamemode". */
+  /** The literal command-path prefix (with leading slash), e.g. "/gamemode". */
   commandPrefixText: string;
   /** Argument tokens parsed out of the usage string, in order, e.g. ["<mode>", "[<target>]"]. */
   tokens: string[];
-  /** The argument words the user has actually typed so far (excludes the command path). */
-  argumentParts: string[];
-  /** How many of `tokens` correspond to arguments the user has already finished typing. */
-  completedArgCount: number;
   /** Index into `tokens` of the argument currently being typed, or -1 if still on the command path. */
   currentArgIndex: number;
   /** A short contextual hint for the current argument, if we have one for its shape. */
@@ -43,29 +39,22 @@ export function formatArgumentHint(usage: string, line: string): ArgumentHintDis
 
   const parts = line.trim().split(' ').filter(p => p.length > 0);
   const hasTrailingSpace = line.endsWith(' ');
-  const argumentParts = parts.slice(commandPrefixWordCount);
-
-  let completedArgCount = 0;
-  if (hasTrailingSpace) {
-    completedArgCount = argumentParts.length;
-  } else if (argumentParts.length > 0) {
-    completedArgCount = argumentParts.length - 1;
-  }
+  const argumentCount = Math.max(0, parts.length - commandPrefixWordCount);
 
   let currentArgIndex: number;
-  if (argumentParts.length === 0 && !hasTrailingSpace) {
-    currentArgIndex = -1;        // still typing the command/subcommand itself
+  if (argumentCount === 0 && !hasTrailingSpace) {
+    currentArgIndex = -1;                  // still typing the command/subcommand itself
   } else if (hasTrailingSpace) {
-    currentArgIndex = argumentParts.length;       // ready for the next argument
+    currentArgIndex = argumentCount;       // ready for the next argument
   } else {
-    currentArgIndex = argumentParts.length - 1;   // currently typing this argument
+    currentArgIndex = argumentCount - 1;   // currently typing this argument
   }
 
   const hint = (currentArgIndex >= 0 && currentArgIndex < tokens.length)
     ? hintForToken(tokens[currentArgIndex])
     : null;
 
-  return { commandPrefixText, tokens, argumentParts, completedArgCount, currentArgIndex, hint };
+  return { commandPrefixText, tokens, currentArgIndex, hint };
 }
 
 function hintForToken(token: string): string | null {

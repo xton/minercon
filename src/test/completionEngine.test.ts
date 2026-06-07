@@ -78,6 +78,31 @@ suite('completionEngine: response parsing', () => {
     assert.strictEqual(parseUsageResponse('(no command found — provide a more specific input)'), '');
     assert.strictEqual(parseUsageResponse(undefined), '');
   });
+
+  test('parseUsageResponse strips embedded Minecraft color codes', () => {
+    assert.strictEqual(
+      parseUsageResponse('§b§bmvp create§b §a <portal-name> [destination]'),
+      'mvp create  <portal-name> [destination]'
+    );
+    assert.strictEqual(parseUsageResponse('§4/kill §c<target>'), '/kill <target>');
+  });
+
+  test('parseUsageResponse: an ambiguous prefix yields one usage line per candidate — not yet resolved, so no usage to show', () => {
+    assert.strictEqual(
+      parseUsageResponse(
+        'mvp create <portal-name> [destination] - Creates a new portal.\n' +
+        'mvp config <property> [value] - Allows you to set Global MV Portals Variables.'
+      ),
+      ''
+    );
+  });
+
+  test('parseUsageResponse: a resolved single-match response (with trailing description) yields that one usage line', () => {
+    assert.strictEqual(
+      parseUsageResponse('mvp create <portal-name> [destination] - Creates a new portal, assuming you have a region selected.'),
+      'mvp create <portal-name> [destination] - Creates a new portal, assuming you have a region selected.'
+    );
+  });
 });
 
 // ───────────────────────────── the state machine ─────────────────────────────
@@ -98,11 +123,15 @@ suite('completionEngine: typing flow', () => {
       assert.deepStrictEqual(m.phase.items, ['survival', 'creative']);
       assert.strictEqual(m.phase.selectedIndex, 0);
       assert.strictEqual(m.phase.mode.kind, 'preview');     // not applied to the line — just previewed
-      assert.strictEqual(m.phase.usage.kind, 'none');       // usage isn't fetched while just typing
+      // The line ends with a space — a natural pause point — so the engine
+      // also kicks off a usage fetch in the background, to show alongside
+      // the list once/if it resolves to a single command.
+      assert.strictEqual(m.phase.usage.kind, 'loading');
     }
+    assert.deepStrictEqual(kinds(r.effects), ['fetchUsage', 'render']);
     const render = find(r.effects, 'render')!;
     assert.deepStrictEqual(render.items, ['survival', 'creative']);
-    assert.strictEqual(render.usage, null);
+    assert.strictEqual(render.usage, null);               // usage not back yet
   });
 
   test('empty completions with nothing to show usage for closes the list', () => {
@@ -179,7 +208,10 @@ suite('completionEngine: typing flow', () => {
 
   test('preserves the selected index across re-fetches while typing, if still in range', () => {
     let m = createMachine();
-    m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
+    // No trailing space — keeps this test focused on selection-index
+    // preservation rather than the "natural pause point" usage fetch that a
+    // trailing space would also trigger (covered separately).
+    m = step(m, { kind: 'lineChanged', line: '/gamemode' }).machine;
     let fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
     m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 }).machine;
 
@@ -239,7 +271,17 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     let m = createMachine();
     m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    return step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
+
+    // The trailing space is a "natural pause point" — the engine now also
+    // kicks off a background usage fetch right away. Resolve it (empty —
+    // "gamemode" alone isn't a fully resolved usage) so the returned machine
+    // is idle, the way these Tab-focused tests expect; usage behavior itself
+    // is covered by the usage-staleness and rendering-flow tests.
+    if (m.fetch.kind === 'busy' && m.fetch.purpose.kind === 'usage') {
+      m = step(m, { kind: 'usageResult', requestId: m.fetch.requestId, text: '' }).machine;
+    }
+    return m;
   }
 
   test('Tab reuses already-fetched suggestions for the current line — no extra round trip', () => {
@@ -247,8 +289,12 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     assert.strictEqual(m.fetch.kind, 'idle');
 
     const r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
-    assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'fetchUsage', 'render']);
+    // Usage for "/gamemode " was already fetched at the pause point when the
+    // list opened (see openWithItems) — Tab reuses that too, so neither a
+    // completions re-query nor a fresh usage fetch should appear here.
+    assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
     assert.strictEqual(find(r.effects, 'fetchCompletions'), undefined);   // <-- the bug we found: must not re-query
+    assert.strictEqual(find(r.effects, 'fetchUsage'), undefined);          // <-- nor re-fetch usage for a known line
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'survival');
     assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.mode.kind : '', 'cycling');
   });
@@ -288,9 +334,10 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
     let r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });           // → cycling, index 0 ("survival")
     let cur = r.machine;
-    const usageFetchId = find(r.effects, 'fetchUsage')!.requestId;
-    // resolve the background usage fetch so the wire is free for what follows
-    cur = step(cur, { kind: 'usageResult', requestId: usageFetchId, text: '/gamemode <mode>' }).machine;
+    // Usage for "/gamemode " was already fetched at the pause point when the
+    // list opened (see openWithItems) — Tab reuses it, so the wire is
+    // already free for what follows; nothing to resolve here.
+    assert.strictEqual(cur.fetch.kind, 'idle');
 
     r = step(cur, { kind: 'tab', line: '/gamemode survival', now: 1100 });     // 100ms later: quick re-press, advance
     assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
@@ -304,16 +351,20 @@ suite('completionEngine: Tab / Shift-Tab', () => {
   });
 
   test('a re-derive request that arrives while the wire is busy is queued, not dropped, and fires once it frees up', () => {
-    const m = openWithItems(['survival', 'creative', 'adventure']);
-    // Tab applies "survival" immediately and kicks off a background usage fetch —
-    // the wire is now busy with something the user didn't directly ask to wait on.
-    let r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    let m = createMachine();
+    m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
+    const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+
+    // The trailing space is a "natural pause point" — completions coming back
+    // also kicks off a background usage fetch right away, leaving the wire
+    // busy with something the user didn't directly ask to wait on.
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 });
     let cur = r.machine;
     const usageFetch = find(r.effects, 'fetchUsage')!;
     assert.strictEqual(cur.fetch.kind, 'busy');
 
     // 800ms later (past the cycling window) the user has typed past the cached
-    // items and presses Tab again wanting fresh completions for the new line —
+    // items and presses Tab wanting fresh completions for the new line —
     // but the wire is still tied up with that usage fetch.
     r = step(cur, { kind: 'tab', line: '/gamemode creative ', now: 1800 });
     assert.deepStrictEqual(r.effects, [], 'must not be dropped silently nor issue a second concurrent fetch');
@@ -357,11 +408,15 @@ suite('completionEngine: usage staleness', () => {
     let m = createMachine();
     m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
     let fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative'], now: 1 }).machine;
 
-    let r = step(m, { kind: 'tab', line: '/gamemode ', now: 100 });
+    // The trailing space is a "natural pause point" — completions coming
+    // back with a non-empty list also kicks off a background usage fetch
+    // right away (rather than waiting for Tab), since at this point the
+    // engine doesn't yet know whether "gamemode" resolves to a single usage.
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative'], now: 1 });
     m = r.machine;
     const usageFetchId = find(r.effects, 'fetchUsage')!.requestId;
+    assert.strictEqual(m.fetch.kind === 'busy' ? m.fetch.purpose.kind : '', 'usage');
 
     // user keeps typing before the usage reply comes back
     r = step(m, { kind: 'lineChanged', line: '/gamemode survival ' });
