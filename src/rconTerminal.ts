@@ -776,7 +776,11 @@ export class RconTerminal implements vscode.Pseudoterminal {
       // need to hit `tabcomplete` again. Just start tab-completing through them.
       if (this.isShowingSuggestions && this.currentSuggestions.length > 0 && this.originalInput === this.currentLine) {
         this.tabMode = true;
-        this.suggestionIndex = 0;
+        // Keep whatever the user already selected (e.g. via arrow keys) instead
+        // of resetting to the first suggestion
+        if (this.suggestionIndex < 0 || this.suggestionIndex >= this.currentSuggestions.length) {
+          this.suggestionIndex = 0;
+        }
         this.completeSelectedSuggestion();
         this.showSuggestionList();
 
