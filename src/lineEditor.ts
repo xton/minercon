@@ -307,9 +307,10 @@ export class LineEditor {
   }
 
   // emacs: unix-line-discard — kill from cursor to start of line
-  killToStart(): void {
+  killToStart(): string {
     if (this.cursorPosition > 0) {
       const deletedCount = this.cursorPosition;
+      const killed = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
       this.currentLine = afterCursor;
       this.cursorPosition = 0;
@@ -321,20 +322,25 @@ export class LineEditor {
       if (afterCursor.length > 0) {
         this.host.write('\x1b[' + afterCursor.length + 'D');
       }
+      return killed;
     }
+    return '';
   }
 
   // emacs: kill-line — kill from cursor to end of line
-  killToEnd(): void {
+  killToEnd(): string {
     if (this.cursorPosition < this.currentLine.length) {
+      const killed = this.currentLine.slice(this.cursorPosition);
       this.currentLine = this.currentLine.slice(0, this.cursorPosition);
       this.host.write('\x1b[K');
       this.clearSelection();
+      return killed;
     }
+    return '';
   }
 
   // emacs: backward-kill-word (Ctrl+W / Alt+Backspace)
-  killWordBack(): void {
+  killWordBack(): string {
     if (this.cursorPosition > 0) {
       const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
@@ -350,25 +356,28 @@ export class LineEditor {
         newPos--;
       }
 
-      const deletedCount = this.cursorPosition - newPos;
+      const killed = beforeCursor.slice(newPos);
       this.currentLine = beforeCursor.slice(0, newPos) + afterCursor;
       this.cursorPosition = newPos;
       this.clearSelection();
 
-      this.host.write('\x1b[' + deletedCount + 'D');
+      this.host.write('\x1b[' + killed.length + 'D');
       this.host.write('\x1b[K');
       this.host.write(afterCursor);
       if (afterCursor.length > 0) {
         this.host.write('\x1b[' + afterCursor.length + 'D');
       }
+      return killed;
     }
+    return '';
   }
 
   // emacs: kill-word (Alt+D) — delete from cursor to end of the word forward
-  killWordForward(): void {
+  killWordForward(): string {
     const newPos = this.findWordRight();
     if (newPos > this.cursorPosition) {
       const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
+      const killed = this.currentLine.slice(this.cursorPosition, newPos);
       const afterDeleted = this.currentLine.slice(newPos);
       this.currentLine = beforeCursor + afterDeleted;
       this.clearSelection();
@@ -378,7 +387,9 @@ export class LineEditor {
       if (afterDeleted.length > 0) {
         this.host.write('\x1b[' + afterDeleted.length + 'D');
       }
+      return killed;
     }
+    return '';
   }
 
   // emacs: transpose-chars — swap the two characters around the cursor

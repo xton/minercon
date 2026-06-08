@@ -105,7 +105,7 @@ export class RconSession {
     });
   }
 
-  open(dimensions: { columns: number; rows: number } | undefined): void {
+  open(_dimensions: { columns: number; rows: number } | undefined): void {
     this.writeWelcomeBanner();
     this.detectAndInitialize();
   }
@@ -220,7 +220,7 @@ export class RconSession {
       { sequences: ['\t'],                                handler: () => this.handleTabComplete() },
       { sequences: ['\x1b[Z'],                            handler: () => this.handleShiftTab() },
       { sequences: ['\x1b'],                              handler: () => this.handleEscape() },
-      { sequences: ['\x04'],                              handler: () => this.connectionManager.disconnect() },
+      { sequences: ['\x04'],                              handler: () => this.handleCtrlD() },
       { sequences: ['\x03'],                              handler: () => this.handleCtrlC() },
       { sequences: ['\x18'],                              handler: () => this.handleCut() },
       { sequences: ['\x16', '\x19'],                      handler: () => this.handlePaste() },
@@ -242,10 +242,10 @@ export class RconSession {
       { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.lineEditor.moveToStart() },
       { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.lineEditor.moveToEnd() },
       { sequences: ['\x1b[3~'],                           handler: () => this.lineEditor.deleteForward() },
-      { sequences: ['\x0b'],                              handler: () => this.lineEditor.killToEnd() },
-      { sequences: ['\x15'],                              handler: () => this.lineEditor.killToStart() },
-      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => this.lineEditor.killWordBack() },
-      { sequences: ['\x1bd'],                             handler: () => this.lineEditor.killWordForward() },
+      { sequences: ['\x0b'],                              handler: () => this.killAndStash(() => this.lineEditor.killToEnd()) },
+      { sequences: ['\x15'],                              handler: () => this.killAndStash(() => this.lineEditor.killToStart()) },
+      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => this.killAndStash(() => this.lineEditor.killWordBack()) },
+      { sequences: ['\x1bd'],                             handler: () => this.killAndStash(() => this.lineEditor.killWordForward()) },
       { sequences: ['\x14'],                              handler: () => this.lineEditor.transposeChars() },
       { sequences: ['\r', '\n'],                          handler: () => this.handleEnter() },
       { sequences: ['\x7f', '\b'],                        handler: () => this.lineEditor.handleBackspace() },
@@ -258,6 +258,11 @@ export class RconSession {
       }
     }
     return map;
+  }
+
+  private killAndStash(fn: () => string): void {
+    const text = fn();
+    if (text) { this.sessionHost.clipboard.writeText(text); }
   }
 
   handleInput(data: string): void {
@@ -285,6 +290,12 @@ export class RconSession {
     }
     this.lineEditor.clearAndReset();
     this.showPrompt();
+  }
+
+  private handleCtrlD(): void {
+    this.sessionHost.write('^D\r\n');
+    this.sessionHost.write('Disconnecting...\r\n');
+    this.sessionHost.close(0);
   }
 
   private handleCtrlC(): void {

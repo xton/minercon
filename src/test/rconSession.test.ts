@@ -266,16 +266,16 @@ suite('RconSession', () => {
         assert.deepStrictEqual(h.controller.sendCalls, [], 'the command was never sent');
     });
 
-    test('cut (Ctrl+X) and yank (Ctrl+Y) use the in-process pasteboard', async () => {
+    test('Ctrl+K stashes killed text so Ctrl+Y yanks it back', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        // Type text, select all with Shift+Home, cut to pasteboard, then yank back
+        // Kill to end of line, then yank it back
         type(h, 'hello world');
-        h.session.handleInput('\x1b[1;2H'); // Shift+Home: select to start → selects 'hello world'
-        h.session.handleInput('\x18');       // Ctrl+X: cut selection to pasteboard
+        h.session.handleInput('\x01'); // Ctrl+A: move to start
+        h.session.handleInput('\x0b'); // Ctrl+K: kill to end → stashes 'hello world'
         h.writes.length = 0;
-        h.session.handleInput('\x19');       // Ctrl+Y: yank from pasteboard
+        h.session.handleInput('\x19'); // Ctrl+Y: yank from kill stash
         await waitUntil(() => h.output().includes('hello world'));
     });
 
