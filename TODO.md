@@ -22,7 +22,7 @@ anything non-obvious.
 - [x] Extract a "terminal renderer" collaborator → `SuggestionDisplay` (pure content builders + `renderSuggestionArea`)
 
 ## 4. Dead code
-- [ ] `src/test/rconProtocolTest.ts` — still exists, still zero references anywhere; converted to use `Logger` but never wired up or deleted. Best resolved alongside §6 (delete it as part of the mocked-test swap, net-zero file count)
+- [x] `src/test/rconProtocolTest.ts` — deleted now that a real recorded fixture (xton.ts) covers the same ground via the replay suite
 - [x] `currentArgumentHelp` write-only field — deleted
 - [x] `terminalBufferHeight` unused field — deleted
 - [x] `clearArgumentDisplay()` dead method — deleted (folded into `clear()`)
@@ -34,10 +34,31 @@ anything non-obvious.
 - [ ] `extension.test.ts` — still the unmodified VS Code scaffold sample
 
 ## 6. Mocked RCON protocol tests
-- [ ] Build a fake-socket harness and mock-test `RconProtocol` (auth handshake, single/fragmented packets, concurrent requests, drop mid-request); delete `rconProtocolTest.ts` once it's the replacement
+- [x] Build a fake-socket harness and mock-test `RconProtocol` — done as a **record/replay** harness:
+  - `RconProtocol` now takes an injectable `createSocket: () => SocketLike` (rconProtocol.ts) — the only production change, default behavior unchanged
+  - `FakeSocket`/`RecordingSocket` (src/test/support/) play back / capture byte-exact wire conversations; `rconWireFormat.ts` has standalone encode helpers for hand-built fixtures
+  - `src/test/fixtures/rcon/synthetic.ts` is a hand-built fixture covering auth, short response, fragmented response (incl. cross-`data`-event packet splitting), and unknown-command
+  - `src/test/fixtures/rcon/xton.ts` is a **real recorded fixture** captured against a live server — genuinely fragmented `minecraft:help` response spanning multiple packets and `data`-event boundaries, real server error text, etc. Address/password are scrubbed from the checked-in file (the repo is public) — see the file's header comment
+  - both fixtures replay byte-exact through `rconProtocol.test.ts` (71 passing, was 68)
+  - a hand-authored connection-drop scenario covers the "server hangs up mid-request → pending command rejects, isConnected() goes false" path
+- [x] Delete `rconProtocolTest.ts` — done (closed out §4's dead-code item too — net-zero file count)
 
 ## 7. `readline`-style REPL library
 - [x] **Canceled** — decided against by design: adapter complexity, fights the custom multi-line/selection UI, no equivalent for features already built. No action item.
 
 ---
-*Last updated: 2026-06-08*
+*Last updated: 2026-06-08 — §6 (record/replay harness) and the `rconProtocolTest.ts`
+dead-code item are now fully done; xton.ts recorded fixture registered and
+passing alongside synthetic.ts (71 tests).*
+
+## How to record a live RCON fixture
+
+```
+npm run record-rcon-fixtures -- <host> <port> <password> [fixtureName]
+```
+
+Connects to a real server, drives it through the canonical script
+(`src/test/fixtures/rcon/script.ts`), and writes
+`src/test/fixtures/rcon/<fixtureName>.ts` (default name `recorded`) — with
+the real password automatically redacted. Review the generated file, commit
+it, and add it to the `FIXTURES` array in `src/test/rconProtocol.test.ts`.

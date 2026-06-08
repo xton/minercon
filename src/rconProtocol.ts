@@ -19,12 +19,26 @@ interface RconPacket {
   body: string;
 }
 
+/**
+ * The slice of `net.Socket` that `RconProtocol` actually drives — narrow
+ * enough that tests can hand it a fake (see src/test/support/fakeSocket.ts)
+ * instead of opening a real TCP connection. `net.Socket` satisfies this
+ * structurally, so production code needs no changes.
+ */
+export interface SocketLike extends EventEmitter {
+  connect(port: number, host: string): void;
+  setKeepAlive(enable?: boolean, initialDelay?: number): void;
+  write(data: Buffer): void;
+  destroy(): void;
+}
+
 export class RconProtocol extends EventEmitter {
-  private socket: net.Socket | null = null;
+  private socket: SocketLike | null = null;
   private host: string;
   private port: number;
   private password: string;
   private logger: Logger;
+  private readonly createSocket: () => SocketLike;
 
   private authenticated: boolean = false;
   private requestId: number = 0;
@@ -43,12 +57,22 @@ export class RconProtocol extends EventEmitter {
   private readonly RESPONSE_TIMEOUT = 10000; // 10 seconds for command responses
   private readonly MAX_PACKET_SIZE = 4096;
   
-  constructor(host: string, port: number, password: string, logger: Logger) {
+  constructor(
+    host: string,
+    port: number,
+    password: string,
+    logger: Logger,
+    // Defaults to a real socket; tests substitute a `SocketLike` fake here
+    // (record/replay harness — see src/test/rconProtocol.test.ts) so the
+    // wire protocol can be exercised without a live server.
+    createSocket: () => SocketLike = () => new net.Socket(),
+  ) {
     super();
     this.host = host;
     this.port = port;
     this.password = password;
     this.logger = logger;
+    this.createSocket = createSocket;
   }
 
   /**
@@ -56,8 +80,8 @@ export class RconProtocol extends EventEmitter {
    */
   public async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.socket = new net.Socket();
-      
+      this.socket = this.createSocket();
+
       // Enable TCP keepalive to prevent idle connection drops
       // This sends periodic probes to keep the connection alive through NAT/firewalls
       this.socket.setKeepAlive(true, 60000); // Send keepalive probes every 60 seconds
