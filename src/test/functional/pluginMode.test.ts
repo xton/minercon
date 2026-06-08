@@ -8,7 +8,7 @@ import { RconController } from '../../rconClient';
 import { RconCompletionsBackend } from '../../completionsBackend';
 import { Logger } from '../../logger';
 import { pluginVariant } from './variants';
-import { startServer, connectionParams } from './harness';
+import { startServer, stopServer, connectionParams } from './harness';
 
 const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
 
@@ -33,7 +33,7 @@ suite('[paper+plugin] plugin mode', function () {
 
   suiteTeardown(async () => {
     await ctrl?.disconnect();
-    await container?.stop();
+    await stopServer(container);
   });
 
   // ── raw plugin command tests ──────────────────────────────────────────────

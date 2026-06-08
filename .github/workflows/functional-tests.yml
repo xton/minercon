@@ -65,7 +65,7 @@ jobs:
         run: npm run compile
 
       - name: Run connection tests
-        run: mocha --timeout 360000 --grep '\[${{ matrix.variant }}\] connection' out/test/functional/connection.test.js
+        run: mocha --ui tdd --timeout 360000 --grep '\[${{ matrix.variant }}\] connection' out/test/functional/connection.test.js
         env:
           SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
 
@@ -102,7 +102,7 @@ jobs:
         run: npm run compile
 
       - name: Run local mode tests
-        run: mocha --timeout 600000 --grep '\[${{ matrix.variant }}\] local mode' out/test/functional/localMode.test.js
+        run: mocha --ui tdd --timeout 600000 --grep '\[${{ matrix.variant }}\] local mode' out/test/functional/localMode.test.js
         env:
           SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
 
@@ -144,4 +144,4 @@ jobs:
         run: npm run compile
 
       - name: Run plugin mode tests
-        run: mocha --timeout 360000 out/test/functional/pluginMode.test.js
+        run: mocha --ui tdd --timeout 360000 out/test/functional/pluginMode.test.js

@@ -28,10 +28,10 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "test:functional": "npm run compile && mocha --timeout 660000 'out/test/functional/**/*.test.js'",
-    "test:functional:connection": "npm run compile && mocha --timeout 660000 out/test/functional/connection.test.js",
-    "test:functional:local": "npm run compile && mocha --timeout 660000 out/test/functional/localMode.test.js",
-    "test:functional:plugin": "npm run compile && mocha --timeout 660000 out/test/functional/pluginMode.test.js",
+    "test:functional": "npm run compile && mocha --ui tdd --timeout 660000 'out/test/functional/**/*.test.js'",
+    "test:functional:connection": "npm run compile && mocha --ui tdd --timeout 660000 out/test/functional/connection.test.js",
+    "test:functional:local": "npm run compile && mocha --ui tdd --timeout 660000 out/test/functional/localMode.test.js",
+    "test:functional:plugin": "npm run compile && mocha --ui tdd --timeout 660000 out/test/functional/pluginMode.test.js",
     "record-rcon-fixtures": "npm run compile && node out/test/recordRconFixtures.js"
   },
   "devDependencies": {

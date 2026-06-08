@@ -7,7 +7,7 @@ import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
 import { Logger } from '../../logger';
 import { variants, PASSWORD } from './variants';
-import { startServer, connectionParams } from './harness';
+import { startServer, stopServer, connectionParams } from './harness';
 
 const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
 
@@ -27,7 +27,7 @@ for (const variant of variants) {
     });
 
     suiteTeardown(async () => {
-      await container?.stop();
+      await stopServer(container);
     });
 
     test('authenticates with correct password', async () => {

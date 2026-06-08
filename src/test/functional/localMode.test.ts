@@ -10,7 +10,7 @@ import { RconController } from '../../rconClient';
 import { CommandAutocomplete } from '../../commandAutocomplete';
 import { Logger } from '../../logger';
 import { nonPluginVariants } from './variants';
-import { startServer, connectionParams } from './harness';
+import { startServer, stopServer, connectionParams } from './harness';
 
 const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
 
@@ -35,7 +35,7 @@ for (const variant of nonPluginVariants) {
     });
 
     suiteTeardown(async () => {
-      await container?.stop();
+      await stopServer(container);
       fs.rmSync(cacheDir, { recursive: true, force: true });
     });
 
