@@ -54,12 +54,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Keep the original connect command
   const connectCommand = vscode.commands.registerCommand('minecraftRcon.connect', async () => {
-    await connectToRcon(logger, activeTerminals, context, currentConnection);
+    const connectionInfo = await connectToRcon(logger, activeTerminals, context);
+    if (connectionInfo) { currentConnection = connectionInfo; }
   });
 
   // Add command to connect with new credentials (always prompts)
   const connectNewCommand = vscode.commands.registerCommand('minecraftRcon.connectNew', async () => {
-    await connectToRcon(logger, activeTerminals, context, currentConnection, false);
+    const connectionInfo = await connectToRcon(logger, activeTerminals, context, false);
+    if (connectionInfo) { currentConnection = connectionInfo; }
   });
 
   // Add command to save current connection as default
@@ -230,9 +232,8 @@ async function connectToRcon(
   logger: Logger,
   activeTerminals: Map<vscode.Terminal, RconController>,
   context: vscode.ExtensionContext,
-  currentConnection: { host: string; port: number; password: string } | null,
   useDefaults: boolean = true
-): Promise<void> {
+): Promise<{ host: string; port: number; password: string } | undefined> {
   try {
     const { profile, controller, connectionInfo } = await createRconTerminalProfile(logger, context, useDefaults);
     const terminal = vscode.window.createTerminal({
@@ -245,13 +246,6 @@ async function connectToRcon(
 
     // Store the controller reference
     activeTerminals.set(terminal, controller);
-
-    // Update current connection info
-    if (currentConnection) {
-      currentConnection.host = connectionInfo.host;
-      currentConnection.port = connectionInfo.port;
-      currentConnection.password = connectionInfo.password;
-    }
 
     terminal.show();
 
@@ -268,12 +262,15 @@ async function connectToRcon(
     } else {
       vscode.window.showInformationMessage(`Connected to Minecraft server`);
     }
+
+    return connectionInfo;
   } catch (err) {
     const message = errorMessage(err);
     if (!message.includes('required')) {
       logger.error('Connection failed: ' + message);
       vscode.window.showErrorMessage('RCON connection failed: ' + message);
     }
+    return undefined;
   }
 }
 
