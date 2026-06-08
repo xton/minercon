@@ -1,0 +1,15 @@
+name: RconTabComplete
+version: '${version}'
+main: dev.rcon.tabcomplete.TabCompletePlugin
+api-version: '1.21'
+description: Exposes a console/RCON command that returns tab completions for a partial command string
+
+commands:
+  tabcomplete:
+    description: "Returns tab completions for a partial command string. Use trailing - for trailing space. Example: /tabcomplete gamemode -"
+    usage: "/<command> <partial command...>"
+    aliases: [tc]
+  cmdusage:
+    description: "Returns usage syntax for a command. Example: /cmdusage gamemode"
+    usage: "/<command> <command name>"
+    aliases: [cu]

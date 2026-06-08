@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+}
+
+group = 'dev.rcon'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT'
+}
+
+processResources {
+    filesMatching('plugin.yml') {
+        expand version: project.version
+    }
+}
