@@ -7,6 +7,8 @@ import {
     tokenizeParameterString,
     parseParameter,
     parseCommandHelp,
+    classifyParameterTokens,
+    buildParameterStructureFromVariants,
 } from '../helpTextParsing';
 
 suite('helpTextParsing', () => {
@@ -143,5 +145,89 @@ suite('helpTextParsing', () => {
         assert.strictEqual(params[2].literal, 'delete');
         // Optional flag should appear as an optional literal
         assert.ok(params.some(p => p.optional && p.literal && p.literal.includes('--include-groups-worlds')));
+    });
+});
+
+suite('classifyParameterTokens', () => {
+    test('no tokens: returns null', () => {
+        assert.strictEqual(classifyParameterTokens([]), null);
+    });
+
+    test('a leading <argument> token: direct parameters, parsed and indexed from 0', () => {
+        const result = classifyParameterTokens(['<mode>', '<target>']);
+        assert.deepStrictEqual(result, {
+            kind: 'direct',
+            parameters: [
+                { type: ParameterType.ARGUMENT, name: 'mode', optional: false, position: 0 },
+                { type: ParameterType.ARGUMENT, name: 'target', optional: false, position: 1 },
+            ],
+        });
+    });
+
+    test('a leading [<optional argument>] token: direct parameters', () => {
+        const result = classifyParameterTokens(['[<target>]']);
+        assert.deepStrictEqual(result, {
+            kind: 'direct',
+            parameters: [{ type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 0 }],
+        });
+    });
+
+    test('a leading (choice|list) token: direct parameters (a choice list)', () => {
+        const result = classifyParameterTokens(['(a|b)', '<rest>']);
+        assert.strictEqual(result?.kind, 'direct');
+        assert.strictEqual(result!.parameters[0].type, ParameterType.CHOICE_LIST);
+        assert.strictEqual(result!.parameters[1].type, ParameterType.ARGUMENT);
+    });
+
+    test('a leading bare-word token: a named variant, remaining tokens re-indexed from 0', () => {
+        const result = classifyParameterTokens(['modify', '<property>', '<value>']);
+        assert.deepStrictEqual(result, {
+            kind: 'variant',
+            name: 'modify',
+            parameters: [
+                { type: ParameterType.ARGUMENT, name: 'property', optional: false, position: 0 },
+                { type: ParameterType.ARGUMENT, name: 'value', optional: false, position: 1 },
+            ],
+        });
+    });
+
+    test('a leading [bracketed] token: a named variant with the brackets stripped from its name', () => {
+        const result = classifyParameterTokens(['[reload]']);
+        assert.deepStrictEqual(result, { kind: 'variant', name: 'reload', parameters: [] });
+    });
+});
+
+suite('buildParameterStructureFromVariants', () => {
+    test('no variants: returns an empty list', () => {
+        assert.deepStrictEqual(buildParameterStructureFromVariants(new Map()), []);
+    });
+
+    test('a single variant: becomes one SUBCOMMAND parameter directly', () => {
+        const members: Parameter[] = [{ type: ParameterType.ARGUMENT, name: 'player', optional: false, position: 0 }];
+        const result = buildParameterStructureFromVariants(new Map([['add', members]]));
+        assert.deepStrictEqual(result, [{
+            type: ParameterType.SUBCOMMAND,
+            name: 'add',
+            literal: 'add',
+            optional: false,
+            position: 0,
+            members,
+            isComplete: false,
+        }]);
+    });
+
+    test('multiple variants: wrapped in a CHOICE_LIST of SUBCOMMANDs in insertion order with sequential positions', () => {
+        const variants = new Map<string, Parameter[]>([
+            ['add', []],
+            ['remove', []],
+            ['list', []],
+        ]);
+        const result = buildParameterStructureFromVariants(variants);
+
+        assert.strictEqual(result.length, 1);
+        assert.strictEqual(result[0].type, ParameterType.CHOICE_LIST);
+        const choices = result[0].choices!;
+        assert.deepStrictEqual(choices.map(c => [c.name, c.position]), [['add', 0], ['remove', 1], ['list', 2]]);
+        assert.ok(choices.every(c => c.type === ParameterType.SUBCOMMAND && c.isComplete === false));
     });
 });

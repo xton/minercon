@@ -7,8 +7,9 @@ import {
   formatMinecraftColors,
   stripColors,
   tokenizeParameterString,
-  parseParameter,
   parseCommandHelp,
+  classifyParameterTokens,
+  buildParameterStructureFromVariants,
 } from './helpTextParsing';
 import { CommandTreeCache } from './commandTreeCache';
 import { getSuggestions, SuggestionResult } from './commandSuggestions';
@@ -338,68 +339,19 @@ export class CommandAutocomplete {
               const tokens = tokenizeParameterString(afterCommand);
               this.logger.info(`  Tokens: ${JSON.stringify(tokens)}`);
 
-              if (tokens.length > 0) {
-                const firstToken = tokens[0];
-
-                // Determine if first token is a literal/subcommand or an argument
-                // FIXED: Better detection for optional subcommands vs optional arguments
-                let isArgument = false;
-                if (firstToken.startsWith('<')) {
-                  // <arg> - required argument
-                  isArgument = true;
-                } else if (firstToken.startsWith('[') && firstToken.endsWith(']')) {
-                  // Could be [<arg>] or [subcommand]
-                  const inner = firstToken.slice(1, -1);
-                  if (inner.startsWith('<') && inner.endsWith('>')) {
-                    // [<arg>] - optional argument
-                    isArgument = true;
-                  } else {
-                    // [subcommand] - optional subcommand, treat as subcommand
-                    isArgument = false;
-                  }
-                } else if (firstToken.startsWith('(') && firstToken.endsWith(')')) {
-                  // (choice1|choice2) - choice list, treat as argument
-                  isArgument = true;
-                }
-
-                if (!isArgument) {
-                  // First token is a literal/subcommand - this is a subcommand variant
-                  let subcommandName = firstToken;
-
-                  // Strip optional brackets if present
-                  if (subcommandName.startsWith('[') && subcommandName.endsWith(']')) {
-                    subcommandName = subcommandName.slice(1, -1); // Remove [ and ]
-                  }
-
-                  // Create parameter list for this variant
-                  const variantParams: Parameter[] = [];
-
-                  // Parse remaining tokens as the subcommand's parameters
-                  for (let i = 1; i < tokens.length; i++) {
-                    const param = parseParameter(tokens[i], i - 1);
-                    if (param) {
-                      variantParams.push(param);
-                    }
-                  }
-
-                  // Store this variant
-                  variants.set(subcommandName, variantParams);
-
-                } else {
-                  // First token is an argument - these are direct parameters
-                  // IMPORTANT: Parse ALL tokens as parameters for this command
-                  hasDirectParameters = true;
-
-                  // Clear and rebuild parameters to ensure we get ALL of them
-                  parameters.length = 0; // Clear existing
-
-                  for (let i = 0; i < tokens.length; i++) {
-                    const param = parseParameter(tokens[i], i);
-                    if (param) {
-                      parameters.push(param);
-                      this.logger.info(`    Added parameter: ${JSON.stringify(param)}`);
-                    }
-                  }
+              const classified = classifyParameterTokens(tokens);
+              if (classified?.kind === 'variant') {
+                // First token is a literal/subcommand - this is a subcommand variant
+                variants.set(classified.name, classified.parameters);
+              } else if (classified?.kind === 'direct') {
+                // First token is an argument - these are direct parameters.
+                // IMPORTANT: parse ALL tokens as parameters for this command,
+                // clearing and rebuilding to ensure we get ALL of them
+                hasDirectParameters = true;
+                parameters.length = 0;
+                parameters.push(...classified.parameters);
+                for (const param of classified.parameters) {
+                  this.logger.info(`    Added parameter: ${JSON.stringify(param)}`);
                 }
               }
             } else {
@@ -413,40 +365,7 @@ export class CommandAutocomplete {
       // Build final parameter structure only if we haven't already set direct parameters
       if (!hasDirectParameters) {
         parameters.length = 0; // Clear existing parameters
-
-        // If we have variants (subcommands), create proper structure
-        if (variants.size > 0) {
-          const subcommandChoices: Parameter[] = [];
-
-          for (const [subcommandName, subParams] of variants) {
-            // Create a SUBCOMMAND parameter for each variant
-            const subcommandParam: Parameter = {
-              type: ParameterType.SUBCOMMAND,
-              name: subcommandName,
-              literal: subcommandName,
-              optional: false,
-              position: subcommandChoices.length,
-              members: subParams,
-              isComplete: false
-            };
-            subcommandChoices.push(subcommandParam);
-          }
-
-          // If there's only one variant, add it directly
-          // Otherwise, create a choice list
-          if (subcommandChoices.length === 1) {
-            parameters.push(subcommandChoices[0]);
-          } else {
-            // Create a CHOICE_LIST parameter containing all subcommands
-            const choiceParam: Parameter = {
-              type: ParameterType.CHOICE_LIST,
-              optional: false,
-              position: 0,
-              choices: subcommandChoices
-            };
-            parameters.push(choiceParam);
-          }
-        }
+        parameters.push(...buildParameterStructureFromVariants(variants));
       }
 
       // Debug: Log final parameters
@@ -529,66 +448,18 @@ export class CommandAutocomplete {
           const afterSubcommand = match[1];
           const tokens = tokenizeParameterString(afterSubcommand);
 
-          if (tokens.length > 0) {
-            const firstToken = tokens[0];
-
-            // Determine if first token is a literal/subcommand or an argument
-            // FIXED: Better detection for optional subcommands vs optional arguments
-            let isArgument = false;
-            if (firstToken.startsWith('<')) {
-              isArgument = true;
-            } else if (firstToken.startsWith('[') && firstToken.endsWith(']')) {
-              const inner = firstToken.slice(1, -1);
-              if (inner.startsWith('<') && inner.endsWith('>')) {
-                isArgument = true;
-              } else {
-                isArgument = false;
-              }
-            } else if (firstToken.startsWith('(') && firstToken.endsWith(')')) {
-              isArgument = true;
-            }
-
-            if (!isArgument) {
-              // First token is a literal - this is a nested subcommand variant
-              let nestedSubcommandName = firstToken;
-
-              // Strip optional brackets if present
-              if (nestedSubcommandName.startsWith('[') && nestedSubcommandName.endsWith(']')) {
-                nestedSubcommandName = nestedSubcommandName.slice(1, -1);
-              }
-
-              // Create parameter list for this variant
-              const variantParams: Parameter[] = [];
-
-              // Parse remaining tokens as the nested subcommand's parameters
-              for (let i = 1; i < tokens.length; i++) {
-                const param = parseParameter(tokens[i], i - 1);
-                if (param) {
-                  variantParams.push(param);
-                }
-              }
-
-              // Store this variant - CONTINUE to find more variants!
-              variants.set(nestedSubcommandName, variantParams);
-
-            } else {
-              // First token is an argument - these are direct parameters
-              hasDirectParameters = true;
-
-              // Clear and rebuild members for direct parameters
-              subcommand.members.length = 0;
-
-              // Parse ALL tokens as parameters for this subcommand
-              for (let i = 0; i < tokens.length; i++) {
-                const param = parseParameter(tokens[i], i);
-                if (param) {
-                  subcommand.members.push(param);
-                }
-              }
-
-              // For direct parameters, we can break after finding them
-              break;
-            }
+          const classified = classifyParameterTokens(tokens);
+          if (classified?.kind === 'variant') {
+            // First token is a literal - this is a nested subcommand variant.
+            // Store it and CONTINUE to find more variants!
+            variants.set(classified.name, classified.parameters);
+          } else if (classified?.kind === 'direct') {
+            // First token is an argument - these are direct parameters.
+            // Clear and rebuild members, then we can break after finding them
+            hasDirectParameters = true;
+            subcommand.members.length = 0;
+            subcommand.members.push(...classified.parameters);
+            break;
           }
         }
       }
@@ -596,40 +467,7 @@ export class CommandAutocomplete {
       // Build final parameter structure
       if (!hasDirectParameters) {
         subcommand.members.length = 0; // Clear existing members
-
-        // If we have variants (nested subcommands), create proper structure
-        if (variants.size > 0) {
-          const nestedSubcommandChoices: Parameter[] = [];
-
-          for (const [nestedName, nestedParams] of variants) {
-            // Create a SUBCOMMAND parameter for each variant
-            const nestedSubcommand: Parameter = {
-              type: ParameterType.SUBCOMMAND,
-              name: nestedName,
-              literal: nestedName,
-              optional: false,
-              position: nestedSubcommandChoices.length,
-              members: nestedParams,
-              isComplete: false
-            };
-            nestedSubcommandChoices.push(nestedSubcommand);
-          }
-
-          // If there's only one variant, add it directly
-          // Otherwise, create a choice list
-          if (nestedSubcommandChoices.length === 1) {
-            subcommand.members.push(nestedSubcommandChoices[0]);
-          } else {
-            // Create a CHOICE_LIST parameter containing all nested subcommands
-            const choiceParam: Parameter = {
-              type: ParameterType.CHOICE_LIST,
-              optional: false,
-              position: 0,
-              choices: nestedSubcommandChoices
-            };
-            subcommand.members.push(choiceParam);
-          }
-        }
+        subcommand.members.push(...buildParameterStructureFromVariants(variants));
       }
 
       subcommand.isComplete = true;

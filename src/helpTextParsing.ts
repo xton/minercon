@@ -211,3 +211,115 @@ export function parseCommandHelp(helpText: string): Parameter[] {
 
   return parameters;
 }
+
+/**
+ * Result of classifying the first token of a `/help <command> ...` syntax
+ * line: either it's a literal/subcommand name introducing a variant (with
+ * the rest of the tokens as that variant's own parameters), or it's an
+ * argument/choice-list, meaning every token is a direct parameter of the
+ * command itself. `null` means there were no tokens to classify.
+ */
+export type ParameterTokenClassification =
+  | { kind: 'variant'; name: string; parameters: Parameter[] }
+  | { kind: 'direct'; parameters: Parameter[] }
+  | null;
+
+/**
+ * Classify a tokenized parameter string as either a named subcommand variant
+ * or a direct parameter list, parsing the relevant tokens along the way.
+ */
+export function classifyParameterTokens(tokens: string[]): ParameterTokenClassification {
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  const firstToken = tokens[0];
+
+  // Determine if first token is a literal/subcommand or an argument
+  // FIXED: Better detection for optional subcommands vs optional arguments
+  let isArgument = false;
+  if (firstToken.startsWith('<')) {
+    // <arg> - required argument
+    isArgument = true;
+  } else if (firstToken.startsWith('[') && firstToken.endsWith(']')) {
+    // Could be [<arg>] or [subcommand]
+    const inner = firstToken.slice(1, -1);
+    if (inner.startsWith('<') && inner.endsWith('>')) {
+      // [<arg>] - optional argument
+      isArgument = true;
+    } else {
+      // [subcommand] - optional subcommand, treat as subcommand
+      isArgument = false;
+    }
+  } else if (firstToken.startsWith('(') && firstToken.endsWith(')')) {
+    // (choice1|choice2) - choice list, treat as argument
+    isArgument = true;
+  }
+
+  if (isArgument) {
+    // Every token is a direct parameter of the command/subcommand itself
+    const parameters: Parameter[] = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const param = parseParameter(tokens[i], i);
+      if (param) {
+        parameters.push(param);
+      }
+    }
+    return { kind: 'direct', parameters };
+  }
+
+  // First token is a literal/subcommand name introducing a variant
+  let name = firstToken;
+
+  // Strip optional brackets if present
+  if (name.startsWith('[') && name.endsWith(']')) {
+    name = name.slice(1, -1); // Remove [ and ]
+  }
+
+  const parameters: Parameter[] = [];
+  for (let i = 1; i < tokens.length; i++) {
+    const param = parseParameter(tokens[i], i - 1);
+    if (param) {
+      parameters.push(param);
+    }
+  }
+
+  return { kind: 'variant', name, parameters };
+}
+
+/**
+ * Build the parameter structure representing a set of collected variants:
+ * a single SUBCOMMAND if there's only one, or a CHOICE_LIST wrapping a
+ * SUBCOMMAND for each variant (in encounter order) otherwise.
+ */
+export function buildParameterStructureFromVariants(variants: Map<string, Parameter[]>): Parameter[] {
+  if (variants.size === 0) {
+    return [];
+  }
+
+  const subcommandChoices: Parameter[] = [];
+
+  for (const [name, members] of variants) {
+    subcommandChoices.push({
+      type: ParameterType.SUBCOMMAND,
+      name,
+      literal: name,
+      optional: false,
+      position: subcommandChoices.length,
+      members,
+      isComplete: false
+    });
+  }
+
+  // If there's only one variant, use it directly; otherwise wrap in a choice list
+  if (subcommandChoices.length === 1) {
+    return [subcommandChoices[0]];
+  }
+
+  return [{
+    type: ParameterType.CHOICE_LIST,
+    optional: false,
+    position: 0,
+    choices: subcommandChoices
+  }];
+}
