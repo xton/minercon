@@ -20,21 +20,30 @@ export interface CompletionsBackend {
   fetchUsage(line: string): Promise<string>;
 }
 
-/** Server-side completions via the RconTabComplete plugin's `tabcomplete`/`cmdusage` commands. */
+/**
+ * Server-side completions via the RconTabComplete plugin's `tabcomplete`/`cmdusage` commands.
+ *
+ * Takes a `controller` thunk rather than a fixed `RconController` — the
+ * connection manager replaces its controller wholesale on every reconnect, so
+ * capturing one instance up front would silently start sending through a dead
+ * (disconnected) controller after the first reconnect, with every fetch
+ * throwing "Not connected" (swallowed by the caller as "no completions").
+ * Looking it up fresh on each call always reaches whatever's live.
+ */
 export class RconCompletionsBackend implements CompletionsBackend {
-  constructor(private controller: RconController) {}
+  constructor(private getController: () => RconController) {}
 
   async fetchCompletions(line: string): Promise<string[]> {
     const query = buildCompletionsQuery(line);
     if (query === null) { return []; }
-    const response = await this.controller.send(`tabcomplete ${query}`);
+    const response = await this.getController().send(`tabcomplete ${query}`);
     return parseCompletionsResponse(response ?? undefined);
   }
 
   async fetchUsage(line: string): Promise<string> {
     const query = buildUsageQuery(line);
     if (query === null) { return ''; }
-    const response = await this.controller.send(`cmdusage ${query}`);
+    const response = await this.getController().send(`cmdusage ${query}`);
     return parseUsageResponse(response ?? undefined);
   }
 }

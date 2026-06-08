@@ -85,7 +85,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
       port
     );
 
-    this.rconBackend = new RconCompletionsBackend(this.connectionManager.controller);
+    this.rconBackend = new RconCompletionsBackend(() => this.connectionManager.controller);
     this.localBackend = new LocalCompletionsBackend(this.autocomplete);
 
     this.suggestionDisplay = new SuggestionDisplay({
@@ -230,7 +230,13 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private readonly keyHandlers = this.buildKeyHandlers();
 
   private buildKeyHandlers(): Map<string, () => void> {
-    const e = this.lineEditor;
+    // NOTE: this map is built once, as a class-field initializer — which runs
+    // *before* the constructor body assigns `this.lineEditor` (field
+    // initializers always run before constructor-body statements, regardless
+    // of declaration order in the source). So handlers must look up
+    // `this.lineEditor` lazily at call time rather than capturing it into a
+    // local here — capturing would freeze every line-editor binding on
+    // `undefined` and throw as soon as one of these handlers is invoked.
     const bindings: { sequences: string[]; handler: () => void }[] = [
       { sequences: ['\t'],                                handler: () => this.handleTabComplete() },
       { sequences: ['\x1b[Z'],                            handler: () => this.handleShiftTab() },
@@ -244,26 +250,26 @@ export class RconTerminal implements vscode.Pseudoterminal {
       { sequences: ['\x1b[B', '\x0e'],                    handler: () => this.handleHistoryOrSuggestionArrow('down') },
       { sequences: ['\x1b[5~'],                           handler: () => this.handlePagePrevious() },
       { sequences: ['\x1b[6~'],                           handler: () => this.handlePageNext() },
-      { sequences: ['\x1b[1;2D'],                         handler: () => e.selectLeft() },
-      { sequences: ['\x1b[1;2C'],                         handler: () => e.selectRight() },
-      { sequences: ['\x1b[1;5D', '\x1b[5D', '\x1bb'],     handler: () => e.moveWordLeft() },
-      { sequences: ['\x1b[1;5C', '\x1b[5C', '\x1bf'],     handler: () => e.moveWordRight() },
-      { sequences: ['\x1b[1;6D'],                         handler: () => e.selectWordLeft() },
-      { sequences: ['\x1b[1;6C'],                         handler: () => e.selectWordRight() },
-      { sequences: ['\x1b[1;2H', '\x1b[1;2~'],            handler: () => e.selectToStart() },
-      { sequences: ['\x1b[1;2F', '\x1b[1;2$'],            handler: () => e.selectToEnd() },
-      { sequences: ['\x1b[D', '\x02'],                    handler: () => e.moveLeft() },
-      { sequences: ['\x1b[C', '\x06'],                    handler: () => e.moveRight() },
+      { sequences: ['\x1b[1;2D'],                         handler: () => this.lineEditor.selectLeft() },
+      { sequences: ['\x1b[1;2C'],                         handler: () => this.lineEditor.selectRight() },
+      { sequences: ['\x1b[1;5D', '\x1b[5D', '\x1bb'],     handler: () => this.lineEditor.moveWordLeft() },
+      { sequences: ['\x1b[1;5C', '\x1b[5C', '\x1bf'],     handler: () => this.lineEditor.moveWordRight() },
+      { sequences: ['\x1b[1;6D'],                         handler: () => this.lineEditor.selectWordLeft() },
+      { sequences: ['\x1b[1;6C'],                         handler: () => this.lineEditor.selectWordRight() },
+      { sequences: ['\x1b[1;2H', '\x1b[1;2~'],            handler: () => this.lineEditor.selectToStart() },
+      { sequences: ['\x1b[1;2F', '\x1b[1;2$'],            handler: () => this.lineEditor.selectToEnd() },
+      { sequences: ['\x1b[D', '\x02'],                    handler: () => this.lineEditor.moveLeft() },
+      { sequences: ['\x1b[C', '\x06'],                    handler: () => this.lineEditor.moveRight() },
       { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.handleHome() },
       { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.handleEnd() },
-      { sequences: ['\x1b[3~'],                           handler: () => e.deleteForward() },
-      { sequences: ['\x0b'],                              handler: () => e.killToEnd() },
-      { sequences: ['\x15'],                              handler: () => e.killToStart() },
-      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => e.killWordBack() },
-      { sequences: ['\x1bd'],                             handler: () => e.killWordForward() },
-      { sequences: ['\x14'],                              handler: () => e.transposeChars() },
+      { sequences: ['\x1b[3~'],                           handler: () => this.lineEditor.deleteForward() },
+      { sequences: ['\x0b'],                              handler: () => this.lineEditor.killToEnd() },
+      { sequences: ['\x15'],                              handler: () => this.lineEditor.killToStart() },
+      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => this.lineEditor.killWordBack() },
+      { sequences: ['\x1bd'],                             handler: () => this.lineEditor.killWordForward() },
+      { sequences: ['\x14'],                              handler: () => this.lineEditor.transposeChars() },
       { sequences: ['\r', '\n'],                          handler: () => this.handleEnter() },
-      { sequences: ['\x7f', '\b'],                        handler: () => e.handleBackspace() },
+      { sequences: ['\x7f', '\b'],                        handler: () => this.lineEditor.handleBackspace() },
     ];
 
     const map = new Map<string, () => void>();
