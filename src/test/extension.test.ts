@@ -1,15 +1,22 @@
-import * as assert from 'assert';
+// src/test/extension.test.ts
+//
+// `extension.ts` is ~100% vscode-API orchestration (input boxes, secrets,
+// terminal/profile creation, output channels) with no pure logic to extract —
+// unlike the other modules covered in this suite. Meaningfully testing
+// activate()/createRconTerminalProfile()/connectToRcon() would mean mocking
+// large swaths of the `vscode` API, mostly asserting that those mocks were
+// called in the right order rather than exercising real behavior. Decided
+// against, the same way §7 (readline-style REPL library) was — see TODO.md.
+//
+// This smoke test just confirms the module loads under the real vscode host
+// and exposes the activation entry points the runtime expects.
 
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
-import * as vscode from 'vscode';
-// import * as myExtension from '../../extension';
+import * as assert from 'assert';
+import * as myExtension from '../extension';
 
 suite('Extension Test Suite', () => {
-	vscode.window.showInformationMessage('Start all tests.');
-
-	test('Sample test', () => {
-		assert.strictEqual(-1, [1, 2, 3].indexOf(5));
-		assert.strictEqual(-1, [1, 2, 3].indexOf(0));
+	test('exports activate and deactivate', () => {
+		assert.strictEqual(typeof myExtension.activate, 'function');
+		assert.strictEqual(typeof myExtension.deactivate, 'function');
 	});
 });
