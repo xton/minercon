@@ -306,8 +306,8 @@ the issue persists in the CLI, ensure your terminal reports correct dimensions
 ## Contributing
 
 ```sh
-git clone https://github.com/jaketcooper/minecraft-rcon.git
-cd minecraft-rcon
+git clone https://github.com/xton/Minecraft-rcon.git
+cd Minecraft-rcon
 npm install
 npm run compile
 npm test
@@ -318,6 +318,16 @@ live server is required — the RCON layer has a record/replay fixture harness.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history and
 [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+---
+
+## Acknowledgements
+
+This project began as [jaketcooper/Minecraft-rcon](https://github.com/jaketcooper/Minecraft-rcon),
+which provided the initial RCON protocol implementation and VS Code extension
+scaffold. The interactive terminal experience, tab completion, line editing, and
+standalone CLI were developed from there with significant help from
+[Claude](https://claude.ai).
 
 ---
 
