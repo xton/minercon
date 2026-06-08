@@ -6,8 +6,10 @@ import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step,
 } from './completionEngine';
-import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
 import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
+import { LineEditor, LineEditorHost } from './lineEditor';
+import { SuggestionDisplay } from './suggestionDisplay';
+import { ConnectionManager } from './connectionManager';
 
 export class RconTerminal implements vscode.Pseudoterminal {
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -16,44 +18,19 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private closeEmitter = new vscode.EventEmitter<number>();
   onDidClose: vscode.Event<number> = this.closeEmitter.event;
 
-  public controller: RconController;
-  private currentLine: string = '';
-  private cursorPosition: number = 0;
-  
-  // Text selection
-  private selectionStart: number = -1;
-  private selectionEnd: number = -1;
-  
-  // Command history
-  private history: string[] = [];
-  private historyIndex: number = -1;
-  private tempLine: string = '';
+  private connectionManager: ConnectionManager;
+  private lineEditor: LineEditor;
 
   // Connection info for reconnection
   private host: string;
   private port: number;
   private password: string;
   private output: vscode.OutputChannel;
-  private isConnected: boolean = true;
-  private isReconnecting: boolean = false;
-  private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 5;
-  private reconnectDelay: number = 2000;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
   private isExecutingCommand: boolean = false;
 
   // Autocomplete system
   private autocomplete: CommandAutocomplete;
-  private currentSuggestions: string[] = [];
-  private suggestionIndex: number = -1;
-  private isShowingSuggestions: boolean = false;
-  private currentArgumentHelp: string = '';
-  private suggestionListLines: number = 0;
-  
-  // Paging for suggestions
-  private visibleSuggestionsStart: number = 0;
-  private maxVisibleSuggestions: number = 10;
-  private currentPage: number = 1;
+  private suggestionDisplay: SuggestionDisplay;
 
   // Tab completion — server-side (RconTabComplete plugin) or local (command
   // tree built from `help` output) — is driven entirely by the pure
@@ -61,9 +38,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
   // below. `pluginMode` selects which CompletionsBackend answers the engine's
   // fetchCompletions/fetchUsage effects — that's the *only* place either mode
   // is named. Everything downstream (dispatch, effect execution, rendering)
-  // is mode-blind: currentSuggestions/suggestionIndex/isShowingSuggestions/
-  // currentArgumentHelp/paging are populated purely from the machine's
-  // render/hide effects.
+  // is mode-blind: the suggestion items/selection/usage are populated purely
+  // from the machine's render/hide effects.
   private pluginMode: boolean = false;
   private engine: Machine = createMachine();
   private rconBackend: CompletionsBackend;
@@ -74,15 +50,9 @@ export class RconTerminal implements vscode.Pseudoterminal {
 
   // For handling terminal resize
   private lastCommandOutputLines: number = 0;
-  private needsClearBeforeSuggestions: boolean = false;
-  private terminalBufferHeight: number = 24;
 
   // Extension context for caching
   private context: vscode.ExtensionContext;
-  
-  private get totalPages(): number {
-    return Math.ceil(this.currentSuggestions.length / this.maxVisibleSuggestions);
-  }
 
   constructor(
     controller: RconController, 
@@ -92,17 +62,22 @@ export class RconTerminal implements vscode.Pseudoterminal {
     output: vscode.OutputChannel,
     context: vscode.ExtensionContext
   ) {
-    this.controller = controller;
     this.host = host;
     this.port = port;
     this.password = password;
     this.output = output;
     this.context = context;
-    
+
+    this.connectionManager = new ConnectionManager(host, port, password, output, controller, {
+      write: (text) => this.writeEmitter.fire(text),
+      showPrompt: () => this.showPrompt(),
+      onReconnected: () => this.initializeCommands(),
+    });
+
     // Initialize autocomplete with all required parameters
     this.autocomplete = new CommandAutocomplete(
       async (cmd) => {
-        const result = await this.controller.send(cmd);
+        const result = await this.connectionManager.controller.send(cmd);
         return result ?? '';
       },
       output,
@@ -111,26 +86,52 @@ export class RconTerminal implements vscode.Pseudoterminal {
       port
     );
 
-    this.rconBackend = new RconCompletionsBackend(this.controller);
+    this.rconBackend = new RconCompletionsBackend(this.connectionManager.controller);
     this.localBackend = new LocalCompletionsBackend(this.autocomplete);
+
+    this.suggestionDisplay = new SuggestionDisplay({
+      write: (text) => this.writeEmitter.fire(text),
+    });
+
+    this.lineEditor = new LineEditor({
+      write: (text) => this.writeEmitter.fire(text),
+      promptText: () => {
+        if (this.connectionManager.isReconnecting) { return '\x1b[33m[reconnecting]\x1b[0m > '; }
+        if (!this.connectionManager.isConnected) { return '\x1b[31m[disconnected]\x1b[0m > '; }
+        return '\x1b[32m>\x1b[0m ';
+      },
+      onLineChanged: (line) => this.dispatchToEngine({ kind: 'lineChanged', line }),
+      beforeLineCleared: () => this.suggestionDisplay.clear(),
+      consumeOutputArtifacts: () => {
+        if (this.lastCommandOutputLines > 10) {
+          this.lastCommandOutputLines = 0;
+          return true;
+        }
+        return false;
+      },
+    });
   }
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
+    this.writeWelcomeBanner();
+
+    // Detect plugin or load command tree
+    this.detectAndInitialize();
+
+  }
+
+  private writeWelcomeBanner(): void {
     this.writeEmitter.fire('\x1b[1;36mMinecraft RCON Terminal\x1b[0m\r\n');
     this.writeEmitter.fire('Connected to \x1b[33m' + this.host + ':' + this.port + '\x1b[0m\r\n\r\n');
     this.writeEmitter.fire('\x1b[2mUseful shortcuts:\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mTab: Autocomplete commands\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mCtrl+L: Clear screen  |  Ctrl+C: Cancel input\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mUp/Down: Command history  |  Esc: Clear line\x1b[0m\r\n\r\n');
-    
-    // Detect plugin or load command tree
-    this.detectAndInitialize();
-
   }
 
   private async detectAndInitialize(): Promise<void> {
     try {
-      const response = await this.controller.send('tabcomplete');
+      const response = await this.connectionManager.controller.send('tabcomplete');
       if (response && response.includes('Returns tab completions for a partial command string')) {
         this.pluginMode = true;
         this.autocomplete.isReady = true;
@@ -210,58 +211,69 @@ export class RconTerminal implements vscode.Pseudoterminal {
 
 
   close(): void {
-    // Clear any pending reconnect timeouts
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    
-    // Disconnect controller
-    try {
-      this.controller.disconnect();
-    } catch (err) {
-      this.output.appendLine(`Error during close: ${err}`);
-    }
+    this.connectionManager.dispose();
   }
 
   private showPrompt(): void {
     if (this.isExecutingCommand) {
       return; // Don't show prompt while executing
     }
-    
-    if (this.isReconnecting) {
+
+    if (this.connectionManager.isReconnecting) {
       this.writeEmitter.fire('\x1b[33m[reconnecting]\x1b[0m > ');
-    } else if (!this.isConnected) {
+    } else if (!this.connectionManager.isConnected) {
       this.writeEmitter.fire('\x1b[31m[disconnected]\x1b[0m > ');
     } else {
       this.writeEmitter.fire('\x1b[32m>\x1b[0m ');
     }
   }
 
-  private hasSelection(): boolean {
-    return this.selectionStart !== -1 && this.selectionEnd !== -1 && this.selectionStart !== this.selectionEnd;
-  }
+  private readonly keyHandlers = this.buildKeyHandlers();
 
-  private clearSelection(): void {
-    this.selectionStart = -1;
-    this.selectionEnd = -1;
-  }
+  private buildKeyHandlers(): Map<string, () => void> {
+    const e = this.lineEditor;
+    const bindings: { sequences: string[]; handler: () => void }[] = [
+      { sequences: ['\t'],                                handler: () => this.handleTabComplete() },
+      { sequences: ['\x1b[Z'],                            handler: () => this.handleShiftTab() },
+      { sequences: ['\x1b'],                              handler: () => this.handleEscape() },
+      { sequences: ['\x04'],                              handler: () => this.connectionManager.disconnect() },
+      { sequences: ['\x03'],                              handler: () => this.handleCtrlC() },
+      { sequences: ['\x18'],                              handler: () => this.handleCut() },
+      { sequences: ['\x16', '\x19'],                      handler: () => this.handlePaste() },
+      { sequences: ['\x0c'],                              handler: () => this.handleClearScreen() },
+      { sequences: ['\x1b[A', '\x10'],                    handler: () => this.handleHistoryOrSuggestionArrow('up') },
+      { sequences: ['\x1b[B', '\x0e'],                    handler: () => this.handleHistoryOrSuggestionArrow('down') },
+      { sequences: ['\x1b[5~'],                           handler: () => this.handlePagePrevious() },
+      { sequences: ['\x1b[6~'],                           handler: () => this.handlePageNext() },
+      { sequences: ['\x1b[1;2D'],                         handler: () => e.selectLeft() },
+      { sequences: ['\x1b[1;2C'],                         handler: () => e.selectRight() },
+      { sequences: ['\x1b[1;5D', '\x1b[5D', '\x1bb'],     handler: () => e.moveWordLeft() },
+      { sequences: ['\x1b[1;5C', '\x1b[5C', '\x1bf'],     handler: () => e.moveWordRight() },
+      { sequences: ['\x1b[1;6D'],                         handler: () => e.selectWordLeft() },
+      { sequences: ['\x1b[1;6C'],                         handler: () => e.selectWordRight() },
+      { sequences: ['\x1b[1;2H', '\x1b[1;2~'],            handler: () => e.selectToStart() },
+      { sequences: ['\x1b[1;2F', '\x1b[1;2$'],            handler: () => e.selectToEnd() },
+      { sequences: ['\x1b[D', '\x02'],                    handler: () => e.moveLeft() },
+      { sequences: ['\x1b[C', '\x06'],                    handler: () => e.moveRight() },
+      { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.handleHome() },
+      { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.handleEnd() },
+      { sequences: ['\x1b[3~'],                           handler: () => e.deleteForward() },
+      { sequences: ['\x0b'],                              handler: () => e.killToEnd() },
+      { sequences: ['\x15'],                              handler: () => e.killToStart() },
+      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => e.killWordBack() },
+      { sequences: ['\x1bd'],                             handler: () => e.killWordForward() },
+      { sequences: ['\x14'],                              handler: () => e.transposeChars() },
+      { sequences: ['\r', '\n'],                          handler: () => this.handleEnter() },
+      { sequences: ['\x7f', '\b'],                        handler: () => e.handleBackspace() },
+    ];
 
-  private getSelectedText(): string {
-    if (!this.hasSelection()) {return '';}
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
-    return this.currentLine.slice(start, end);
-  }
-
-  private deleteSelection(): void {
-    if (!this.hasSelection()) {return;}
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
-    
-    this.currentLine = this.currentLine.slice(0, start) + this.currentLine.slice(end);
-    this.cursorPosition = start;
-    this.clearSelection();
+    const map = new Map<string, () => void>();
+    for (const { sequences, handler } of bindings) {
+      for (const seq of sequences) {
+        map.set(seq, handler);
+      }
+    }
+    return map;
   }
 
   handleInput(data: string): void {
@@ -270,481 +282,9 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Tab for autocomplete
-    if (data === '\t') {
-      this.handleTabComplete();
-      return;
-    }
-    
-    // Handle Shift+Tab for reverse cycling
-    if (data === '\x1b[Z') {
-      this.handleShiftTab();
-      return;
-    }
-
-    // Handle Escape - cancel autocomplete or clear line
-    if (data === '\x1b') {
-      if (this.isShowingSuggestions) {
-        this.dispatchToEngine({ kind: 'escape' });
-        return;
-      } else if (data.length === 1) {
-        this.clearAndResetLine();
-        this.showPrompt();
-        return;
-      }
-    }
-
-    // Handle Ctrl+D (disconnect)
-    if (data === '\x04') {
-      this.handleDisconnect();
-      return;
-    }
-
-    // Handle Ctrl+C (copy selected text or cancel current input)
-    if (data === '\x03') {
-      if (this.hasSelection()) {
-        vscode.env.clipboard.writeText(this.getSelectedText());
-        this.clearSelection();
-        this.redrawLineWithSelection();
-      } else if (this.currentLine.length > 0) {
-        // Cancel current input
-        this.writeEmitter.fire('^C\r\n');
-        this.clearAndResetLine();
-        this.showPrompt();
-      }
-      return;
-    }
-
-    // Handle Ctrl+X (cut selected text)
-    if (data === '\x18') {
-      if (this.hasSelection()) {
-        const selectedText = this.getSelectedText();
-        vscode.env.clipboard.writeText(selectedText);
-        
-        // Delete the selection
-        const start = Math.min(this.selectionStart, this.selectionEnd);
-        const end = Math.max(this.selectionStart, this.selectionEnd);
-        
-        this.currentLine = this.currentLine.slice(0, start) + this.currentLine.slice(end);
-        this.cursorPosition = start;
-        this.clearSelection();
-        
-        // Redraw the entire line
-        this.writeEmitter.fire('\r\x1b[K');
-        this.showPrompt();
-        this.writeEmitter.fire(this.currentLine);
-        
-        // Position cursor
-        const moveBack = this.currentLine.length - this.cursorPosition;
-        if (moveBack > 0) {
-          this.writeEmitter.fire('\x1b[' + moveBack + 'D');
-        }
-      }
-      return;
-    }
-
-    // Handle Ctrl+V / Ctrl+Y (paste — Ctrl+Y is the emacs/readline "yank" binding;
-    // we don't maintain a separate kill-ring, so both pull from the system
-    // clipboard, which is the more useful behavior in an editor-hosted terminal)
-    if (data === '\x16' || data === '\x19') {
-      vscode.env.clipboard.readText().then(text => {
-        if (text) {
-          this.insertText(text);
-        }
-      });
-      return;
-    }
-
-    // Handle Ctrl+L (clear screen)
-    if (data === '\x0c') {
-      this.writeEmitter.fire('\x1b[2J\x1b[H');
-      this.writeEmitter.fire('\x1b[1;36mMinecraft RCON Terminal\x1b[0m\r\n');
-      this.writeEmitter.fire('Connected to \x1b[33m' + this.host + ':' + this.port + '\x1b[0m\r\n\r\n');
-      this.writeEmitter.fire('\x1b[2mUseful shortcuts:\x1b[0m\r\n');
-      this.writeEmitter.fire('  \x1b[2mTab: Autocomplete commands\x1b[0m\r\n');
-      this.writeEmitter.fire('  \x1b[2mCtrl+L: Clear screen  |  Ctrl+C: Cancel input\x1b[0m\r\n');
-      this.writeEmitter.fire('  \x1b[2mUp/Down: Command history  |  Esc: Clear line\x1b[0m\r\n\r\n');
-      this.showPrompt();
-      this.writeEmitter.fire(this.currentLine);
-      // Position cursor correctly
-      if (this.cursorPosition < this.currentLine.length) {
-        const moveBack = this.currentLine.length - this.cursorPosition;
-        this.writeEmitter.fire('\x1b[' + moveBack + 'D');
-      }
-      return;
-    }
-
-    // Handle Up Arrow / Ctrl+P (emacs: previous-history)
-    if (data === '\x1b[A' || data === '\x10') {
-      if (this.isShowingSuggestions) {
-        // Navigate suggestions instead of history
-        this.dispatchToEngine({ kind: 'arrow', direction: 'up' });
-        return;
-      }
-      // Normal history navigation
-      if (this.hasSelection()) {
-        this.clearSelection();
-        this.redrawLineWithSelection();
-      }
-      this.navigateHistory('up');
-      return;
-    }
-
-    // Handle Down Arrow / Ctrl+N (emacs: next-history)
-    if (data === '\x1b[B' || data === '\x0e') {
-      if (this.isShowingSuggestions) {
-        // Navigate suggestions instead of history
-        this.dispatchToEngine({ kind: 'arrow', direction: 'down' });
-        return;
-      }
-      // Normal history navigation
-      if (this.hasSelection()) {
-        this.clearSelection();
-        this.redrawLineWithSelection();
-      }
-      this.navigateHistory('down');
-      return;
-    }
-    
-    // Handle Page Up for suggestion paging
-    if (data === '\x1b[5~') {
-      if (this.isShowingSuggestions && this.totalPages > 1) {
-        this.previousPage();
-        return;
-      }
-    }
-    
-    // Handle Page Down for suggestion paging  
-    if (data === '\x1b[6~') {
-      if (this.isShowingSuggestions && this.totalPages > 1) {
-        this.nextPage();
-        return;
-      }
-    }
-
-    // Handle Shift+Left Arrow
-    if (data === '\x1b[1;2D') {
-      if (this.cursorPosition > 0) {
-        if (!this.hasSelection()) {
-          this.selectionStart = this.cursorPosition;
-          this.selectionEnd = this.cursorPosition;
-        }
-        this.cursorPosition--;
-        this.selectionEnd = this.cursorPosition;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Shift+Right Arrow
-    if (data === '\x1b[1;2C') {
-      if (this.cursorPosition < this.currentLine.length) {
-        if (!this.hasSelection()) {
-          this.selectionStart = this.cursorPosition;
-          this.selectionEnd = this.cursorPosition;
-        }
-        this.cursorPosition++;
-        this.selectionEnd = this.cursorPosition;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Ctrl+Left Arrow / Meta+B (jump word left — emacs: backward-word)
-    if (data === '\x1b[1;5D' || data === '\x1b[5D' || data === '\x1bb') {
-      const newPos = this.findWordLeft();
-      if (newPos !== this.cursorPosition) {
-        const hadSelection = this.hasSelection();
-        this.clearSelection();
-        this.cursorPosition = newPos;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Ctrl+Right Arrow / Meta+F (jump word right — emacs: forward-word)
-    if (data === '\x1b[1;5C' || data === '\x1b[5C' || data === '\x1bf') {
-      const newPos = this.findWordRight();
-      if (newPos !== this.cursorPosition) {
-        const hadSelection = this.hasSelection();
-        this.clearSelection();
-        this.cursorPosition = newPos;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Ctrl+Shift+Left Arrow (select word left)
-    if (data === '\x1b[1;6D') {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = this.findWordLeft();
-      this.selectionEnd = this.cursorPosition;
-      this.redrawLineWithSelection();
-      return;
-    }
-
-    // Handle Ctrl+Shift+Right Arrow (select word right)
-    if (data === '\x1b[1;6C') {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = this.findWordRight();
-      this.selectionEnd = this.cursorPosition;
-      this.redrawLineWithSelection();
-      return;
-    }
-
-    // Handle Shift+Home
-    if (data === '\x1b[1;2H' || data === '\x1b[1;2~') {
-      if (this.cursorPosition > 0) {
-        if (!this.hasSelection()) {
-          this.selectionStart = this.cursorPosition;
-          this.selectionEnd = this.cursorPosition;
-        }
-        this.cursorPosition = 0;
-        this.selectionEnd = 0;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Shift+End
-    if (data === '\x1b[1;2F' || data === '\x1b[1;2$') {
-      if (this.cursorPosition < this.currentLine.length) {
-        if (!this.hasSelection()) {
-          this.selectionStart = this.cursorPosition;
-          this.selectionEnd = this.cursorPosition;
-        }
-        this.cursorPosition = this.currentLine.length;
-        this.selectionEnd = this.currentLine.length;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Left Arrow / Ctrl+B (emacs: backward-char)
-    if (data === '\x1b[D' || data === '\x02') {
-      const hadSelection = this.hasSelection();
-      if (hadSelection) {
-        this.clearSelection();
-      }
-      
-      if (this.cursorPosition > 0) {
-        this.cursorPosition--;
-        if (hadSelection) {
-          // Need to redraw to clear selection highlighting
-          this.redrawLineWithSelection();
-        } else {
-          // Just move cursor left
-          this.writeEmitter.fire('\x1b[D');
-        }
-      } else if (hadSelection) {
-        // At start but had selection, need to redraw
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Right Arrow / Ctrl+F (emacs: forward-char)
-    if (data === '\x1b[C' || data === '\x06') {
-      // Normal right arrow behavior
-      const hadSelection = this.hasSelection();
-      if (hadSelection) {
-        this.clearSelection();
-      }
-      
-      if (this.cursorPosition < this.currentLine.length) {
-        this.cursorPosition++;
-        if (hadSelection) {
-          this.redrawLineWithSelection();
-        } else {
-          this.writeEmitter.fire('\x1b[C');
-        }
-      } else if (hadSelection) {
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Home / Ctrl+A (emacs: move-to-beginning-of-line)
-    if (data === '\x1b[H' || data === '\x1bOH' || data === '\x1b[1~' || data === '\x01') {
-      // If suggestions are showing, jump to first suggestion
-      if (this.isShowingSuggestions) {
-        this.jumpToFirstSuggestion();
-        return;
-      }
-      
-      const hadSelection = this.hasSelection();
-      this.clearSelection();
-      if (this.cursorPosition > 0) {
-        this.cursorPosition = 0;
-        if (hadSelection) {
-          this.redrawLineWithSelection();
-        } else {
-          this.writeEmitter.fire('\r');
-          this.showPrompt();
-          this.writeEmitter.fire(this.currentLine);
-          const moveBack = this.currentLine.length;
-          if (moveBack > 0) {
-            this.writeEmitter.fire('\x1b[' + moveBack + 'D');
-          }
-        }
-      } else if (hadSelection) {
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle End / Ctrl+E (emacs: move-to-end-of-line)
-    if (data === '\x1b[F' || data === '\x1bOF' || data === '\x1b[4~' || data === '\x05') {
-      // If suggestions are showing, jump to last suggestion
-      if (this.isShowingSuggestions) {
-        this.jumpToLastSuggestion();
-        return;
-      }
-      
-      const hadSelection = this.hasSelection();
-      this.clearSelection();
-      const moveForward = this.currentLine.length - this.cursorPosition;
-      if (moveForward > 0) {
-        this.cursorPosition = this.currentLine.length;
-        if (hadSelection) {
-          this.redrawLineWithSelection();
-        } else {
-          this.writeEmitter.fire('\x1b[' + moveForward + 'C');
-        }
-      } else if (hadSelection) {
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Delete key
-    if (data === '\x1b[3~') {
-      if (this.hasSelection()) {
-        this.deleteSelection();
-        this.redrawLineWithSelection();
-      } else if (this.cursorPosition < this.currentLine.length) {
-        this.currentLine = this.currentLine.slice(0, this.cursorPosition) + 
-                          this.currentLine.slice(this.cursorPosition + 1);
-        const restOfLine = this.currentLine.slice(this.cursorPosition);
-        this.writeEmitter.fire(restOfLine + ' ');
-        if (restOfLine.length + 1 > 0) {
-          this.writeEmitter.fire('\x1b[' + (restOfLine.length + 1) + 'D');
-        }
-      }
-      return;
-    }
-
-    // Handle Ctrl+K (delete from cursor to end)
-    if (data === '\x0b') {
-      if (this.cursorPosition < this.currentLine.length) {
-        this.currentLine = this.currentLine.slice(0, this.cursorPosition);
-        this.writeEmitter.fire('\x1b[K');
-        this.clearSelection();
-      }
-      return;
-    }
-
-    // Handle Ctrl+U (emacs: unix-line-discard — kill from cursor to start of line)
-    if (data === '\x15') {
-      if (this.cursorPosition > 0) {
-        const deletedCount = this.cursorPosition;
-        const afterCursor = this.currentLine.slice(this.cursorPosition);
-        this.currentLine = afterCursor;
-        this.cursorPosition = 0;
-        this.clearSelection();
-
-        this.writeEmitter.fire('\x1b[' + deletedCount + 'D');
-        this.writeEmitter.fire('\x1b[K');
-        this.writeEmitter.fire(afterCursor);
-        if (afterCursor.length > 0) {
-          this.writeEmitter.fire('\x1b[' + afterCursor.length + 'D');
-        }
-      }
-      return;
-    }
-
-    // Handle Ctrl+W / Meta+Backspace (delete word backwards — emacs: backward-kill-word)
-    if (data === '\x17' || data === '\x1b\x7f' || data === '\x1b\b') {
-      if (this.cursorPosition > 0) {
-        const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
-        const afterCursor = this.currentLine.slice(this.cursorPosition);
-        
-        // Find the last word boundary
-        let newPos = this.cursorPosition - 1;
-        // Skip trailing spaces
-        while (newPos > 0 && beforeCursor[newPos] === ' ') {
-          newPos--;
-        }
-        // Skip word characters
-        while (newPos > 0 && beforeCursor[newPos - 1] !== ' ') {
-          newPos--;
-        }
-        
-        const deletedCount = this.cursorPosition - newPos;
-        this.currentLine = beforeCursor.slice(0, newPos) + afterCursor;
-        this.cursorPosition = newPos;
-        this.clearSelection();
-        
-        // Redraw the line
-        this.writeEmitter.fire('\x1b[' + deletedCount + 'D');
-        this.writeEmitter.fire('\x1b[K');
-        this.writeEmitter.fire(afterCursor);
-        if (afterCursor.length > 0) {
-          this.writeEmitter.fire('\x1b[' + afterCursor.length + 'D');
-        }
-      }
-      return;
-    }
-
-    // Handle Meta+D (emacs: kill-word — delete from cursor to end of word forward)
-    if (data === '\x1bd') {
-      const newPos = this.findWordRight();
-      if (newPos > this.cursorPosition) {
-        const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
-        const afterDeleted = this.currentLine.slice(newPos);
-        this.currentLine = beforeCursor + afterDeleted;
-        this.clearSelection();
-
-        this.writeEmitter.fire('\x1b[K');
-        this.writeEmitter.fire(afterDeleted);
-        if (afterDeleted.length > 0) {
-          this.writeEmitter.fire('\x1b[' + afterDeleted.length + 'D');
-        }
-      }
-      return;
-    }
-
-    // Handle Ctrl+T (emacs: transpose-chars — swap the two characters around the cursor)
-    if (data === '\x14') {
-      if (this.currentLine.length >= 2 && this.cursorPosition > 0) {
-        // At end of line, transpose the last two characters; otherwise transpose
-        // the character before the cursor with the one at the cursor.
-        const pos = Math.min(this.cursorPosition, this.currentLine.length - 1);
-        const chars = this.currentLine.split('');
-        [chars[pos - 1], chars[pos]] = [chars[pos], chars[pos - 1]];
-        this.currentLine = chars.join('');
-        this.cursorPosition = Math.min(pos + 1, this.currentLine.length);
-        this.clearSelection();
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
-    // Handle Enter
-    if (data === '\r' || data === '\n') {
-      this.handleEnter();
-      return;
-    }
-
-    // Handle Backspace
-    if (data === '\x7f' || data === '\b') {
-      this.handleBackspace();
+    const handler = this.keyHandlers.get(data);
+    if (handler) {
+      handler();
       return;
     }
 
@@ -754,7 +294,110 @@ export class RconTerminal implements vscode.Pseudoterminal {
     }
 
     // Regular character input
-    this.insertText(data);
+    this.lineEditor.insertText(data);
+  }
+
+  // Escape: cancel autocomplete, or clear the line
+  private handleEscape(): void {
+    if (this.suggestionDisplay.isShowing) {
+      this.dispatchToEngine({ kind: 'escape' });
+      return;
+    }
+    this.lineEditor.clearAndReset();
+    this.showPrompt();
+  }
+
+  // Ctrl+C: copy selected text, or cancel current input
+  private handleCtrlC(): void {
+    if (this.lineEditor.hasSelection()) {
+      vscode.env.clipboard.writeText(this.lineEditor.getSelectedText());
+      this.lineEditor.clearSelection();
+      this.lineEditor.redraw();
+    } else if (this.lineEditor.line.length > 0) {
+      this.writeEmitter.fire('^C\r\n');
+      this.lineEditor.clearAndReset();
+      this.showPrompt();
+    }
+  }
+
+  // Ctrl+X: cut selected text
+  private handleCut(): void {
+    if (!this.lineEditor.hasSelection()) {
+      return;
+    }
+    vscode.env.clipboard.writeText(this.lineEditor.getSelectedText());
+    this.lineEditor.deleteSelection();
+    this.lineEditor.redraw();
+  }
+
+  // Ctrl+V / Ctrl+Y (paste — Ctrl+Y is the emacs/readline "yank" binding;
+  // we don't maintain a separate kill-ring, so both pull from the system
+  // clipboard, which is the more useful behavior in an editor-hosted terminal)
+  private handlePaste(): void {
+    vscode.env.clipboard.readText().then(text => {
+      if (text) {
+        this.lineEditor.insertText(text);
+      }
+    });
+  }
+
+  // Ctrl+L: clear screen and redraw the banner, prompt, and current line
+  private handleClearScreen(): void {
+    this.writeEmitter.fire('\x1b[2J\x1b[H');
+    this.writeWelcomeBanner();
+    this.showPrompt();
+    this.writeEmitter.fire(this.lineEditor.line);
+    if (this.lineEditor.cursor < this.lineEditor.line.length) {
+      const moveBack = this.lineEditor.line.length - this.lineEditor.cursor;
+      this.writeEmitter.fire('\x1b[' + moveBack + 'D');
+    }
+  }
+
+  // Up/Down (and Ctrl+P/Ctrl+N): navigate suggestions if showing, else command history
+  private handleHistoryOrSuggestionArrow(direction: 'up' | 'down'): void {
+    if (this.suggestionDisplay.isShowing) {
+      this.dispatchToEngine({ kind: 'arrow', direction });
+      return;
+    }
+    if (this.lineEditor.hasSelection()) {
+      this.lineEditor.clearSelection();
+      this.lineEditor.redraw();
+    }
+    this.lineEditor.navigateHistory(direction);
+  }
+
+  private handlePagePrevious(): void {
+    const i = this.suggestionDisplay.previousPageIndex();
+    if (i !== null) {
+      this.dispatchToEngine({ kind: 'selectIndex', index: i });
+    }
+  }
+
+  private handlePageNext(): void {
+    const i = this.suggestionDisplay.nextPageIndex();
+    if (i !== null) {
+      this.dispatchToEngine({ kind: 'selectIndex', index: i });
+    }
+  }
+
+  // Home / Ctrl+A: jump to first suggestion if showing, else move-to-beginning-of-line
+  private handleHome(): void {
+    const i = this.suggestionDisplay.firstIndex();
+    if (i !== null) {
+      this.dispatchToEngine({ kind: 'selectIndex', index: i });
+      return;
+    }
+    this.lineEditor.moveToStart();
+  }
+
+  // End / Ctrl+E: jump to last suggestion if showing, else move-to-end-of-line
+  private handleEnd(): void {
+    const i = this.suggestionDisplay.lastIndex();
+    if (i !== null) {
+      this.dispatchToEngine({ kind: 'selectIndex', index: i });
+      return;
+    }
+    this.lineEditor.moveToEnd();
   }
 
   // ── tab completion: drive the pure completionEngine state machine ──
@@ -783,48 +426,27 @@ export class RconTerminal implements vscode.Pseudoterminal {
         this.runEngineUsageFetch(effect.requestId);
         break;
       case 'applySuggestion': {
-        const query = this.engine.phase.kind === 'open' ? this.engine.phase.query : this.currentLine;
+        const query = this.engine.phase.kind === 'open' ? this.engine.phase.query : this.lineEditor.line;
         this.applySuggestionText(query, effect.text);
         break;
       }
-      case 'render': {
-        this.currentSuggestions = effect.items;
-        this.suggestionIndex = effect.selectedIndex;
-        this.currentArgumentHelp = effect.usage ?? '';
-        this.clearSuggestionDisplay();
-
+      case 'render':
         // `effect.usage` is only ever a single, resolved usage line — the
         // engine (parseUsageResponse) already collapses "(too broad...)"
         // failures *and* multi-candidate ambiguous-prefix responses (e.g.
         // "mvp c" matching both "mvp create" and "mvp config") down to empty,
-        // so a non-null `display` here means the command portion is fully
+        // so a non-null usage here means the command portion is fully
         // resolved. That's true independent of how many *argument*-level
-        // completions remain — so show it alongside the list whenever it's
-        // available, not just when the list itself has narrowed to one item.
-        const display = effect.usage ? formatArgumentHint(effect.usage, this.currentLine) : null;
-        let lines: string[] = [];
-        if (effect.items.length > 0) {
-          this.isShowingSuggestions = true;
-          lines = this.buildSuggestionListLines();
-          if (display) {
-            lines = lines.concat(this.buildArgumentHintLines(display));
-          }
-        } else {
-          this.isShowingSuggestions = false;
-          if (display) { lines = this.buildArgumentHintLines(display); }
-        }
-        this.renderSuggestionArea(lines);
+        // completions remain — so `SuggestionDisplay.render` shows it
+        // alongside the list whenever it's available, not just when the list
+        // itself has narrowed to one item.
+        this.suggestionDisplay.render(effect.items, effect.selectedIndex, effect.usage, this.lineEditor.line);
         break;
-      }
       case 'hide':
-        this.hideSuggestions();
+        this.suggestionDisplay.hide();
         break;
       case 'restoreLine':
-        this.currentLine = effect.text;
-        this.cursorPosition = effect.text.length;
-        this.writeEmitter.fire('\r\x1b[K');
-        this.showPrompt();
-        this.writeEmitter.fire(this.currentLine);
+        this.lineEditor.replaceLine(effect.text);
         break;
     }
   }
@@ -837,7 +459,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
   // `forLine` (not `effect.query`, which is backend-specific wire format) is
   // the raw input line both backends actually need.
   private async runEngineCompletionsFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.currentLine;
+    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
     let items: string[] = [];
     try {
       items = await this.completionsBackend.fetchCompletions(line);
@@ -848,7 +470,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
   }
 
   private async runEngineUsageFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.currentLine;
+    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
     let text = '';
     try {
       text = await this.completionsBackend.fetchUsage(line);
@@ -864,390 +486,51 @@ export class RconTerminal implements vscode.Pseudoterminal {
   // leading "/" on the first word and appending after a trailing space.
   private applySuggestionText(query: string, suggestionText: string): void {
     const parts = query.split(' ');
+    let newLine: string;
     if (query.endsWith(' ')) {
-      this.currentLine = query + suggestionText;
+      newLine = query + suggestionText;
     } else if (parts.length > 0) {
       const lastPart = parts[parts.length - 1];
       parts[parts.length - 1] = lastPart.startsWith('/') ? '/' + suggestionText : suggestionText;
-      this.currentLine = parts.join(' ');
+      newLine = parts.join(' ');
     } else {
-      this.currentLine = '/' + suggestionText;
+      newLine = '/' + suggestionText;
     }
 
-    this.cursorPosition = this.currentLine.length;
-    this.writeEmitter.fire('\r\x1b[K');
-    this.showPrompt();
-    this.writeEmitter.fire(this.currentLine);
+    this.lineEditor.replaceLine(newLine);
   }
 
   private handleTabComplete(): void {
-    this.dispatchToEngine({ kind: 'tab', line: this.currentLine, now: Date.now() });
+    this.dispatchToEngine({ kind: 'tab', line: this.lineEditor.line, now: Date.now() });
   }
 
   private handleShiftTab(): void {
-    this.dispatchToEngine({ kind: 'shiftTab', line: this.currentLine, now: Date.now() });
-  }
-
-  // UPDATED: Better suggestion list rendering
-  /**
-   * Builds the suggestion list's content lines — fully ANSI-styled, but with
-   * no `\x1b[2K`/`\r\n` baked in. `renderSuggestionArea` is the single place
-   * that turns a list of content strings into clear-and-draw ANSI, whether
-   * it's drawing the list alone, the hint alone, or (when there's exactly one
-   * suggestion left) both stacked together in one frame.
-   */
-  private buildSuggestionListLines(): string[] {
-    // Calculate the visible window based on the selected index
-    this.updateVisibleWindow();
-
-    const lines: string[] = [];
-
-    // Get only the completed parts of the command (everything before the last space or the whole line if no space)
-    let completedText = '';
-    if (this.currentLine.includes(' ')) {
-      // If there's a space, get everything up to and including the last space
-      const lastSpaceIndex = this.currentLine.lastIndexOf(' ');
-      completedText = this.currentLine.substring(0, lastSpaceIndex + 1);
-    }
-
-    const concealedText = '\x1b[8m'; // Concealed/hidden text
-    const resetColor = '\x1b[0m';
-    const prefix = completedText ? concealedText + completedText + resetColor : '';
-
-    // Show indicator if there are items above the visible window
-    if (this.visibleSuggestionsStart > 0) {
-      lines.push(prefix + '\x1b[90m  ▲ (' + this.visibleSuggestionsStart + ' more above)\x1b[0m');
-    }
-
-    // Show visible suggestions in vertical list
-    const visibleEnd = Math.min(
-      this.visibleSuggestionsStart + this.maxVisibleSuggestions,
-      this.currentSuggestions.length
-    );
-
-    for (let i = this.visibleSuggestionsStart; i < visibleEnd; i++) {
-      // Show selection indicator and item
-      if (i === this.suggestionIndex) {
-        // Yellow for selected item with arrow indicator
-        lines.push(prefix + '\x1b[93m→ ' + this.currentSuggestions[i] + '\x1b[0m');
-      } else {
-        // Gray for other items with space for alignment
-        lines.push(prefix + '\x1b[90m  ' + this.currentSuggestions[i] + '\x1b[0m');
-      }
-    }
-
-    // Show indicator if there are items below the visible window
-    if (visibleEnd < this.currentSuggestions.length) {
-      const remaining = this.currentSuggestions.length - visibleEnd;
-      lines.push(prefix + '\x1b[90m  ▼ (' + remaining + ' more below)\x1b[0m');
-    }
-
-    // Show current position and page indicator at bottom
-    lines.push(
-      prefix + '\x1b[90m  [' + (this.suggestionIndex + 1) + '/' + this.currentSuggestions.length + '] ' +
-      'Page ' + this.currentPage + '/' + this.totalPages + '\x1b[0m'
-    );
-
-    return lines;
-  }
-
-  /**
-   * Draws a single frame of suggestion-area content — one save/clear/restore
-   * cycle, regardless of whether `lines` came from the list, the hint, or
-   * both stacked together. `clearSuggestionDisplay` (called centrally before
-   * this, by `executeEngineEffect`'s `render` case) has already erased
-   * whatever was there before, so this only ever draws onto a blank area —
-   * each line gets its own `\x1b[2K` defensively, but there's no "clear the
-   * old N lines" dance to duplicate here.
-   */
-  private renderSuggestionArea(lines: string[]): void {
-    if (lines.length === 0) { return; }
-
-    if (this.needsClearBeforeSuggestions) {
-      this.writeEmitter.fire('\x1b[J'); // Clear from cursor to end of screen
-      this.needsClearBeforeSuggestions = false;
-    }
-
-    this.writeEmitter.fire('\x1b7'); // Save cursor
-    this.writeEmitter.fire('\r\n');  // Move to the display area
-
-    for (let i = 0; i < lines.length; i++) {
-      this.writeEmitter.fire('\x1b[2K'); // Clear line first
-      this.writeEmitter.fire(lines[i]);
-      if (i < lines.length - 1) { this.writeEmitter.fire('\r\n'); }
-    }
-
-    this.suggestionListLines = lines.length;
-
-    this.writeEmitter.fire('\x1b8'); // Restore cursor
-  }
-
-  private updateVisibleWindow(): void {
-    // Keep a buffer of 2 items above and below the selected item when possible
-    const buffer = 2;
-    
-    // Calculate which page the selected item is on
-    const selectedPage = Math.floor(this.suggestionIndex / this.maxVisibleSuggestions) + 1;
-    
-    // Update current page if it changed
-    if (selectedPage !== this.currentPage) {
-      this.currentPage = selectedPage;
-    }
-    
-    // Calculate ideal window position
-    let idealStart = this.suggestionIndex - buffer;
-    let idealEnd = this.suggestionIndex + buffer + 1;
-    
-    // Adjust if we're near the boundaries
-    if (idealStart < 0) {
-      idealStart = 0;
-      idealEnd = Math.min(this.maxVisibleSuggestions, this.currentSuggestions.length);
-    } else if (idealEnd > this.currentSuggestions.length) {
-      idealEnd = this.currentSuggestions.length;
-      idealStart = Math.max(0, idealEnd - this.maxVisibleSuggestions);
-    }
-    
-    // Update the visible window
-    if (this.suggestionIndex < this.visibleSuggestionsStart + buffer) {
-      // Scrolling up
-      this.visibleSuggestionsStart = Math.max(0, this.suggestionIndex - buffer);
-    } else if (this.suggestionIndex >= this.visibleSuggestionsStart + this.maxVisibleSuggestions - buffer) {
-      // Scrolling down
-      this.visibleSuggestionsStart = Math.min(
-        this.suggestionIndex - this.maxVisibleSuggestions + buffer + 1,
-        Math.max(0, this.currentSuggestions.length - this.maxVisibleSuggestions)
-      );
-    }
-    
-    // Final boundary check
-    this.visibleSuggestionsStart = Math.max(0, this.visibleSuggestionsStart);
-    this.visibleSuggestionsStart = Math.min(
-      this.visibleSuggestionsStart,
-      Math.max(0, this.currentSuggestions.length - this.maxVisibleSuggestions)
-    );
-  }
-
-  // UPDATED: Better clearing of suggestion display
-  private clearSuggestionDisplay(): void {
-    // Clear the suggestion list area
-    if (this.suggestionListLines > 0) {
-      this.writeEmitter.fire('\x1b7'); // Save cursor
-      this.writeEmitter.fire('\r\n'); // Move to suggestion area
-      
-      // Clear each line properly
-      for (let i = 0; i < this.suggestionListLines; i++) {
-        this.writeEmitter.fire('\x1b[2K'); // Clear entire line
-        if (i < this.suggestionListLines - 1) {
-          this.writeEmitter.fire('\r\n');
-        }
-      }
-      
-      // Move back to original position
-      if (this.suggestionListLines > 0) {
-        this.writeEmitter.fire(`\x1b[${this.suggestionListLines}A`);
-      }
-      
-      this.writeEmitter.fire('\x1b8'); // Restore cursor
-      this.suggestionListLines = 0;
-    }
-  }
-
-  private jumpToFirstSuggestion(): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-    this.dispatchToEngine({ kind: 'selectIndex', index: 0 });
-  }
-
-  private jumpToLastSuggestion(): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-    this.dispatchToEngine({ kind: 'selectIndex', index: this.currentSuggestions.length - 1 });
-  }
-
-  private nextPage(): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-
-    const nextPageStart = this.currentPage * this.maxVisibleSuggestions;
-    const targetIndex = nextPageStart < this.currentSuggestions.length ? nextPageStart : 0;
-    this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
-  }
-
-  private previousPage(): void {
-    if (!this.isShowingSuggestions || this.currentSuggestions.length === 0) {return;}
-
-    const targetIndex = this.currentPage > 1
-      ? (this.currentPage - 2) * this.maxVisibleSuggestions
-      : (this.totalPages - 1) * this.maxVisibleSuggestions;
-    this.dispatchToEngine({ kind: 'selectIndex', index: targetIndex });
-  }
-
-  private hideSuggestions(): void {
-    this.clearSuggestionDisplay();
-    this.clearArgumentDisplay(); // This now only clears display, not the help text
-    this.isShowingSuggestions = false;
-    this.suggestionIndex = -1;
-    this.currentSuggestions = [];
-    this.visibleSuggestionsStart = 0; // Reset paging
-    this.currentPage = 1; // Reset current page
-    // Don't clear currentArgumentHelp here - preserve it for the command
-  }
-
-  // UPDATED: Clear the input line when typing starts
-  private insertText(text: string): void {
-    // NEW: Clear any rendering artifacts when starting to type after large output
-    if (this.lastCommandOutputLines > 10) {
-      // Ensure we're on a clean line
-      this.writeEmitter.fire('\x1b[2K'); // Clear current line
-      this.writeEmitter.fire('\r'); // Return to start
-      this.showPrompt();
-      this.writeEmitter.fire(this.currentLine.substring(0, this.cursorPosition));
-      this.lastCommandOutputLines = 0; // Reset
-    }
-    
-    // Replace selection if exists
-    if (this.hasSelection()) {
-      this.deleteSelection();
-    }
-    
-    const filteredText = text.replace(/[\x00-\x08\x0a-\x1f\x7f]/g, '');
-    if (filteredText.length === 0) {return;}
-
-    this.currentLine = this.currentLine.slice(0, this.cursorPosition) +
-                      filteredText + 
-                      this.currentLine.slice(this.cursorPosition);
-    
-    const restOfLine = this.currentLine.slice(this.cursorPosition + filteredText.length);
-    this.writeEmitter.fire(filteredText + restOfLine);
-    
-    this.cursorPosition += filteredText.length;
-    
-    if (restOfLine.length > 0) {
-      this.writeEmitter.fire('\x1b[' + restOfLine.length + 'D');
-    }
-    
-    this.clearSelection();
-
-    // Update suggestions immediately for instant feedback
-    this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
-  }
-
-  private handleBackspace(): void {
-    if (this.hasSelection()) {
-      this.deleteSelection();
-      this.redrawLineWithSelection();
-    } else if (this.cursorPosition > 0) {
-      this.currentLine = this.currentLine.slice(0, this.cursorPosition - 1) +
-                        this.currentLine.slice(this.cursorPosition);
-      this.cursorPosition--;
-
-      this.writeEmitter.fire('\b');
-      const restOfLine = this.currentLine.slice(this.cursorPosition);
-      this.writeEmitter.fire(restOfLine + ' ');
-      if (restOfLine.length + 1 > 0) {
-        this.writeEmitter.fire('\x1b[' + (restOfLine.length + 1) + 'D');
-      }
-
-      // Update suggestions immediately
-      this.dispatchToEngine({ kind: 'lineChanged', line: this.currentLine });
-    }
-  }
-
-  /**
-   * Builds the argument-hint's content lines: the usage line, shown in full
-   * and literally — with the argument the user is currently editing bolded
-   * and everything else (command prefix and other tokens alike) gray — plus
-   * an optional contextual-hint line for that argument. Same "fully-styled
-   * content strings, no \x1b[2K/\r\n" convention as `buildSuggestionListLines`,
-   * so `renderSuggestionArea` can draw either or both in one frame.
-   *
-   * Shown alongside or in place of the suggestion list when a command has
-   * argument structure worth showing — e.g. "/gamemode creative " (nothing
-   * left to complete for the target selector, but worth showing what comes
-   * next), or "/gamemode cr" (one match left — "creative" — where seeing the
-   * full usage helps confirm that's the right command to commit to). The
-   * actual parsing of `usage`/`line` into positions and hint text is pure —
-   * see argumentHint.ts — this is just the ANSI rendering of that
-   * already-computed structure.
-   */
-  private buildArgumentHintLines(display: ArgumentHintDisplay): string[] {
-    const resetColor = '\x1b[0m';
-    const grayColor = '\x1b[90m';
-    const boldWhite = '\x1b[1;97m';
-
-    let usageLine = '  ' + grayColor + display.commandPrefixText + resetColor;
-    for (let i = 0; i < display.tokens.length; i++) {
-      usageLine += ' ';
-      usageLine += (i === display.currentArgIndex)
-        ? boldWhite + display.tokens[i] + resetColor
-        : grayColor + display.tokens[i] + resetColor;
-    }
-
-    return [usageLine];
-  }
-
-  private clearArgumentDisplay(): void {
-    // This clears the display area (same as clearSuggestionDisplay)
-    if (this.suggestionListLines > 0) {
-      this.writeEmitter.fire('\x1b7'); // Save cursor
-      this.writeEmitter.fire('\r\n');
-      for (let i = 0; i < this.suggestionListLines; i++) {
-        this.writeEmitter.fire('\x1b[K');
-        if (i < this.suggestionListLines - 1) {
-          this.writeEmitter.fire('\r\n');
-        }
-      }
-      this.writeEmitter.fire(`\x1b[${this.suggestionListLines}A`);
-      this.writeEmitter.fire('\x1b8'); // Restore cursor
-      this.suggestionListLines = 0;
-    }
-    // DON'T clear currentArgumentHelp here - we want to preserve it!
-  }
-
-  private handleDisconnect(): void {
-    this.writeEmitter.fire('^D\r\n');
-    this.writeEmitter.fire('Disconnecting...\r\n');
-    
-    // Clear any pending reconnect
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-    
-    try {
-      this.controller.disconnect();
-    } catch (err) {
-      this.output.appendLine(`Error during disconnect: ${err}`);
-    }
-    
-    this.isConnected = false;
-    this.isReconnecting = false;
-    this.writeEmitter.fire('Connection closed. Type \x1b[33m/reconnect\x1b[0m to reconnect.\r\n\r\n');
-    this.showPrompt();
+    this.dispatchToEngine({ kind: 'shiftTab', line: this.lineEditor.line, now: Date.now() });
   }
 
   private handleEnter(): void {
     // Clear suggestions and argument display before processing
-    if (this.isShowingSuggestions) {
-      this.hideSuggestions();
+    if (this.suggestionDisplay.isShowing) {
+      this.suggestionDisplay.hide();
     }
-    this.clearArgumentDisplay();
-    
+    this.suggestionDisplay.clear();
+
     this.writeEmitter.fire('\r\n');
-    
-    const command = this.currentLine.trim();
-    
-    // Clear current line state
-    this.currentLine = '';
-    this.cursorPosition = 0;
-    this.historyIndex = -1;
-    this.tempLine = '';
-    this.clearSelection();
+
+    const command = this.lineEditor.line.trim();
+
+    // Clear current line state — pure reset (no redraw: we just printed our
+    // own \r\n, so a redraw here would draw a duplicate/misplaced prompt)
+    this.lineEditor.resetLine();
+    this.lineEditor.resetHistoryCursor();
     this.dispatchToEngine({ kind: 'lineChanged', line: '' });
 
     if (command) {
       // Handle special commands
       if (command === '/reconnect') {
-        this.manualReconnect();
+        this.connectionManager.manualReconnect();
       } else if (command === '/disconnect') {
-        this.handleDisconnect();
+        this.connectionManager.disconnect();
       } else if (command === '/clear') {
         this.writeEmitter.fire('\x1b[2J\x1b[H');
         this.showPrompt();
@@ -1285,14 +568,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
           this.showPrompt();
         }
       } else {
-        // Add to history if not duplicate
-        if (this.history.length === 0 || this.history[this.history.length - 1] !== command) {
-          this.history.push(command);
-          // Limit history size
-          if (this.history.length > 100) {
-            this.history.shift();
-          }
-        }
+        this.lineEditor.pushHistory(command);
         this.executeCommand(command);
       }
     } else {
@@ -1323,245 +599,15 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.showPrompt();
   }
 
-  private findWordLeft(): number {
-    if (this.cursorPosition === 0) {return 0;}
-    
-    let pos = this.cursorPosition - 1;
-    // Skip whitespace
-    while (pos > 0 && this.currentLine[pos] === ' ') {
-      pos--;
-    }
-    // Skip word characters
-    while (pos > 0 && this.currentLine[pos - 1] !== ' ') {
-      pos--;
-    }
-    return pos;
-  }
-
-  private findWordRight(): number {
-    if (this.cursorPosition >= this.currentLine.length) {return this.currentLine.length;}
-    
-    let pos = this.cursorPosition;
-    
-    // If we're in whitespace, skip to next word
-    if (this.currentLine[pos] === ' ') {
-      while (pos < this.currentLine.length && this.currentLine[pos] === ' ') {
-        pos++;
-      }
-    } else {
-      // Skip current word
-      while (pos < this.currentLine.length && this.currentLine[pos] !== ' ') {
-        pos++;
-      }
-    }
-    
-    return pos;
-  }
-
-  private redrawLineWithSelection(): void {
-    // Move cursor to start of line
-    this.writeEmitter.fire('\r');
-    // Clear entire line
-    this.writeEmitter.fire('\x1b[K');
-    
-    // Redraw prompt
-    if (this.isReconnecting) {
-      this.writeEmitter.fire('\x1b[33m[reconnecting]\x1b[0m > ');
-    } else if (!this.isConnected) {
-      this.writeEmitter.fire('\x1b[31m[disconnected]\x1b[0m > ');
-    } else {
-      this.writeEmitter.fire('\x1b[32m>\x1b[0m ');
-    }
-    
-    if (!this.hasSelection() || this.selectionStart === this.selectionEnd) {
-      // No selection, just write the line normally
-      this.writeEmitter.fire(this.currentLine);
-    } else {
-      // Draw with selection highlighting
-      const start = Math.min(this.selectionStart, this.selectionEnd);
-      const end = Math.max(this.selectionStart, this.selectionEnd);
-      
-      // Before selection
-      if (start > 0) {
-        this.writeEmitter.fire(this.currentLine.slice(0, start));
-      }
-      // Selected text (inverse video)
-      this.writeEmitter.fire('\x1b[7m' + this.currentLine.slice(start, end) + '\x1b[27m');
-      // After selection
-      if (end < this.currentLine.length) {
-        this.writeEmitter.fire(this.currentLine.slice(end));
-      }
-    }
-    
-    // Move cursor to correct position
-    if (this.currentLine.length > this.cursorPosition) {
-      const moveBack = this.currentLine.length - this.cursorPosition;
-      this.writeEmitter.fire('\x1b[' + moveBack + 'D');
-    }
-  }
-
-  private clearAndResetLine(): void {
-    // Clear any display
-    this.clearArgumentDisplay();
-    
-    // Move to start of input (after prompt)
-    this.writeEmitter.fire('\r');
-    // Clear entire line
-    this.writeEmitter.fire('\x1b[K');
-    
-    this.currentLine = '';
-    this.cursorPosition = 0;
-    this.clearSelection();
-    this.dispatchToEngine({ kind: 'lineChanged', line: '' });
-  }
-
-  private navigateHistory(direction: 'up' | 'down'): void {
-    if (this.history.length === 0) {
-      return;
-    }
-
-    if (this.historyIndex === -1 && direction === 'up') {
-      // Save current line
-      this.tempLine = this.currentLine;
-    }
-
-    if (direction === 'up') {
-      if (this.historyIndex < this.history.length - 1) {
-        this.historyIndex++;
-        const newLine = this.history[this.history.length - 1 - this.historyIndex];
-        this.replaceCurrentLine(newLine);
-      }
-    } else { // down
-      if (this.historyIndex > 0) {
-        this.historyIndex--;
-        const newLine = this.history[this.history.length - 1 - this.historyIndex];
-        this.replaceCurrentLine(newLine);
-      } else if (this.historyIndex === 0) {
-        this.historyIndex = -1;
-        this.replaceCurrentLine(this.tempLine);
-      }
-    }
-  }
-
-  private replaceCurrentLine(newLine: string): void {
-    // Clear current line display
-    this.writeEmitter.fire('\r');
-    this.writeEmitter.fire('\x1b[K');
-    
-    // Show prompt again
-    this.showPrompt();
-    
-    // Write new line
-    this.writeEmitter.fire(newLine);
-    
-    this.currentLine = newLine;
-    this.cursorPosition = newLine.length;
-    this.clearSelection();
-  }
-
-  private async manualReconnect(): Promise<void> {
-    if (this.isReconnecting) {
-      this.writeEmitter.fire('\x1b[33mAlready reconnecting...\x1b[0m\r\n\r\n');
-      this.showPrompt();
-      return;
-    }
-    
-    this.reconnectAttempts = 0;
-    this.reconnectDelay = 2000;
-    await this.attemptReconnect();
-  }
-
-  private async attemptReconnect(): Promise<void> {
-    if (this.isReconnecting) {
-      return;
-    }
-
-    if (this.isConnected) {
-      this.writeEmitter.fire('\x1b[32mAlready connected.\x1b[0m\r\n\r\n');
-      this.showPrompt();
-      return;
-    }
-
-    this.isReconnecting = true;
-    this.reconnectAttempts++;
-    
-    const attemptText = this.reconnectAttempts > 1 ? ` (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})` : '';
-    this.writeEmitter.fire('\x1b[33mReconnecting to ' + this.host + ':' + this.port + attemptText + '...\x1b[0m\r\n');
-    
-    try {
-      // Disconnect existing controller
-      try {
-        await this.controller.disconnect();
-      } catch (err) {
-        // Ignore disconnect errors during reconnect
-      }
-      
-      // Create new controller
-      this.controller = new RconController(this.host, this.port, this.password, this.output);
-      await this.controller.connect();
-      
-      this.isConnected = true;
-      this.isReconnecting = false;
-      this.reconnectAttempts = 0;
-      this.reconnectDelay = 2000;
-      
-      // Clear any pending timeout
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = null;
-      }
-      
-      this.writeEmitter.fire('\x1b[1;32m✓ Reconnected successfully!\x1b[0m\r\n\r\n');
-      
-      // Reload commands after reconnection
-      this.initializeCommands();
-    } catch (err: any) {
-      this.isReconnecting = false;
-      
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.writeEmitter.fire('\x1b[31m✗ Connection failed: ' + (err.message || err) + '\x1b[0m\r\n');
-        this.writeEmitter.fire('\x1b[33mRetrying in ' + (this.reconnectDelay / 1000) + ' seconds...\x1b[0m\r\n');
-        
-        // Clear any existing timeout
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-        }
-        
-        this.reconnectTimeout = setTimeout(() => {
-          this.reconnectTimeout = null;
-          this.attemptReconnect();
-        }, this.reconnectDelay);
-        
-        // Exponential backoff with max delay
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, 32000);
-      } else {
-        // Max attempts reached
-        this.writeEmitter.fire('\x1b[1;31m✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.\x1b[0m\r\n');
-        this.writeEmitter.fire('Type \x1b[33m/reconnect\x1b[0m to try again.\r\n\r\n');
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 2000;
-        
-        // Clear timeout
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-          this.reconnectTimeout = null;
-        }
-        
-        this.showPrompt();
-      }
-    }
-  }
-
-
   // UPDATED: Track output in executeCommand method
   private async executeCommand(command: string): Promise<void> {
-    if (this.isReconnecting) {
+    if (this.connectionManager.isReconnecting) {
       this.writeEmitter.fire('\x1b[33mReconnecting... Please wait.\x1b[0m\r\n\r\n');
       this.showPrompt();
       return;
     }
 
-    if (!this.isConnected) {
+    if (!this.connectionManager.isConnected) {
       this.writeEmitter.fire('\x1b[31mNot connected. Type \x1b[33m/reconnect\x1b[0m to reconnect.\x1b[0m\r\n\r\n');
       this.showPrompt();
       return;
@@ -1573,7 +619,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
     let outputLineCount = 0;
 
     try {
-      const response = await this.controller.send(command);
+      const response = await this.connectionManager.controller.send(command);
       
       if (response && response.trim()) {
         // Apply Minecraft color codes
@@ -1605,22 +651,10 @@ export class RconTerminal implements vscode.Pseudoterminal {
           errorMsg.includes('socket') ||
           errorMsg.includes('timeout')) {
         
-        this.isConnected = false;
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 2000;
-        
         this.writeEmitter.fire('\x1b[33m⚠  Connection lost. Auto-reconnecting...\x1b[0m\r\n');
         outputLineCount++;
-        
-        // Clear any existing timeout
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-        }
-        
-        this.reconnectTimeout = setTimeout(() => {
-          this.reconnectTimeout = null;
-          this.attemptReconnect();
-        }, 1000);
+
+        this.connectionManager.reportConnectionLost();
       } else {
         this.writeEmitter.fire('\r\n');
         outputLineCount++;
@@ -1629,7 +663,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
       // NEW: Store output lines and set flag if output was large
       this.lastCommandOutputLines = outputLineCount;
       if (outputLineCount > 10) {
-        this.needsClearBeforeSuggestions = true;
+        this.suggestionDisplay.markNeedsClearOnNextRender();
       }
       
       this.isExecutingCommand = false;
