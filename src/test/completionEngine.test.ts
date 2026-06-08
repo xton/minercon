@@ -2,6 +2,7 @@
 import * as assert from 'assert';
 import {
   buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse,
+  applySuggestion,
   createMachine, step, Machine, Effect, Event,
 } from '../completionEngine';
 
@@ -57,6 +58,45 @@ suite('completionEngine: query builders', () => {
   for (const [input, expected] of usageCases) {
     test(`buildUsageQuery(${JSON.stringify(input)}) === ${JSON.stringify(expected)}`, () => {
       assert.strictEqual(buildUsageQuery(input), expected);
+    });
+  }
+});
+
+suite('completionEngine: applySuggestion (splicing a candidate into the typed line)', () => {
+  const cases: [string, string, string, string][] = [
+    [
+      'replaces a partial first-word command name (overlap across the leading "/")',
+      '/gam', 'gamemode', '/gamemode'
+    ],
+    [
+      'replaces a partial argument word mid-line',
+      '/gamemode adv', 'adventure', '/gamemode adventure'
+    ],
+    [
+      'no overlap across a trailing space — appends as a new word',
+      '/gamemode adventure ', '@a', '/gamemode adventure @a'
+    ],
+    [
+      'no overlap with a complete token — appends a refinement onto it ("@a" + "[")',
+      '/gamemode adventure @a', '[', '/gamemode adventure @a['
+    ],
+    [
+      'overlap on a sub-token nested inside selector syntax — replaces only "dist", not "@a[dist"',
+      '/gamemode adventure @a[dist', 'distance=', '/gamemode adventure @a[distance='
+    ],
+    [
+      'longest matching overlap wins over a shorter one ("dist" over the trailing "t")',
+      '/effect give @a minecraft:regen', 'regeneration', '/effect give @a minecraft:regeneration'
+    ],
+    [
+      'candidate shorter than and unrelated to what was typed — appends',
+      '/gamemode survival @a', 'x', '/gamemode survival @ax'
+    ],
+  ];
+
+  for (const [description, line, suggestion, expected] of cases) {
+    test(`${description}: applySuggestion(${JSON.stringify(line)}, ${JSON.stringify(suggestion)}) === ${JSON.stringify(expected)}`, () => {
+      assert.strictEqual(applySuggestion(line, suggestion), expected);
     });
   }
 });

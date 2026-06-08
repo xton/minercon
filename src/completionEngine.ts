@@ -40,6 +40,38 @@ export function buildUsageQuery(input: string): string | null {
   return withoutSlash.length > 0 ? withoutSlash : null;
 }
 
+/**
+ * Splices a raw completion candidate (e.g. "adventure", "distance=", "[")
+ * into the line as typed so far, the same way a real client reconciles a
+ * server-suggested replacement against partial input.
+ *
+ * The server only ever hands back the candidate text — never which part of
+ * the line it replaces — and that part isn't reliably "the last
+ * space-delimited word": selector/NBT syntax nests further completion
+ * boundaries inside a single token (typing "@a[dist" and completing to
+ * "@a[distance=" should only replace "dist"; typing the *complete* selector
+ * "@a" and getting "[" appended makes "@a[", where nothing of "@a" overlaps
+ * the candidate at all).
+ *
+ * So instead of guessing where the word boundary is, this finds the longest
+ * suffix of what's typed that the candidate continues (a prefix-overlap,
+ * checked longest-first so e.g. "dist" wins over the shorter-but-also-
+ * matching "t"), and splices the candidate in over just that overlap. An
+ * overlap of zero naturally degrades to appending — exactly right for
+ * refinement suggestions ("@a" + "[") and for completions chosen right after
+ * a trailing space ("adventure " + "@a").
+ */
+export function applySuggestion(line: string, suggestionText: string): string {
+  let overlap = 0;
+  for (let len = Math.min(line.length, suggestionText.length); len > 0; len--) {
+    if (suggestionText.startsWith(line.slice(line.length - len))) {
+      overlap = len;
+      break;
+    }
+  }
+  return line.slice(0, line.length - overlap) + suggestionText;
+}
+
 /** Every failure/meta message from both `tabcomplete` and `cmdusage` starts with "(". */
 function isFailureResponse(response: string | undefined): boolean {
   return !response || response.trim().startsWith('(');

@@ -4,7 +4,7 @@ import { RconController } from './rconClient';
 import { CommandAutocomplete } from './commandAutocomplete';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
-  createMachine, step,
+  createMachine, step, applySuggestion,
 } from './completionEngine';
 import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
 import { LineEditor, LineEditorHost } from './lineEditor';
@@ -466,24 +466,12 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.dispatchToEngine({ kind: 'usageResult', requestId, text });
   }
 
-  // Splices a raw suggestion (e.g. "survival") into `query` (the line as it
-  // was before any suggestion got applied) the same way Minecraft's own
-  // client does: replace the last space-delimited word, preserving the
-  // leading "/" on the first word and appending after a trailing space.
+  // Reconciles a raw completion candidate against what's typed so far and
+  // pushes the result into the line — see `applySuggestion` (completionEngine.ts)
+  // for the splicing rules and why naive "replace the last word" guessing
+  // doesn't hold up against selector/NBT syntax.
   private applySuggestionText(query: string, suggestionText: string): void {
-    const parts = query.split(' ');
-    let newLine: string;
-    if (query.endsWith(' ')) {
-      newLine = query + suggestionText;
-    } else if (parts.length > 0) {
-      const lastPart = parts[parts.length - 1];
-      parts[parts.length - 1] = lastPart.startsWith('/') ? '/' + suggestionText : suggestionText;
-      newLine = parts.join(' ');
-    } else {
-      newLine = '/' + suggestionText;
-    }
-
-    this.lineEditor.replaceLine(newLine);
+    this.lineEditor.replaceLine(applySuggestion(query, suggestionText));
   }
 
   private handleTabComplete(): void {
