@@ -4,7 +4,6 @@
 // crawling a server's `/help` output — versioned, server-scoped, and aged out
 // after a week so a stale tree doesn't outlive a server's command set.
 
-import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logger';
@@ -39,13 +38,13 @@ export class CommandTreeCache {
   private serverIdentifier: string;
 
   constructor(
-    context: vscode.ExtensionContext,
+    cacheDir: string,
     serverHost: string,
     serverPort: number,
     private logger: Logger
   ) {
     this.serverIdentifier = `${serverHost}:${serverPort}`;
-    this.cacheDir = path.join(context.globalStorageUri.fsPath, 'command-cache');
+    this.cacheDir = cacheDir;
     this.cacheFile = path.join(this.cacheDir, `${serverHost}_${serverPort}.json`);
 
     if (!fs.existsSync(this.cacheDir)) {

@@ -1,5 +1,5 @@
 // src/commandAutocomplete.ts
-import * as vscode from 'vscode';
+import * as path from 'path';
 import { Logger } from './logger';
 import {
   ParameterType,
@@ -35,11 +35,11 @@ export class CommandAutocomplete {
   constructor(
     private sendCommand: (command: string) => Promise<string>,
     private logger: Logger,
-    private context: vscode.ExtensionContext,
+    cacheDir: string,
     serverHost: string,
     serverPort: number
   ) {
-    this.cache = new CommandTreeCache(context, serverHost, serverPort, logger);
+    this.cache = new CommandTreeCache(path.join(cacheDir, 'command-cache'), serverHost, serverPort, logger);
   }
 
   /**

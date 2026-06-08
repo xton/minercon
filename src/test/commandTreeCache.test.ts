@@ -2,7 +2,6 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { CommandTreeCache } from '../commandTreeCache';
 import { CommandNode } from '../commandAutocomplete';
@@ -10,10 +9,6 @@ import { ParameterType } from '../helpTextParsing';
 
 function silentLogger(): Logger {
     return { error: () => undefined, warning: () => undefined, info: () => undefined };
-}
-
-function fakeContext(storageDir: string): vscode.ExtensionContext {
-    return { globalStorageUri: { fsPath: storageDir } } as unknown as vscode.ExtensionContext;
 }
 
 function sampleCommands(): Map<string, CommandNode> {
@@ -55,12 +50,12 @@ suite('CommandTreeCache', () => {
     });
 
     test('load returns null when no cache file exists yet', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         assert.strictEqual(cache.load(), null);
     });
 
     test('save then load round-trips the command tree and aliases', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         const rootCommands = sampleCommands();
         const commandAliases = sampleAliases();
 
@@ -73,7 +68,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache written by a different protocol version', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         cache.save(sampleCommands(), sampleAliases());
 
         rewriteCacheFile(storageDir, raw => { raw.version = '0.0.0'; });
@@ -82,7 +77,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache written for a different server identifier', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         cache.save(sampleCommands(), sampleAliases());
 
         rewriteCacheFile(storageDir, raw => { raw.serverIdentifier = 'other-host:25575'; });
@@ -91,7 +86,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache older than the max age', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         cache.save(sampleCommands(), sampleAliases());
 
         const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
@@ -101,7 +96,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('getInfo reports no cache before saving, and an existing one after', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         assert.strictEqual(cache.getInfo().exists, false);
 
         cache.save(sampleCommands(), sampleAliases());
@@ -112,7 +107,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('clear deletes the cache file so load and getInfo see it as gone', () => {
-        const cache = new CommandTreeCache(fakeContext(storageDir), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         cache.save(sampleCommands(), sampleAliases());
         assert.strictEqual(cache.getInfo().exists, true);
 

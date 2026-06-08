@@ -18,9 +18,12 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
+  "bin": {
+    "rcon-minecraft": "./out/rcon-minecraft"
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cp out/cli.js out/rcon-minecraft && chmod +x out/rcon-minecraft",
     "watch": "tsc -w -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
