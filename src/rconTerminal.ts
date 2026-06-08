@@ -300,17 +300,6 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Ctrl+A (select all)
-    if (data === '\x01') {
-      if (this.currentLine.length > 0) {
-        this.selectionStart = 0;
-        this.selectionEnd = this.currentLine.length;
-        this.cursorPosition = this.currentLine.length;
-        this.redrawLineWithSelection();
-      }
-      return;
-    }
-
     // Handle Ctrl+C (copy selected text or cancel current input)
     if (data === '\x03') {
       if (this.hasSelection()) {
@@ -354,8 +343,10 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Ctrl+V (paste)
-    if (data === '\x16') {
+    // Handle Ctrl+V / Ctrl+Y (paste — Ctrl+Y is the emacs/readline "yank" binding;
+    // we don't maintain a separate kill-ring, so both pull from the system
+    // clipboard, which is the more useful behavior in an editor-hosted terminal)
+    if (data === '\x16' || data === '\x19') {
       vscode.env.clipboard.readText().then(text => {
         if (text) {
           this.insertText(text);
@@ -383,8 +374,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Up Arrow
-    if (data === '\x1b[A') {
+    // Handle Up Arrow / Ctrl+P (emacs: previous-history)
+    if (data === '\x1b[A' || data === '\x10') {
       if (this.isShowingSuggestions) {
         // Navigate suggestions instead of history
         this.dispatchToEngine({ kind: 'arrow', direction: 'up' });
@@ -399,8 +390,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Down Arrow
-    if (data === '\x1b[B') {
+    // Handle Down Arrow / Ctrl+N (emacs: next-history)
+    if (data === '\x1b[B' || data === '\x0e') {
       if (this.isShowingSuggestions) {
         // Navigate suggestions instead of history
         this.dispatchToEngine({ kind: 'arrow', direction: 'down' });
@@ -459,8 +450,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Ctrl+Left Arrow (jump word left)
-    if (data === '\x1b[1;5D' || data === '\x1b[5D') {
+    // Handle Ctrl+Left Arrow / Meta+B (jump word left — emacs: backward-word)
+    if (data === '\x1b[1;5D' || data === '\x1b[5D' || data === '\x1bb') {
       const newPos = this.findWordLeft();
       if (newPos !== this.cursorPosition) {
         const hadSelection = this.hasSelection();
@@ -471,8 +462,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Ctrl+Right Arrow (jump word right)
-    if (data === '\x1b[1;5C' || data === '\x1b[5C') {
+    // Handle Ctrl+Right Arrow / Meta+F (jump word right — emacs: forward-word)
+    if (data === '\x1b[1;5C' || data === '\x1b[5C' || data === '\x1bf') {
       const newPos = this.findWordRight();
       if (newPos !== this.cursorPosition) {
         const hadSelection = this.hasSelection();
@@ -535,8 +526,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Left Arrow (normal)
-    if (data === '\x1b[D') {
+    // Handle Left Arrow / Ctrl+B (emacs: backward-char)
+    if (data === '\x1b[D' || data === '\x02') {
       const hadSelection = this.hasSelection();
       if (hadSelection) {
         this.clearSelection();
@@ -558,8 +549,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Right Arrow
-    if (data === '\x1b[C') {
+    // Handle Right Arrow / Ctrl+F (emacs: forward-char)
+    if (data === '\x1b[C' || data === '\x06') {
       // Normal right arrow behavior
       const hadSelection = this.hasSelection();
       if (hadSelection) {
@@ -579,8 +570,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Home (normal)
-    if (data === '\x1b[H' || data === '\x1bOH' || data === '\x1b[1~') {
+    // Handle Home / Ctrl+A (emacs: move-to-beginning-of-line)
+    if (data === '\x1b[H' || data === '\x1bOH' || data === '\x1b[1~' || data === '\x01') {
       // If suggestions are showing, jump to first suggestion
       if (this.isShowingSuggestions) {
         this.jumpToFirstSuggestion();
@@ -608,8 +599,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle End (normal) - Fixed: removed \x05 which is Ctrl+E
-    if (data === '\x1b[F' || data === '\x1bOF' || data === '\x1b[4~') {
+    // Handle End / Ctrl+E (emacs: move-to-end-of-line)
+    if (data === '\x1b[F' || data === '\x1bOF' || data === '\x1b[4~' || data === '\x05') {
       // If suggestions are showing, jump to last suggestion
       if (this.isShowingSuggestions) {
         this.jumpToLastSuggestion();
@@ -659,15 +650,27 @@ export class RconTerminal implements vscode.Pseudoterminal {
       return;
     }
 
-    // Handle Ctrl+U (delete entire line)
+    // Handle Ctrl+U (emacs: unix-line-discard — kill from cursor to start of line)
     if (data === '\x15') {
-      this.clearAndResetLine();
-      this.showPrompt();
+      if (this.cursorPosition > 0) {
+        const deletedCount = this.cursorPosition;
+        const afterCursor = this.currentLine.slice(this.cursorPosition);
+        this.currentLine = afterCursor;
+        this.cursorPosition = 0;
+        this.clearSelection();
+
+        this.writeEmitter.fire('\x1b[' + deletedCount + 'D');
+        this.writeEmitter.fire('\x1b[K');
+        this.writeEmitter.fire(afterCursor);
+        if (afterCursor.length > 0) {
+          this.writeEmitter.fire('\x1b[' + afterCursor.length + 'D');
+        }
+      }
       return;
     }
 
-    // Handle Ctrl+W (delete word backwards)
-    if (data === '\x17') {
+    // Handle Ctrl+W / Meta+Backspace (delete word backwards — emacs: backward-kill-word)
+    if (data === '\x17' || data === '\x1b\x7f' || data === '\x1b\b') {
       if (this.cursorPosition > 0) {
         const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
         const afterCursor = this.currentLine.slice(this.cursorPosition);
@@ -695,6 +698,40 @@ export class RconTerminal implements vscode.Pseudoterminal {
         if (afterCursor.length > 0) {
           this.writeEmitter.fire('\x1b[' + afterCursor.length + 'D');
         }
+      }
+      return;
+    }
+
+    // Handle Meta+D (emacs: kill-word — delete from cursor to end of word forward)
+    if (data === '\x1bd') {
+      const newPos = this.findWordRight();
+      if (newPos > this.cursorPosition) {
+        const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
+        const afterDeleted = this.currentLine.slice(newPos);
+        this.currentLine = beforeCursor + afterDeleted;
+        this.clearSelection();
+
+        this.writeEmitter.fire('\x1b[K');
+        this.writeEmitter.fire(afterDeleted);
+        if (afterDeleted.length > 0) {
+          this.writeEmitter.fire('\x1b[' + afterDeleted.length + 'D');
+        }
+      }
+      return;
+    }
+
+    // Handle Ctrl+T (emacs: transpose-chars — swap the two characters around the cursor)
+    if (data === '\x14') {
+      if (this.currentLine.length >= 2 && this.cursorPosition > 0) {
+        // At end of line, transpose the last two characters; otherwise transpose
+        // the character before the cursor with the one at the cursor.
+        const pos = Math.min(this.cursorPosition, this.currentLine.length - 1);
+        const chars = this.currentLine.split('');
+        [chars[pos - 1], chars[pos]] = [chars[pos], chars[pos - 1]];
+        this.currentLine = chars.join('');
+        this.cursorPosition = Math.min(pos + 1, this.currentLine.length);
+        this.clearSelection();
+        this.redrawLineWithSelection();
       }
       return;
     }
@@ -1275,8 +1312,12 @@ export class RconTerminal implements vscode.Pseudoterminal {
     this.writeEmitter.fire('\r\n');
     this.writeEmitter.fire('\x1b[1;36mKeyboard Shortcuts:\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mTab - Autocomplete commands and cycle suggestions\x1b[0m\r\n');
-    this.writeEmitter.fire('  \x1b[2mUp/Down - Navigate command history\x1b[0m\r\n');
-    this.writeEmitter.fire('  \x1b[2mCtrl+L - Clear screen  |  Esc - Clear current line\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mUp/Down or Ctrl+P/Ctrl+N - Navigate command history\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mCtrl+A/Ctrl+E - Start/end of line  |  Ctrl+B/Ctrl+F - Move by character\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mAlt+B/Alt+F - Move by word  |  Ctrl+T - Transpose characters\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mCtrl+K - Kill to end of line  |  Ctrl+U - Kill to start of line\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mCtrl+W/Alt+Backspace - Delete word back  |  Alt+D - Delete word forward\x1b[0m\r\n');
+    this.writeEmitter.fire('  \x1b[2mCtrl+Y - Paste (yank)  |  Ctrl+L - Clear screen  |  Esc - Clear current line\x1b[0m\r\n');
     this.writeEmitter.fire('  \x1b[2mCtrl+C - Cancel input  |  Ctrl+D - Disconnect\x1b[0m\r\n');
     this.writeEmitter.fire('\r\n');
     this.showPrompt();
