@@ -8,8 +8,8 @@ anything non-obvious.
 - [x] `handleInput` 450-line if-chain → replaced with `Map`-based `buildKeyHandlers()` lookup table (rconTerminal.ts)
 - [x] Duplicate prompt-rendering (`showPrompt` vs. `redrawLineWithSelection`) → unified via `LineEditorHost.promptText()`
 - [x] Near-duplicate clear-area methods (`clearSuggestionDisplay`/`clearArgumentDisplay`) → merged into single `SuggestionDisplay.clear()`
-- [ ] Debug-grade logging in `commandAutocomplete.ts` — `appendLine` calls were converted to `logger.*` but scratch-debug *content* remains (e.g. `everything:\n${modified}`, `"...or is it ${altCommandCount}?"`, `"  Checking: ... vs ..."`)
-- [ ] `any` typing — still in `rconClient.ts`, `extension.ts` (x3), `rconTerminal.ts` (mostly `catch (err: any)`)
+- [x] Debug-grade logging in `commandAutocomplete.ts` — removed scratch-debug content: the full-text `everything:\n${modified}` dump, the hyphenated-command debug block, the confused `"...or is it ${altCommandCount}?"` phrasing, and the per-iteration `"  Checking: ... vs ..."`/`"  Tokens: ..."`/`"    Added parameter: ..."` traces in `loadCommandDetails`. Kept and tidied the legitimate operational diagnostics (response-byte-count log, the "no commands found" fallback dump), collapsed the root-command summary to a single `Found ${this.rootCommands.size} root commands` line, and replaced the verbose final-parameters JSON dump with one concise `Loaded ${parameters.length} parameter(s) for ${commandPath}` summary
+- [x] `any` typing — added a pure `errorMessage(err: unknown): string` helper to `logger.ts` (an `Error`'s `.message`, otherwise `String(err)`) and used it to convert every `catch (err: any) { ...err.message... }` to `catch (err)`, simultaneously removing the `any` and ~6 scattered near-duplicate `String(err.message ?? err)`/`(err.message || err)` call sites: `rconClient.ts`, `extension.ts` (x3 — including a bonus `'pty' in terminal.creationOptions` type-guard replacing `(terminal.creationOptions as any).pty`), `rconTerminal.ts`, and `connectionManager.ts:155` (an identical `catch (err: any)` introduced by the post-TODO `RconTerminal`/`ConnectionManager` split, not originally counted but fixed for consistency)
 - [x] Long methods `loadCommandDetails`/`loadSubcommandDetails` in `commandAutocomplete.ts` — the two genuinely-identical chunks (token classification → variant-or-direct-parameters, and building a SUBCOMMAND/CHOICE_LIST structure from collected variants) were extracted as pure functions `classifyParameterTokens`/`buildParameterStructureFromVariants` in `helpTextParsing.ts` (with unit tests), leaving only the genuinely-different orchestration (path-building, fetch strategy, line-matching regexes, recursion) in place — exactly the parts that need a live server to validate, untouched. `loadCommandDetails` 213 → ~130 lines, `loadSubcommandDetails` 270 → ~88 lines (100 passing)
 
 ## 2. Mega-modules worth splitting
@@ -48,20 +48,31 @@ anything non-obvious.
 - [x] **Canceled** — decided against by design: adapter complexity, fights the custom multi-line/selection UI, no equivalent for features already built. No action item.
 
 ---
-*Last updated: 2026-06-08 — §5 (Test coverage) is now fully checked off:
-beyond the `completionEngine`/split-module/`classifyParameterTokens` work,
-this pass added a `FakeHost`-driven suite for `lineEditor.ts`'s selection
-math/history nav/word-boundary logic, a `FakeProtocol`-driven suite for
-`RconController`'s queue-serialization/error-containment logic (a new
-`createProtocol` injection seam was added to make it testable, mirroring
-`RconProtocol`'s `createSocket`), and a smoke test replacing
-`extension.test.ts`'s meaningless scaffold sample (deep vscode-API mocking
-for `extension.ts` was decided against, like §7). One loose thread remains:
-`rconTerminal.ts`'s share of the selection/history/word-boundary item still
-has no dedicated test file. §6 (record/replay harness), the
-`rconProtocolTest.ts` dead-code item, the `commandAutocomplete.ts`
-mega-module split (§2), and the `loadCommandDetails`/`loadSubcommandDetails`
-long-methods de-dup (§1) are also fully done. 147 tests passing.*
+*Last updated: 2026-06-08 — §1 (Code smells) is now fully checked off too:
+the last two items were the `commandAutocomplete.ts` debug-logging cleanup
+(scratch dumps/traces removed, legitimate diagnostics kept and tidied) and
+the remaining `any` typing (a new `errorMessage(unknown): string` helper in
+`logger.ts` retired every `catch (err: any)` across `rconClient.ts`,
+`extension.ts`, `rconTerminal.ts`, and `connectionManager.ts`, plus a
+`'pty' in ...` type-guard fix in `extension.ts`). Pure refactor — still 147
+tests passing, `tsc`/`eslint` clean.
+
+§5 (Test coverage) was fully checked off in the prior pass: beyond the
+`completionEngine`/split-module/`classifyParameterTokens` work, that pass
+added a `FakeHost`-driven suite for `lineEditor.ts`'s selection math/history
+nav/word-boundary logic, a `FakeProtocol`-driven suite for `RconController`'s
+queue-serialization/error-containment logic (a new `createProtocol` injection
+seam was added to make it testable, mirroring `RconProtocol`'s
+`createSocket`), and a smoke test replacing `extension.test.ts`'s meaningless
+scaffold sample (deep vscode-API mocking for `extension.ts` was decided
+against, like §7). One loose thread remains: `rconTerminal.ts`'s share of the
+selection/history/word-boundary item still has no dedicated test file.
+
+§2 (mega-module splits), §4 (dead code), §6 (record/replay harness), and the
+`rconProtocolTest.ts` dead-code item are also fully done. The only items left
+open across the whole checklist are §3's "Strategy pattern for
+local-vs-plugin parsing" and the `rconTerminal.ts` test-coverage loose thread
+above. 147 tests passing.*
 
 ## How to record a live RCON fixture
 

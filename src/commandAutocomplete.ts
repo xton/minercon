@@ -132,7 +132,6 @@ export class CommandAutocomplete {
       this.logger.info('Fetching root commands with /help...');
       const response = await this.sendCommand('minecraft:help');
 
-      // Debug: Log response info
       this.logger.info(`Help response received: ${response.length} bytes`);
 
       if (!response || response.length === 0) {
@@ -164,9 +163,6 @@ export class CommandAutocomplete {
     const modified = response.replace(/\//g, "\n/"); // Replace slashes with newlines to isolate commands
     const lines = modified.split('\n');
     this.logger.info(`Processing ${lines.length} lines from help response`);
-
-    this.logger.info(`everything:\n${modified}`);
-
 
     let commandCount = 0;
     for (const line of lines) {
@@ -200,11 +196,6 @@ export class CommandAutocomplete {
             continue;
           }
 
-          // Debug: Log hyphenated commands specifically
-          if (commandName.includes('-')) {
-            this.logger.info(`  Found hyphenated command: ${commandName}`);
-          }
-
           // Create root command node
           this.rootCommands.set(commandName, {
             name: commandName,
@@ -219,14 +210,7 @@ export class CommandAutocomplete {
       }
     }
 
-    let altCommandCount = this.rootCommands.size;
-    this.logger.info(`Found ${commandCount} root commands (or is it ${altCommandCount}?)`);
-
-    // Debug: List all commands with hyphens
-    const hyphenatedCommands = Array.from(this.rootCommands.keys()).filter(cmd => cmd.includes('-'));
-    if (hyphenatedCommands.length > 0) {
-      this.logger.info(`Hyphenated commands found: ${hyphenatedCommands.join(', ')}`);
-    }
+    this.logger.info(`Found ${this.rootCommands.size} root commands`);
 
     if (commandCount === 0) {
       this.logger.warning('Warning: No commands found in help response');
@@ -327,17 +311,12 @@ export class CommandAutocomplete {
           const normalizedMatch = matchedCommand.toLowerCase().trim();
           const normalizedPath = commandPath.toLowerCase().trim();
 
-          // Debug output
-          this.logger.info(`  Checking: "${matchedCommand}" vs "${commandPath}"`);
-
           if (normalizedMatch === normalizedPath) {
             const afterCommand = match[2] || '';
-            this.logger.info(`  Found match! Parameters: "${afterCommand}"`);
 
             if (afterCommand) {
               // Tokenize everything after the command
               const tokens = tokenizeParameterString(afterCommand);
-              this.logger.info(`  Tokens: ${JSON.stringify(tokens)}`);
 
               const classified = classifyParameterTokens(tokens);
               if (classified?.kind === 'variant') {
@@ -350,13 +329,7 @@ export class CommandAutocomplete {
                 hasDirectParameters = true;
                 parameters.length = 0;
                 parameters.push(...classified.parameters);
-                for (const param of classified.parameters) {
-                  this.logger.info(`    Added parameter: ${JSON.stringify(param)}`);
-                }
               }
-            } else {
-              // Command with no parameters
-              this.logger.info(`  Command has no parameters`);
             }
           }
         }
@@ -368,13 +341,7 @@ export class CommandAutocomplete {
         parameters.push(...buildParameterStructureFromVariants(variants));
       }
 
-      // Debug: Log final parameters
-      this.logger.info(`  Final parameters for ${commandPath}: ${JSON.stringify(parameters.map(p => ({
-        type: p.type,
-        name: p.name,
-        literal: p.literal,
-        optional: p.optional
-      })))}`);
+      this.logger.info(`Loaded ${parameters.length} parameter(s) for ${commandPath}`);
 
       // Mark as complete
       if ('isComplete' in parent) {

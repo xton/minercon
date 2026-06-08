@@ -13,7 +13,7 @@
 // when it should reload the command tree.
 
 import { RconController } from './rconClient';
-import { Logger } from './logger';
+import { Logger, errorMessage } from './logger';
 
 export interface ConnectionManagerHost {
   write(text: string): void;
@@ -152,11 +152,11 @@ export class ConnectionManager {
 
       // Reload commands after reconnection
       this.host.onReconnected();
-    } catch (err: any) {
+    } catch (err) {
       this._isReconnecting = false;
 
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.host.write('\x1b[31m✗ Connection failed: ' + (err.message || err) + '\x1b[0m\r\n');
+        this.host.write('\x1b[31m✗ Connection failed: ' + errorMessage(err) + '\x1b[0m\r\n');
         this.host.write('\x1b[33mRetrying in ' + (this.reconnectDelay / 1000) + ' seconds...\x1b[0m\r\n');
 
         // Clear any existing timeout

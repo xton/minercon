@@ -2,7 +2,7 @@
 import * as vscode from 'vscode';
 import { RconController } from './rconClient';
 import { RconTerminal } from './rconTerminal';
-import { Logger, createOutputChannelLogger } from './logger';
+import { Logger, createOutputChannelLogger, errorMessage } from './logger';
 import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext) {
   const openListener = vscode.window.onDidOpenTerminal((terminal) => {
     // Check if this terminal has one of our pty instances
     for (const [pty, controller] of ptyToController.entries()) {
-      if ((terminal.creationOptions as any).pty === pty) {
+      if ('pty' in terminal.creationOptions && terminal.creationOptions.pty === pty) {
         activeTerminals.set(terminal, controller);
         ptyToController.delete(pty);
         logger.info(`Terminal opened: ${terminal.name}`);
@@ -193,11 +193,11 @@ async function createRconTerminalProfile(
     }, async () => {
       await controller.connect();
     });
-  } catch (err: any) {
+  } catch (err) {
     // If using defaults failed, offer to re-enter credentials
     if (useDefaults && defaultHost && defaultPort && defaultPassword) {
       const retry = await vscode.window.showErrorMessage(
-        `Failed to connect with saved settings: ${err.message}`,
+        `Failed to connect with saved settings: ${errorMessage(err)}`,
         'Enter New Credentials',
         'Cancel'
       );
@@ -268,10 +268,11 @@ async function connectToRcon(
     } else {
       vscode.window.showInformationMessage(`Connected to Minecraft server`);
     }
-  } catch (err: any) {
-    if (err.message && !err.message.includes('required')) {
-      logger.error('Connection failed: ' + String(err.message ?? err));
-      vscode.window.showErrorMessage('RCON connection failed: ' + String(err.message ?? err));
+  } catch (err) {
+    const message = errorMessage(err);
+    if (!message.includes('required')) {
+      logger.error('Connection failed: ' + message);
+      vscode.window.showErrorMessage('RCON connection failed: ' + message);
     }
   }
 }

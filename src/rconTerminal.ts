@@ -11,7 +11,7 @@ import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } f
 import { LineEditor, LineEditorHost } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
 import { ConnectionManager } from './connectionManager';
-import { Logger } from './logger';
+import { Logger, errorMessage } from './logger';
 
 export class RconTerminal implements vscode.Pseudoterminal {
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -613,11 +613,12 @@ export class RconTerminal implements vscode.Pseudoterminal {
       this.writeEmitter.fire('\r\n');
       outputLineCount++; // For the extra newline
       
-    } catch (err: any) {
-      this.writeEmitter.fire(`\x1b[31mError: ${err.message || err}\x1b[0m\r\n`);
+    } catch (err) {
+      const message = errorMessage(err);
+      this.writeEmitter.fire(`\x1b[31mError: ${message}\x1b[0m\r\n`);
       outputLineCount = 1;
-      
-      const errorMsg = String(err.message || err).toLowerCase();
+
+      const errorMsg = message.toLowerCase();
       if (errorMsg.includes('econnreset') || 
           errorMsg.includes('econnrefused') ||
           errorMsg.includes('epipe') ||

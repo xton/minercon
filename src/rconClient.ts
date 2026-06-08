@@ -1,6 +1,6 @@
 // src/rconClient.ts
 import { RconProtocol } from './rconProtocol';
-import { Logger } from './logger';
+import { Logger, errorMessage } from './logger';
 
 export class RconController {
   private host: string;
@@ -74,8 +74,8 @@ export class RconController {
       }
 
       return typeof res === 'string' ? res : JSON.stringify(res);
-    } catch (err: any) {
-      this.logger.error('Error sending command: ' + String(err.message ?? err));
+    } catch (err) {
+      this.logger.error('Error sending command: ' + errorMessage(err));
       throw err;
     }
   }
