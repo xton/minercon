@@ -31,7 +31,7 @@ anything non-obvious.
 - [x] `completionEngine.ts` `applySuggestion` — extracted as pure fn + 7 new unit tests (61 → 68 passing)
 - [x] `helpTextParsing.ts`/`commandTreeCache.ts`/`commandSuggestions.ts` — each of the three modules extracted in §2's `commandAutocomplete.ts` split now has its own 1:1 test file (`commandAutocomplete.test.ts` renamed to `helpTextParsing.test.ts`; `commandSuggestions.test.ts` and `commandTreeCache.test.ts` are new — the latter introduces a `mkdtemp`-backed `vscode.ExtensionContext` stub, the first filesystem-IO test in the suite). Plus `classifyParameterTokens`/`buildParameterStructureFromVariants` (newly extracted from §1's long-methods de-dup) get their own unit tests too. 71 → 100 passing
 - [x] `lineEditor.ts` pure logic — `LineEditor` is stateful but already had a clean test seam (`LineEditorHost`); added `lineEditor.test.ts` with a `FakeHost` stub and 39 tests across editing, cursor movement, selection math, kill operations, `transposeChars`, history navigation (dedup, 100-entry cap, temp-line save/restore), and whole-line ops, asserting on observable state (`line`/`cursor`/`hasSelection`/`getSelectedText`). 100 → 139 passing. (`rconTerminal.ts`'s share of this item remains open — it doesn't yet have its own test file)
-- [ ] `rconProtocol.ts`/`rconClient.ts` packet framing/fragmentation/auth — no unit tests
+- [x] `rconProtocol.ts`/`rconClient.ts` — `rconProtocol.ts`'s framing/fragmentation/auth turned out to already be covered byte-exact by §6's record/replay harness; the real gap was `RconController` (rconClient.ts), which had zero coverage and no injection seam. Added a `createProtocol` factory (mirroring `RconProtocol`'s own `createSocket` pattern — same "only production change, default behavior unchanged" shape) and `rconClient.test.ts` with a `FakeProtocol` stub: 8 tests covering queue serialization (a second `send` provably waits for the first, not just schedules later), error containment (a rejected send doesn't wedge the queue), `Not connected` guards, and `error`/`close` event wiring. 139 → 147 passing
 - [ ] `extension.test.ts` — still the unmodified VS Code scaffold sample
 
 ## 6. Mocked RCON protocol tests
@@ -53,8 +53,11 @@ dead-code item, the `commandAutocomplete.ts` mega-module split (§2), and the
 `loadCommandDetails`/`loadSubcommandDetails` long-methods de-dup (§1) are now
 fully done; §5 gained dedicated 1:1 test files for the split modules, the
 newly-extracted `classifyParameterTokens`/`buildParameterStructureFromVariants`
-pure functions, and a `FakeHost`-driven suite for `lineEditor.ts`'s selection
-math/history nav/word-boundary logic (139 tests passing).*
+pure functions, a `FakeHost`-driven suite for `lineEditor.ts`'s selection
+math/history nav/word-boundary logic, and a `FakeProtocol`-driven suite for
+`RconController`'s queue-serialization/error-containment logic (a new
+`createProtocol` injection seam was added to make it testable, mirroring
+`RconProtocol`'s `createSocket`). 147 tests passing.*
 
 ## How to record a live RCON fixture
 

@@ -20,15 +20,28 @@ export class RconController {
   // guarantees at most one command is ever outstanding at a time.
   private sendQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(host: string, port: number, password: string, logger: Logger) {
+  private readonly createProtocol: (host: string, port: number, password: string, logger: Logger) => RconProtocol;
+
+  constructor(
+    host: string,
+    port: number,
+    password: string,
+    logger: Logger,
+    // Defaults to a real RconProtocol; tests substitute a fake here so the
+    // queue-serialization/error-handling logic can be exercised without a
+    // live server (mirrors RconProtocol's own `createSocket` seam).
+    createProtocol: (host: string, port: number, password: string, logger: Logger) => RconProtocol
+      = (h, p, pw, l) => new RconProtocol(h, p, pw, l),
+  ) {
     this.host = host;
     this.port = port;
     this.password = password;
     this.logger = logger;
+    this.createProtocol = createProtocol;
   }
 
   public async connect(): Promise<void> {
-    this.client = new RconProtocol(this.host, this.port, this.password, this.logger);
+    this.client = this.createProtocol(this.host, this.port, this.password, this.logger);
 
     // Set up error handler
     this.client.on('error', (error: Error) => {
