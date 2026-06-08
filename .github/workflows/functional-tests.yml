@@ -1,0 +1,147 @@
+name: Functional Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  MC_VERSION: '1.21.4'
+  # Pre-built Spigot image (no BuildTools at test time). Built by build-spigot-image.yml.
+  SPIGOT_IMAGE: ghcr.io/${{ github.repository }}/spigot-prebuilt:1.21.4
+
+jobs:
+  connection-tests:
+    name: Connection tests (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [vanilla, paper, paper+plugin, spigot, fabric]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Java (for plugin build)
+        if: matrix.variant == 'paper+plugin'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Gradle wrapper
+        if: matrix.variant == 'paper+plugin'
+        uses: actions/cache@v4
+        with:
+          path: plugin/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build plugin
+        if: matrix.variant == 'paper+plugin'
+        run: cd plugin && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Log in to GHCR (for pre-built Spigot image)
+        if: matrix.variant == 'spigot'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Run connection tests
+        run: mocha --timeout 360000 --grep '\[${{ matrix.variant }}\] connection' out/test/functional/connection.test.js
+        env:
+          SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
+
+  local-mode-tests:
+    name: Local mode tests (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [vanilla, paper, spigot, fabric]
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Log in to GHCR (for pre-built Spigot image)
+        if: matrix.variant == 'spigot'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Run local mode tests
+        run: mocha --timeout 600000 --grep '\[${{ matrix.variant }}\] local mode' out/test/functional/localMode.test.js
+        env:
+          SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
+
+  plugin-mode-tests:
+    name: Plugin mode tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Gradle wrapper
+        uses: actions/cache@v4
+        with:
+          path: plugin/.gradle/wrapper
+          key: gradle-wrapper-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build plugin
+        run: cd plugin && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Run plugin mode tests
+        run: mocha --timeout 360000 out/test/functional/pluginMode.test.js

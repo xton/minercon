@@ -1,0 +1,32 @@
+# Pre-builds Spigot so the functional test suite doesn't pay the BuildTools
+# compilation cost at test time. Built and pushed to GHCR by
+# .github/workflows/build-spigot-image.yml.
+#
+# itzg/minecraft-server checks for the existence of spigot-VERSION.jar in
+# /data at startup; if found, it skips BuildTools entirely. Docker initializes
+# VOLUME directories from image contents on first container start, so a jar
+# placed here via COPY is visible to the running container.
+
+ARG MC_VERSION=1.21.4
+
+# ── Stage 1: compile Spigot via BuildTools ────────────────────────────────
+FROM eclipse-temurin:21-jdk-noble AS buildtools
+
+ARG MC_VERSION
+WORKDIR /buildtools
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSfL \
+      https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar \
+      -o BuildTools.jar \
+    && java -jar BuildTools.jar --rev "${MC_VERSION}"
+
+# ── Stage 2: drop the jar into the itzg image ─────────────────────────────
+FROM itzg/minecraft-server:latest
+
+ARG MC_VERSION
+
+COPY --from=buildtools /buildtools/spigot-${MC_VERSION}.jar /data/spigot-${MC_VERSION}.jar

@@ -28,18 +28,23 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:functional": "npm run compile && mocha --timeout 660000 'out/test/functional/**/*.test.js'",
+    "test:functional:connection": "npm run compile && mocha --timeout 660000 out/test/functional/connection.test.js",
+    "test:functional:local": "npm run compile && mocha --timeout 660000 out/test/functional/localMode.test.js",
+    "test:functional:plugin": "npm run compile && mocha --timeout 660000 out/test/functional/pluginMode.test.js",
     "record-rcon-fixtures": "npm run compile && node out/test/recordRconFixtures.js"
   },
   "devDependencies": {
-    "@types/vscode": "^1.95.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^8.42.0",
     "@typescript-eslint/parser": "^8.42.0",
-    "eslint": "^9.34.0",
-    "typescript": "^5.9.2",
     "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.34.0",
+    "testcontainers": "^12.0.1",
+    "typescript": "^5.9.2"
   },
   "contributes": {
     "commands": [
