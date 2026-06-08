@@ -16,6 +16,7 @@ import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
 
 export interface SuggestionDisplayHost {
   write(text: string): void;
+  cursorColumn(): number;
 }
 
 export class SuggestionDisplay {
@@ -105,7 +106,6 @@ export class SuggestionDisplay {
   clear(): void {
     if (this.displayLines === 0) { return; }
 
-    this.host.write('\x1b7'); // Save cursor
     this.host.write('\r\n');  // Move to the display area
 
     for (let i = 0; i < this.displayLines; i++) {
@@ -115,8 +115,12 @@ export class SuggestionDisplay {
       }
     }
 
-    this.host.write(`\x1b[${this.displayLines}A`); // Move back to original position
-    this.host.write('\x1b8'); // Restore cursor
+    // Scroll-safe return: relative cursor-up is correct even when the \r\n
+    // above caused the terminal to scroll (absolute \x1b7/\x1b8 are not).
+    this.host.write(`\x1b[${this.displayLines}A`);
+    this.host.write('\r');
+    const col = this.host.cursorColumn();
+    if (col > 0) { this.host.write(`\x1b[${col}C`); }
     this.displayLines = 0;
   }
 
@@ -231,7 +235,6 @@ export class SuggestionDisplay {
       this.needsClearOnNextRender = false;
     }
 
-    this.host.write('\x1b7'); // Save cursor
     this.host.write('\r\n');  // Move to the display area
 
     for (let i = 0; i < lines.length; i++) {
@@ -242,7 +245,13 @@ export class SuggestionDisplay {
 
     this.displayLines = lines.length;
 
-    this.host.write('\x1b8'); // Restore cursor
+    // Scroll-safe return: \x1b[N]A (relative up) is correct even when the
+    // \r\n outputs above caused the terminal to scroll. \x1b7/\x1b8 (absolute
+    // save/restore) fail in that case because the saved row is invalidated.
+    this.host.write(`\x1b[${lines.length}A`);
+    this.host.write('\r');
+    const col = this.host.cursorColumn();
+    if (col > 0) { this.host.write(`\x1b[${col}C`); }
   }
 
   private updateVisibleWindow(): void {

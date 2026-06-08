@@ -84,6 +84,17 @@ export class RconSession {
 
     this.suggestionDisplay = new SuggestionDisplay({
       write: (text) => sessionHost.write(text),
+      cursorColumn: () => {
+        // Visual width of the prompt (ANSI codes stripped) plus cursor position
+        // within the typed text — gives the terminal column the cursor sits on.
+        const promptText = this.connectionManager.isReconnecting
+          ? '\x1b[33m[reconnecting]\x1b[0m > '
+          : this.connectionManager.isConnected
+          ? '\x1b[32m>\x1b[0m '
+          : '\x1b[31m[disconnected]\x1b[0m > ';
+        const promptWidth = promptText.replace(/\x1b\[[0-9;]*m/g, '').length;
+        return promptWidth + this.lineEditor.cursor;
+      },
     });
 
     this.lineEditor = new LineEditor({
