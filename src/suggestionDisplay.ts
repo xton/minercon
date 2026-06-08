@@ -8,10 +8,9 @@
 // This class has no notion of the completionEngine or of dispatching events —
 // RconTerminal remains the single place that talks to the engine (it's the
 // one piece deliberately kept pure/central). Callers that need to know
-// *whether* an action makes sense (jump to first/last suggestion, page
-// forward/back) ask the read-only `...Index()` queries, which return
-// `number | null` — `null` meaning "nothing to do" — and decide for
-// themselves whether to dispatch.
+// *whether* an action makes sense (page forward/back) ask the read-only
+// `...Index()` queries, which return `number | null` — `null` meaning
+// "nothing to do" — and decide for themselves whether to dispatch.
 
 import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
 
@@ -49,16 +48,6 @@ export class SuggestionDisplay {
   /** Replaces the direct `needsClearBeforeSuggestions = true` assignment from `executeCommand` — the next render should wipe the screen below the cursor first (e.g. after a multi-line command response may have pushed the display area around). */
   markNeedsClearOnNextRender(): void {
     this.needsClearOnNextRender = true;
-  }
-
-  firstIndex(): number | null {
-    if (!this.showing || this.currentSuggestions.length === 0) { return null; }
-    return 0;
-  }
-
-  lastIndex(): number | null {
-    if (!this.showing || this.currentSuggestions.length === 0) { return null; }
-    return this.currentSuggestions.length - 1;
   }
 
   nextPageIndex(): number | null {

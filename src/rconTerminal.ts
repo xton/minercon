@@ -260,8 +260,8 @@ export class RconTerminal implements vscode.Pseudoterminal {
       { sequences: ['\x1b[1;2F', '\x1b[1;2$'],            handler: () => this.lineEditor.selectToEnd() },
       { sequences: ['\x1b[D', '\x02'],                    handler: () => this.lineEditor.moveLeft() },
       { sequences: ['\x1b[C', '\x06'],                    handler: () => this.lineEditor.moveRight() },
-      { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.handleHome() },
-      { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.handleEnd() },
+      { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.lineEditor.moveToStart() },
+      { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.lineEditor.moveToEnd() },
       { sequences: ['\x1b[3~'],                           handler: () => this.lineEditor.deleteForward() },
       { sequences: ['\x0b'],                              handler: () => this.lineEditor.killToEnd() },
       { sequences: ['\x15'],                              handler: () => this.lineEditor.killToStart() },
@@ -385,25 +385,6 @@ export class RconTerminal implements vscode.Pseudoterminal {
     }
   }
 
-  // Home / Ctrl+A: jump to first suggestion if showing, else move-to-beginning-of-line
-  private handleHome(): void {
-    const i = this.suggestionDisplay.firstIndex();
-    if (i !== null) {
-      this.dispatchToEngine({ kind: 'selectIndex', index: i });
-      return;
-    }
-    this.lineEditor.moveToStart();
-  }
-
-  // End / Ctrl+E: jump to last suggestion if showing, else move-to-end-of-line
-  private handleEnd(): void {
-    const i = this.suggestionDisplay.lastIndex();
-    if (i !== null) {
-      this.dispatchToEngine({ kind: 'selectIndex', index: i });
-      return;
-    }
-    this.lineEditor.moveToEnd();
-  }
 
   // ── tab completion: drive the pure completionEngine state machine ──
   //

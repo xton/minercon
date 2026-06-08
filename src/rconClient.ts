@@ -9,6 +9,17 @@ export class RconController {
   private client: RconProtocol | null = null;
   private logger: Logger;
 
+  // Serializes every `send` through this controller — completions/usage
+  // fetches and actual command execution all funnel through here (see
+  // RconCompletionsBackend, CommandAutocomplete, RconTerminal.executeCommand).
+  // Without this, e.g. hitting Enter on "/mvp list" while its argument-hint
+  // "cmdusage mvp list" round trip is still in flight fires two concurrent
+  // RCON exchanges over the same socket — which the server doesn't tolerate
+  // and answers by closing the connection. Chaining onto this promise (and
+  // swallowing its rejection so one failed command doesn't wedge the queue)
+  // guarantees at most one command is ever outstanding at a time.
+  private sendQueue: Promise<unknown> = Promise.resolve();
+
   constructor(host: string, port: number, password: string, logger: Logger) {
     this.host = host;
     this.port = port;
@@ -34,7 +45,13 @@ export class RconController {
     this.logger.info('RCON session established.');
   }
 
-  public async send(cmd: string): Promise<string | undefined> {
+  public send(cmd: string): Promise<string | undefined> {
+    const result = this.sendQueue.then(() => this.sendNow(cmd));
+    this.sendQueue = result.catch(() => undefined);
+    return result;
+  }
+
+  private async sendNow(cmd: string): Promise<string | undefined> {
     if (!this.client) { throw new Error('Not connected'); }
     try {
       const res = await this.client.send(cmd);
