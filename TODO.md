@@ -30,7 +30,7 @@ anything non-obvious.
 ## 5. Test coverage
 - [x] `completionEngine.ts` `applySuggestion` — extracted as pure fn + 7 new unit tests (61 → 68 passing)
 - [x] `helpTextParsing.ts`/`commandTreeCache.ts`/`commandSuggestions.ts` — each of the three modules extracted in §2's `commandAutocomplete.ts` split now has its own 1:1 test file (`commandAutocomplete.test.ts` renamed to `helpTextParsing.test.ts`; `commandSuggestions.test.ts` and `commandTreeCache.test.ts` are new — the latter introduces a `mkdtemp`-backed `vscode.ExtensionContext` stub, the first filesystem-IO test in the suite). Plus `classifyParameterTokens`/`buildParameterStructureFromVariants` (newly extracted from §1's long-methods de-dup) get their own unit tests too. 71 → 100 passing
-- [ ] `rconTerminal.ts`/`lineEditor.ts` pure logic (selection math, history nav, word-boundary finding) — now more extractable post-split, but still untested
+- [x] `lineEditor.ts` pure logic — `LineEditor` is stateful but already had a clean test seam (`LineEditorHost`); added `lineEditor.test.ts` with a `FakeHost` stub and 39 tests across editing, cursor movement, selection math, kill operations, `transposeChars`, history navigation (dedup, 100-entry cap, temp-line save/restore), and whole-line ops, asserting on observable state (`line`/`cursor`/`hasSelection`/`getSelectedText`). 100 → 139 passing. (`rconTerminal.ts`'s share of this item remains open — it doesn't yet have its own test file)
 - [ ] `rconProtocol.ts`/`rconClient.ts` packet framing/fragmentation/auth — no unit tests
 - [ ] `extension.test.ts` — still the unmodified VS Code scaffold sample
 
@@ -51,9 +51,10 @@ anything non-obvious.
 *Last updated: 2026-06-08 — §6 (record/replay harness), the `rconProtocolTest.ts`
 dead-code item, the `commandAutocomplete.ts` mega-module split (§2), and the
 `loadCommandDetails`/`loadSubcommandDetails` long-methods de-dup (§1) are now
-fully done; §5 gained dedicated 1:1 test files for the split modules plus the
+fully done; §5 gained dedicated 1:1 test files for the split modules, the
 newly-extracted `classifyParameterTokens`/`buildParameterStructureFromVariants`
-pure functions (100 tests passing).*
+pure functions, and a `FakeHost`-driven suite for `lineEditor.ts`'s selection
+math/history nav/word-boundary logic (139 tests passing).*
 
 ## How to record a live RCON fixture
 
