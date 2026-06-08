@@ -1,61 +1,47 @@
 import * as assert from 'assert';
-import * as vscode from 'vscode';
-import { CommandAutocomplete, ParameterType, Parameter } from '../commandAutocomplete';
+import {
+    ParameterType,
+    Parameter,
+    formatMinecraftColors,
+    stripColors,
+    tokenizeParameterString,
+    parseParameter,
+    parseCommandHelp,
+} from '../helpTextParsing';
 
-// Minimal typed stubs for constructor dependencies
-const noopSend = async (_cmd: string) => '';
-const fakeOutput: Pick<vscode.OutputChannel, 'appendLine'> = { appendLine: (_: string) => { } };
-const fakeContext = { globalStorageUri: { fsPath: __dirname } } as unknown as vscode.ExtensionContext;
-
-// Define a typed access to internal/private helpers we want to test
-type Internals = {
-    stripColors(text: string): string;
-    tokenizeParameterString(str: string): string[];
-    parseParameter(token: string, position: number): Parameter | null;
-    parseCommandHelp(helpText: string): Parameter[];
-};
-
-suite('CommandAutocomplete Parsing (typed)', () => {
+suite('helpTextParsing', () => {
     test('formatMinecraftColors inserts ANSI codes and ends with reset', () => {
-        const out = CommandAutocomplete.formatMinecraftColors('Hello §cWorld');
+        const out = formatMinecraftColors('Hello §cWorld');
         assert.ok(out.includes('\x1b[91m'));
         assert.ok(out.endsWith('\x1b[0m'));
     });
 
     test('stripColors removes color codes', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const stripped = internals.stripColors('§aHello §cWorld');
+        const stripped = stripColors('§aHello §cWorld');
         assert.strictEqual(stripped, 'Hello World');
     });
 
     test('tokenizeParameterString handles nested tokens', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
         const input = '<arg1> [opt] (a|b) subcmd <nested>';
-        const tokens = internals.tokenizeParameterString(input);
+        const tokens = tokenizeParameterString(input);
         assert.deepStrictEqual(tokens, ['<arg1>', '[opt]', '(a|b)', 'subcmd', '<nested>']);
     });
 
     test('parseParameter parses choice lists and arguments', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const choice = internals.parseParameter('(one|two)', 0) as Parameter;
+        const choice = parseParameter('(one|two)', 0) as Parameter;
         assert.strictEqual(choice.type, ParameterType.CHOICE_LIST);
         assert.strictEqual(choice.choices!.length, 2);
         assert.strictEqual(choice.choices![0].literal, 'one');
 
-        const arg = internals.parseParameter('<name>', 1) as Parameter;
+        const arg = parseParameter('<name>', 1) as Parameter;
         assert.strictEqual(arg.type, ParameterType.ARGUMENT);
         assert.strictEqual(arg.name, 'name');
         assert.strictEqual(arg.optional, false);
     });
 
     test('parseCommandHelp extracts parameters in order', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
         const help = '/foo <bar> [baz] (a|b) sub';
-        const params = internals.parseCommandHelp(help);
+        const params = parseCommandHelp(help);
         // Expect: <bar> ARGUMENT, [baz] optional LITERAL, (a|b) CHOICE_LIST, sub LITERAL
         assert.strictEqual(params.length, 4);
         assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
@@ -69,9 +55,7 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse /fill syntax', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const params = internals.parseCommandHelp('/fill <from> <to> <block> [outline|hollow|destroy|strict|replace|keep]');
+        const params = parseCommandHelp('/fill <from> <to> <block> [outline|hollow|destroy|strict|replace|keep]');
         assert.strictEqual(params.length, 4);
         assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[0].name, 'from');
@@ -86,9 +70,7 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse /rotate syntax with choices', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const params = internals.parseCommandHelp('/rotate <target> (<rotation>|facing)');
+        const params = parseCommandHelp('/rotate <target> (<rotation>|facing)');
         assert.strictEqual(params.length, 2);
         assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[0].name, 'target');
@@ -100,9 +82,7 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse /teleport choice list', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const params = internals.parseCommandHelp('/teleport (<location>|<destination>|<targets>)');
+        const params = parseCommandHelp('/teleport (<location>|<destination>|<targets>)');
         assert.strictEqual(params.length, 1);
         assert.strictEqual(params[0].type, ParameterType.CHOICE_LIST);
         const lits = params[0].choices!.map(c => c.literal);
@@ -110,9 +90,7 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse /stopsound with optional types', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-        const params = internals.parseCommandHelp('/stopsound <targets> [*|master|music|record|weather|block|hostile|neutral|player|ambient|voice|ui]');
+        const params = parseCommandHelp('/stopsound <targets> [*|master|music|record|weather|block|hostile|neutral|player|ambient|voice|ui]');
         assert.strictEqual(params.length, 2);
         assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[0].name, 'targets');
@@ -124,10 +102,7 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse mvp modify/create/list variants', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-
-        let params = internals.parseCommandHelp('mvp modify [portal] <property> <value>');
+        let params = parseCommandHelp('mvp modify [portal] <property> <value>');
         assert.strictEqual(params.length, 4);
         assert.strictEqual(params[0].type, ParameterType.LITERAL);
         assert.strictEqual(params[0].literal, 'modify');
@@ -138,14 +113,14 @@ suite('CommandAutocomplete Parsing (typed)', () => {
         assert.strictEqual(params[3].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[3].name, 'value');
 
-        params = internals.parseCommandHelp('mvp create <portal-name> [destination]');
+        params = parseCommandHelp('mvp create <portal-name> [destination]');
         assert.strictEqual(params.length, 3);
         assert.strictEqual(params[0].literal, 'create');
         assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[1].name, 'portal-name');
         assert.strictEqual(params[2].type, ParameterType.LITERAL);
 
-        params = internals.parseCommandHelp('mvp list [filter/world] [page]');
+        params = parseCommandHelp('mvp list [filter/world] [page]');
         assert.strictEqual(params.length, 3);
         assert.strictEqual(params[0].literal, 'list');
         assert.strictEqual(params[1].optional, true);
@@ -153,17 +128,14 @@ suite('CommandAutocomplete Parsing (typed)', () => {
     });
 
     test('parse mvinv add-shares and bulkedit', () => {
-        const ca = new CommandAutocomplete(noopSend, fakeOutput as any, fakeContext, 'h', 1);
-        const internals = ca as unknown as Internals;
-
-        let params = internals.parseCommandHelp('mvinv add-shares <group> <share[,extra]>');
+        let params = parseCommandHelp('mvinv add-shares <group> <share[,extra]>');
         assert.strictEqual(params.length, 3);
         assert.strictEqual(params[0].literal, 'add-shares');
         assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[2].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[2].name, 'share[,extra]');
 
-        params = internals.parseCommandHelp('mvinv bulkedit playerprofile delete <sharable> <players> <groups/worlds> [profile-type] [--include-groups-worlds]');
+        params = parseCommandHelp('mvinv bulkedit playerprofile delete <sharable> <players> <groups/worlds> [profile-type] [--include-groups-worlds]');
         // Ensure the command path tokens are present and there are sufficient parameters
         assert.ok(params.length >= 6);
         assert.strictEqual(params[0].literal, 'bulkedit');

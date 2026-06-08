@@ -10,15 +10,15 @@ anything non-obvious.
 - [x] Near-duplicate clear-area methods (`clearSuggestionDisplay`/`clearArgumentDisplay`) → merged into single `SuggestionDisplay.clear()`
 - [ ] Debug-grade logging in `commandAutocomplete.ts` — `appendLine` calls were converted to `logger.*` but scratch-debug *content* remains (e.g. `everything:\n${modified}`, `"...or is it ${altCommandCount}?"`, `"  Checking: ... vs ..."`)
 - [ ] `any` typing — still in `rconClient.ts`, `extension.ts` (x3), `rconTerminal.ts` (mostly `catch (err: any)`)
-- [ ] Long methods `loadCommandDetails` (~213 lines) / `loadSubcommandDetails` (~270 lines) in `commandAutocomplete.ts`
+- [ ] Long methods `loadCommandDetails` (~213 lines) / `loadSubcommandDetails` (~270 lines) in `commandAutocomplete.ts` — now ~80% of the file post-split (§2); ~80% structurally duplicated between the two, but de-duplicating the recursive crawl is risky without a live server to validate against — own focused pass
 
 ## 2. Mega-modules worth splitting
 - [x] `rconTerminal.ts` split (1,597 → 646 lines): extracted `LineEditor`, `SuggestionDisplay`, `ConnectionManager` per `dapper-purring-zebra` plan
-- [ ] `commandAutocomplete.ts` split (1,227 lines) — proposed `helpResponseParser.ts` / `commandTreeCache.ts` / orchestration class not yet done
+- [x] `commandAutocomplete.ts` split (1,227 → 679 lines): extracted `helpTextParsing.ts` (pure grammar parsing — `formatMinecraftColors`/`stripColors`/`tokenizeParameterString`/`parseParameter`/`parseCommandHelp` + `ParameterType`/`Parameter` types), `commandTreeCache.ts` (`CommandTreeCache` class — on-disk cache persistence, versioning, age checks), `commandSuggestions.ts` (pure `getSuggestions` + helpers operating on the built tree). `CommandAutocomplete` is now just the RCON-crawling orchestration core plus thin delegations. Bonus: the "Parsing (typed)" tests now call the pure functions directly — no more `as unknown as Internals` casts on a stub-constructed instance
 
 ## 3. Design patterns
 - [x] Command/lookup-table pattern for key dispatch (came along with the rconTerminal split)
-- [ ] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` (tied to the split above)
+- [ ] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` — orthogonal to the §2 split (that extracted parsing/caching/suggestions; this would be about varying *how* the tree gets built per-server, inside what's left of `loadCommandDetails`/`loadSubcommandDetails`)
 - [x] Extract a "terminal renderer" collaborator → `SuggestionDisplay` (pure content builders + `renderSuggestionArea`)
 
 ## 4. Dead code
@@ -29,6 +29,7 @@ anything non-obvious.
 
 ## 5. Test coverage
 - [x] `completionEngine.ts` `applySuggestion` — extracted as pure fn + 7 new unit tests (61 → 68 passing)
+- [x] `helpTextParsing.ts`/`commandTreeCache.ts`/`commandSuggestions.ts` — each of the three modules extracted in §2's `commandAutocomplete.ts` split now has its own 1:1 test file (`commandAutocomplete.test.ts` renamed to `helpTextParsing.test.ts`; `commandSuggestions.test.ts` and `commandTreeCache.test.ts` are new — the latter introduces a `mkdtemp`-backed `vscode.ExtensionContext` stub, the first filesystem-IO test in the suite). 71 → 91 passing
 - [ ] `rconTerminal.ts`/`lineEditor.ts` pure logic (selection math, history nav, word-boundary finding) — now more extractable post-split, but still untested
 - [ ] `rconProtocol.ts`/`rconClient.ts` packet framing/fragmentation/auth — no unit tests
 - [ ] `extension.test.ts` — still the unmodified VS Code scaffold sample
@@ -47,9 +48,10 @@ anything non-obvious.
 - [x] **Canceled** — decided against by design: adapter complexity, fights the custom multi-line/selection UI, no equivalent for features already built. No action item.
 
 ---
-*Last updated: 2026-06-08 — §6 (record/replay harness) and the `rconProtocolTest.ts`
-dead-code item are now fully done; xton.ts recorded fixture registered and
-passing alongside synthetic.ts (71 tests).*
+*Last updated: 2026-06-08 — §6 (record/replay harness), the `rconProtocolTest.ts`
+dead-code item, and the `commandAutocomplete.ts` mega-module split (§2) are now
+fully done; both module splits in §2 are complete. §5 gained dedicated 1:1 test
+files for the three modules extracted in the split (91 tests passing).*
 
 ## How to record a live RCON fixture
 

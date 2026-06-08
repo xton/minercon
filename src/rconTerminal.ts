@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import { RconController } from './rconClient';
 import { CommandAutocomplete } from './commandAutocomplete';
+import { formatMinecraftColors } from './helpTextParsing';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step, applySuggestion,
@@ -597,7 +598,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
       
       if (response && response.trim()) {
         // Apply Minecraft color codes
-        const formatted = CommandAutocomplete.formatMinecraftColors(response);
+        const formatted = formatMinecraftColors(response);
         const lines = formatted.split('\n');
         outputLineCount = lines.length;
         
