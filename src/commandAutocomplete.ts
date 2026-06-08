@@ -2,6 +2,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Logger } from './logger';
 
 // Minecraft color codes to ANSI escape sequences
 const COLOR_MAP: { [key: string]: string } = {
@@ -94,7 +95,7 @@ export class CommandAutocomplete {
 
   constructor(
     private sendCommand: (command: string) => Promise<string>,
-    private output: vscode.OutputChannel,
+    private logger: Logger,
     private context: vscode.ExtensionContext,
     serverHost: string,
     serverPort: number
@@ -295,7 +296,7 @@ export class CommandAutocomplete {
 
       // Load details for each command
       const commands = Array.from(this.rootCommands.keys());
-      this.output.appendLine(`Loading details for ${commands.length} commands...`);
+      this.logger.info(`Loading details for ${commands.length} commands...`);
 
       for (let i = 0; i < commands.length; i++) {
         const progress = 10 + (80 * (i / commands.length));
@@ -305,7 +306,7 @@ export class CommandAutocomplete {
         try {
           await this.loadCommandDetails(node, node.parameters);
         } catch (error) {
-          this.output.appendLine(`Warning: Failed to load details for ${commands[i]}: ${error}`);
+          this.logger.warning(`Warning: Failed to load details for ${commands[i]}: ${error}`);
           // Continue with other commands even if one fails
         }
       }
@@ -316,7 +317,7 @@ export class CommandAutocomplete {
       this.isReady = true;
 
     } catch (error) {
-      this.output.appendLine(`Error initializing commands: ${error}`);
+      this.logger.error(`Error initializing commands: ${error}`);
 
       // Try to provide basic functionality even if initialization fails
       this.isReady = true; // Mark as ready with whatever we have
@@ -333,12 +334,12 @@ export class CommandAutocomplete {
       return output; // No pagination info, return original output
     } else {
       const pageCount = parseInt(match[2]);
-      this.output.appendLine(`Detected paginated output: ${pageCount} pages total`);
+      this.logger.info(`Detected paginated output: ${pageCount} pages total`);
 
       for (let page = 2; page <= pageCount; page++) {
         const pageOutput = await this.sendCommand(`${command} ${page}`);
         if (output) {
-          this.output.appendLine(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
+          this.logger.info(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
           output += pageOutput;
         }
       }
@@ -351,18 +352,18 @@ export class CommandAutocomplete {
    */
   private async fetchRootCommands(): Promise<void> {
     try {
-      this.output.appendLine('Fetching root commands with /help...');
+      this.logger.info('Fetching root commands with /help...');
       const response = await this.sendCommand('minecraft:help');
 
       // Debug: Log response info
-      this.output.appendLine(`Help response received: ${response.length} bytes`);
+      this.logger.info(`Help response received: ${response.length} bytes`);
 
       if (!response || response.length === 0) {
-        this.output.appendLine('Warning: Empty response from help command');
+        this.logger.warning('Warning: Empty response from help command');
         // Try alternative help format
         const altResponse = await this.sendCommand('?');
         if (altResponse && altResponse.length > 0) {
-          this.output.appendLine('Using alternative help command (?)');
+          this.logger.info('Using alternative help command (?)');
           this.parseHelpResponse(altResponse);
         } else {
           throw new Error('Unable to fetch command list from server');
@@ -372,7 +373,7 @@ export class CommandAutocomplete {
       }
 
     } catch (error) {
-      this.output.appendLine(`Error fetching root commands: ${error}`);
+      this.logger.error(`Error fetching root commands: ${error}`);
       // Provide fallback common commands if help fails
       this.addFallbackCommands();
       throw error;
@@ -385,9 +386,9 @@ export class CommandAutocomplete {
   private parseHelpResponse(response: string): void {
     const modified = response.replace(/\//g, "\n/"); // Replace slashes with newlines to isolate commands
     const lines = modified.split('\n');
-    this.output.appendLine(`Processing ${lines.length} lines from help response`);
+    this.logger.info(`Processing ${lines.length} lines from help response`);
 
-    this.output.appendLine(`everything:\n${modified}`);
+    this.logger.info(`everything:\n${modified}`);
 
 
     let commandCount = 0;
@@ -424,7 +425,7 @@ export class CommandAutocomplete {
 
           // Debug: Log hyphenated commands specifically
           if (commandName.includes('-')) {
-            this.output.appendLine(`  Found hyphenated command: ${commandName}`);
+            this.logger.info(`  Found hyphenated command: ${commandName}`);
           }
 
           // Create root command node
@@ -442,19 +443,19 @@ export class CommandAutocomplete {
     }
 
     let altCommandCount = this.rootCommands.size;
-    this.output.appendLine(`Found ${commandCount} root commands (or is it ${altCommandCount}?)`);
+    this.logger.info(`Found ${commandCount} root commands (or is it ${altCommandCount}?)`);
 
     // Debug: List all commands with hyphens
     const hyphenatedCommands = Array.from(this.rootCommands.keys()).filter(cmd => cmd.includes('-'));
     if (hyphenatedCommands.length > 0) {
-      this.output.appendLine(`Hyphenated commands found: ${hyphenatedCommands.join(', ')}`);
+      this.logger.info(`Hyphenated commands found: ${hyphenatedCommands.join(', ')}`);
     }
 
     if (commandCount === 0) {
-      this.output.appendLine('Warning: No commands found in help response');
-      this.output.appendLine('First few lines of response:');
+      this.logger.warning('Warning: No commands found in help response');
+      this.logger.info('First few lines of response:');
       lines.slice(0, 10).forEach(line => {
-        this.output.appendLine(`  > ${this.stripColors(line)}`);
+        this.logger.info(`  > ${this.stripColors(line)}`);
       });
 
       // Add fallback commands
@@ -466,7 +467,7 @@ export class CommandAutocomplete {
    * Add fallback commands if help parsing fails
    */
   private addFallbackCommands(): void {
-    this.output.appendLine('Adding common Minecraft commands as fallback...');
+    this.logger.info('Adding common Minecraft commands as fallback...');
 
     const commonCommands = [
       'gamemode', 'give', 'tp', 'teleport', 'kill', 'kick', 'ban', 'pardon',
@@ -493,7 +494,7 @@ export class CommandAutocomplete {
       }
     }
 
-    this.output.appendLine(`Added ${commonCommands.length} fallback commands`);
+    this.logger.info(`Added ${commonCommands.length} fallback commands`);
   }
 
   /**
@@ -513,11 +514,11 @@ export class CommandAutocomplete {
 
       // Check if we got a valid response
       if (!helpResponse || helpResponse.length === 0) {
-        this.output.appendLine(`Empty help response for: ${commandPath}`);
+        this.logger.warning(`Empty help response for: ${commandPath}`);
         return;
       }
 
-      this.output.appendLine(`Loading details for command: ${commandPath}`);
+      this.logger.info(`Loading details for command: ${commandPath}`);
       const lines = helpResponse.split('\n');
 
       // Track variants of this command (different syntax lines)
@@ -550,16 +551,16 @@ export class CommandAutocomplete {
           const normalizedPath = commandPath.toLowerCase().trim();
 
           // Debug output
-          this.output.appendLine(`  Checking: "${matchedCommand}" vs "${commandPath}"`);
+          this.logger.info(`  Checking: "${matchedCommand}" vs "${commandPath}"`);
 
           if (normalizedMatch === normalizedPath) {
             const afterCommand = match[2] || '';
-            this.output.appendLine(`  Found match! Parameters: "${afterCommand}"`);
+            this.logger.info(`  Found match! Parameters: "${afterCommand}"`);
 
             if (afterCommand) {
               // Tokenize everything after the command
               const tokens = this.tokenizeParameterString(afterCommand);
-              this.output.appendLine(`  Tokens: ${JSON.stringify(tokens)}`);
+              this.logger.info(`  Tokens: ${JSON.stringify(tokens)}`);
 
               if (tokens.length > 0) {
                 const firstToken = tokens[0];
@@ -620,14 +621,14 @@ export class CommandAutocomplete {
                     const param = this.parseParameter(tokens[i], i);
                     if (param) {
                       parameters.push(param);
-                      this.output.appendLine(`    Added parameter: ${JSON.stringify(param)}`);
+                      this.logger.info(`    Added parameter: ${JSON.stringify(param)}`);
                     }
                   }
                 }
               }
             } else {
               // Command with no parameters
-              this.output.appendLine(`  Command has no parameters`);
+              this.logger.info(`  Command has no parameters`);
             }
           }
         }
@@ -673,7 +674,7 @@ export class CommandAutocomplete {
       }
 
       // Debug: Log final parameters
-      this.output.appendLine(`  Final parameters for ${commandPath}: ${JSON.stringify(parameters.map(p => ({
+      this.logger.info(`  Final parameters for ${commandPath}: ${JSON.stringify(parameters.map(p => ({
         type: p.type,
         name: p.name,
         literal: p.literal,
@@ -701,7 +702,7 @@ export class CommandAutocomplete {
       }
 
     } catch (error) {
-      this.output.appendLine(`Error loading details for ${commandPath}: ${error}`);
+      this.logger.error(`Error loading details for ${commandPath}: ${error}`);
       // Mark as complete even on error to avoid infinite loops
       if ('isComplete' in parent) {
         parent.isComplete = true;
@@ -1100,9 +1101,9 @@ export class CommandAutocomplete {
       });
 
       fs.writeFileSync(this.cacheFile, JSON.stringify(cache, null, 2));
-      this.output.appendLine(`Command cache saved to ${this.cacheFile}`);
+      this.logger.info(`Command cache saved to ${this.cacheFile}`);
     } catch (error) {
-      this.output.appendLine(`Error saving cache: ${error}`);
+      this.logger.error(`Error saving cache: ${error}`);
     }
   }
 
@@ -1133,7 +1134,7 @@ export class CommandAutocomplete {
       // Check cache validity
       if (cache.version !== this.cacheVersion ||
         cache.serverIdentifier !== this.serverIdentifier) {
-        this.output.appendLine('Cache version or server mismatch, will refresh');
+        this.logger.info('Cache version or server mismatch, will refresh');
         return false;
       }
 
@@ -1141,7 +1142,7 @@ export class CommandAutocomplete {
       const cacheAge = Date.now() - new Date(cache.lastUpdated).getTime();
       const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
       if (cacheAge > maxAge) {
-        this.output.appendLine('Cache too old, will refresh');
+        this.logger.info('Cache too old, will refresh');
         return false;
       }
 
@@ -1157,11 +1158,11 @@ export class CommandAutocomplete {
         this.commandAliases.set(alias, target);
       });
 
-      this.output.appendLine(`Commands loaded from cache (${this.rootCommands.size} commands)`);
+      this.logger.info(`Commands loaded from cache (${this.rootCommands.size} commands)`);
       return true;
 
     } catch (error) {
-      this.output.appendLine(`Error loading cache: ${error}`);
+      this.logger.error(`Error loading cache: ${error}`);
       return false;
     }
   }
@@ -1218,10 +1219,10 @@ export class CommandAutocomplete {
     try {
       if (fs.existsSync(this.cacheFile)) {
         fs.unlinkSync(this.cacheFile);
-        this.output.appendLine('Command cache cleared');
+        this.logger.info('Command cache cleared');
       }
     } catch (error) {
-      this.output.appendLine(`Error clearing cache: ${error}`);
+      this.logger.error(`Error clearing cache: ${error}`);
     }
   }
 }

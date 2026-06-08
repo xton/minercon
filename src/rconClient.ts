@@ -1,37 +1,37 @@
 // src/rconClient.ts
 import { RconProtocol } from './rconProtocol';
-import * as vscode from 'vscode';
+import { Logger } from './logger';
 
 export class RconController {
   private host: string;
   private port: number;
   private password: string;
   private client: RconProtocol | null = null;
-  private output: vscode.OutputChannel;
+  private logger: Logger;
 
-  constructor(host: string, port: number, password: string, output: vscode.OutputChannel) {
+  constructor(host: string, port: number, password: string, logger: Logger) {
     this.host = host;
     this.port = port;
     this.password = password;
-    this.output = output;
+    this.logger = logger;
   }
 
   public async connect(): Promise<void> {
-    this.client = new RconProtocol(this.host, this.port, this.password, this.output);
+    this.client = new RconProtocol(this.host, this.port, this.password, this.logger);
 
     // Set up error handler
     this.client.on('error', (error: Error) => {
-      this.output.appendLine(`RCON error: ${error.message}`);
+      this.logger.error(`RCON error: ${error.message}`);
     });
 
     // Set up close handler
     this.client.on('close', () => {
-      this.output.appendLine('RCON connection closed');
+      this.logger.info('RCON connection closed');
       this.client = null;
     });
 
     await this.client.connect();
-    this.output.appendLine('RCON session established.');
+    this.logger.info('RCON session established.');
   }
 
   public async send(cmd: string): Promise<string | undefined> {
@@ -40,12 +40,12 @@ export class RconController {
       const res = await this.client.send(cmd);
 
       if (typeof res !== 'string' && res !== undefined) {
-        this.output.appendLine(`Received non-string response: ${JSON.stringify(res)}`);
+        this.logger.warning(`Received non-string response: ${JSON.stringify(res)}`);
       }
 
       return typeof res === 'string' ? res : JSON.stringify(res);
     } catch (err: any) {
-      this.output.appendLine('Error sending command: ' + String(err.message ?? err));
+      this.logger.error('Error sending command: ' + String(err.message ?? err));
       throw err;
     }
   }

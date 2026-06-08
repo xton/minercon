@@ -12,8 +12,8 @@
 // the live controller through this class, and is notified via `onReconnected`
 // when it should reload the command tree.
 
-import * as vscode from 'vscode';
 import { RconController } from './rconClient';
+import { Logger } from './logger';
 
 export interface ConnectionManagerHost {
   write(text: string): void;
@@ -34,7 +34,7 @@ export class ConnectionManager {
     private readonly serverHost: string,
     private readonly serverPort: number,
     private readonly password: string,
-    private readonly output: vscode.OutputChannel,
+    private readonly logger: Logger,
     controller: RconController,
     private readonly host: ConnectionManagerHost,
   ) {
@@ -87,7 +87,7 @@ export class ConnectionManager {
     try {
       this._controller.disconnect();
     } catch (err) {
-      this.output.appendLine(`Error during disconnect: ${err}`);
+      this.logger.error(`Error during disconnect: ${err}`);
     }
 
     this._isConnected = false;
@@ -134,7 +134,7 @@ export class ConnectionManager {
       }
 
       // Create new controller
-      this._controller = new RconController(this.serverHost, this.serverPort, this.password, this.output);
+      this._controller = new RconController(this.serverHost, this.serverPort, this.password, this.logger);
       await this._controller.connect();
 
       this._isConnected = true;
@@ -199,7 +199,7 @@ export class ConnectionManager {
     try {
       this._controller.disconnect();
     } catch (err) {
-      this.output.appendLine(`Error during close: ${err}`);
+      this.logger.error(`Error during close: ${err}`);
     }
   }
 }

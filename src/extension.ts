@@ -2,23 +2,25 @@
 import * as vscode from 'vscode';
 import { RconController } from './rconClient';
 import { RconTerminal } from './rconTerminal';
+import { Logger, createOutputChannelLogger } from './logger';
 import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel('Minecraft RCON');
+  const logger = createOutputChannelLogger(output);
   let activeTerminals = new Map<vscode.Terminal, RconController>();
   let ptyToController = new Map<RconTerminal, RconController>();
   let currentConnection: { host: string; port: number; password: string } | null = null;
 
   migratePasswordToSecureStorage(context).catch(err => {
-    output.appendLine(`Password migration warning: ${err}`);
+    logger.warning(`Password migration warning: ${err}`);
   });
 
   // Register the terminal profile provider
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider('minecraftRcon.terminal', {
       provideTerminalProfile: async (token: vscode.CancellationToken) => {
-        const { profile, controller, pty, connectionInfo } = await createRconTerminalProfile(output, context);
+        const { profile, controller, pty, connectionInfo } = await createRconTerminalProfile(logger, context);
 
         // Store current connection info
         currentConnection = connectionInfo;
@@ -44,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
       if ((terminal.creationOptions as any).pty === pty) {
         activeTerminals.set(terminal, controller);
         ptyToController.delete(pty);
-        output.appendLine(`Terminal opened: ${terminal.name}`);
+        logger.info(`Terminal opened: ${terminal.name}`);
         break;
       }
     }
@@ -52,12 +54,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Keep the original connect command
   const connectCommand = vscode.commands.registerCommand('minecraftRcon.connect', async () => {
-    await connectToRcon(output, activeTerminals, context, currentConnection);
+    await connectToRcon(logger, activeTerminals, context, currentConnection);
   });
 
   // Add command to connect with new credentials (always prompts)
   const connectNewCommand = vscode.commands.registerCommand('minecraftRcon.connectNew', async () => {
-    await connectToRcon(output, activeTerminals, context, currentConnection, false);
+    await connectToRcon(logger, activeTerminals, context, currentConnection, false);
   });
 
   // Add command to save current connection as default
@@ -88,7 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (controller) {
       await controller.disconnect();
       activeTerminals.delete(terminal);
-      output.appendLine(`Terminal closed: ${terminal.name}`);
+      logger.info(`Terminal closed: ${terminal.name}`);
     }
   });
 
@@ -121,7 +123,7 @@ async function migratePasswordToSecureStorage(context: vscode.ExtensionContext) 
 }
 
 async function createRconTerminalProfile(
-  output: vscode.OutputChannel,
+  logger: Logger,
   context: vscode.ExtensionContext,
   useDefaults: boolean = true
 ): Promise<{
@@ -147,7 +149,7 @@ async function createRconTerminalProfile(
     host = defaultHost;
     port = defaultPort;
     password = defaultPassword;
-    output.appendLine(`Using saved connection settings for ${host}:${port}`);
+    logger.info(`Using saved connection settings for ${host}:${port}`);
   } else {
     // Prompt for missing values
     host = await vscode.window.showInputBox({
@@ -181,7 +183,7 @@ async function createRconTerminalProfile(
   }
 
   // Create controller and connect
-  const controller = new RconController(host, port, password, output);
+  const controller = new RconController(host, port, password, logger);
 
   try {
     await vscode.window.withProgress({
@@ -202,14 +204,14 @@ async function createRconTerminalProfile(
 
       if (retry === 'Enter New Credentials') {
         // Retry with prompts
-        return createRconTerminalProfile(output, context, false);
+        return createRconTerminalProfile(logger, context, false);
       }
     }
     throw err;
   }
 
   // Create terminal with RCON integration - Pass all required parameters including context
-  const pty = new RconTerminal(controller, host, port, password, output, context);
+  const pty = new RconTerminal(controller, host, port, password, logger, context);
 
   const profile = new vscode.TerminalProfile({
     name: `RCON: ${host}:${port}`,
@@ -225,14 +227,14 @@ async function createRconTerminalProfile(
 }
 
 async function connectToRcon(
-  output: vscode.OutputChannel,
+  logger: Logger,
   activeTerminals: Map<vscode.Terminal, RconController>,
   context: vscode.ExtensionContext,
   currentConnection: { host: string; port: number; password: string } | null,
   useDefaults: boolean = true
 ): Promise<void> {
   try {
-    const { profile, controller, connectionInfo } = await createRconTerminalProfile(output, context, useDefaults);
+    const { profile, controller, connectionInfo } = await createRconTerminalProfile(logger, context, useDefaults);
     const terminal = vscode.window.createTerminal({
       ...profile.options,
       iconPath: {
@@ -268,7 +270,7 @@ async function connectToRcon(
     }
   } catch (err: any) {
     if (err.message && !err.message.includes('required')) {
-      output.appendLine('Connection failed: ' + String(err.message ?? err));
+      logger.error('Connection failed: ' + String(err.message ?? err));
       vscode.window.showErrorMessage('RCON connection failed: ' + String(err.message ?? err));
     }
   }

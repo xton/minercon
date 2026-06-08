@@ -1,7 +1,7 @@
 // src/rconProtocol.ts
 import * as net from 'net';
-import * as vscode from 'vscode';
 import { EventEmitter } from 'events';
+import { Logger } from './logger';
 
 // RCON packet types
 enum PacketType {
@@ -24,8 +24,8 @@ export class RconProtocol extends EventEmitter {
   private host: string;
   private port: number;
   private password: string;
-  private output: vscode.OutputChannel;
-  
+  private logger: Logger;
+
   private authenticated: boolean = false;
   private requestId: number = 0;
   private responseBuffer: Buffer = Buffer.alloc(0);
@@ -43,12 +43,12 @@ export class RconProtocol extends EventEmitter {
   private readonly RESPONSE_TIMEOUT = 10000; // 10 seconds for command responses
   private readonly MAX_PACKET_SIZE = 4096;
   
-  constructor(host: string, port: number, password: string, output: vscode.OutputChannel) {
+  constructor(host: string, port: number, password: string, logger: Logger) {
     super();
     this.host = host;
     this.port = port;
     this.password = password;
-    this.output = output;
+    this.logger = logger;
   }
 
   /**
@@ -67,7 +67,7 @@ export class RconProtocol extends EventEmitter {
       
       // Handle connection
       this.socket.once('connect', async () => {
-        this.output.appendLine(`Connected to ${this.host}:${this.port}`);
+        this.logger.info(`Connected to ${this.host}:${this.port}`);
         
         try {
           await this.authenticate();
@@ -84,7 +84,7 @@ export class RconProtocol extends EventEmitter {
       
       // Handle errors
       this.socket.on('error', (error: Error) => {
-        this.output.appendLine(`Socket error: ${error.message}`);
+        this.logger.error(`Socket error: ${error.message}`);
         this.emit('error', error);
         reject(error);
       });
@@ -92,14 +92,14 @@ export class RconProtocol extends EventEmitter {
       // Handle timeout (shouldn't happen now that we removed setTimeout)
       this.socket.on('timeout', () => {
         const error = new Error('Connection timeout');
-        this.output.appendLine('Socket timeout');
+        this.logger.warning('Socket timeout');
         this.emit('error', error);
         this.disconnect();
       });
       
       // Handle close
       this.socket.on('close', () => {
-        this.output.appendLine('Connection closed');
+        this.logger.info('Connection closed');
         this.authenticated = false;
         this.emit('close');
         
@@ -139,7 +139,7 @@ export class RconProtocol extends EventEmitter {
         resolve: (response: string) => {
           clearTimeout(authTimeout);
           this.authenticated = true;
-          this.output.appendLine('Authentication successful');
+          this.logger.info('Authentication successful');
           resolve();
         },
         reject: (error: Error) => {
@@ -257,7 +257,7 @@ export class RconProtocol extends EventEmitter {
         const packet = this.parsePacket(packetBuffer);
         this.handlePacket(packet);
       } catch (error) {
-        this.output.appendLine(`Error parsing packet: ${error}`);
+        this.logger.error(`Error parsing packet: ${error}`);
       }
     }
   }
@@ -293,7 +293,7 @@ export class RconProtocol extends EventEmitter {
         }
       }
       
-      this.output.appendLine(`Received packet with unknown request ID: ${packet.id}`);
+      this.logger.warning(`Received packet with unknown request ID: ${packet.id}`);
       return;
     }
     

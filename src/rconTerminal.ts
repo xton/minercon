@@ -10,6 +10,7 @@ import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } f
 import { LineEditor, LineEditorHost } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
 import { ConnectionManager } from './connectionManager';
+import { Logger } from './logger';
 
 export class RconTerminal implements vscode.Pseudoterminal {
   private writeEmitter = new vscode.EventEmitter<string>();
@@ -25,7 +26,6 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private host: string;
   private port: number;
   private password: string;
-  private output: vscode.OutputChannel;
   private isExecutingCommand: boolean = false;
 
   // Autocomplete system
@@ -55,20 +55,19 @@ export class RconTerminal implements vscode.Pseudoterminal {
   private context: vscode.ExtensionContext;
 
   constructor(
-    controller: RconController, 
-    host: string, 
-    port: number, 
-    password: string, 
-    output: vscode.OutputChannel,
+    controller: RconController,
+    host: string,
+    port: number,
+    password: string,
+    logger: Logger,
     context: vscode.ExtensionContext
   ) {
     this.host = host;
     this.port = port;
     this.password = password;
-    this.output = output;
     this.context = context;
 
-    this.connectionManager = new ConnectionManager(host, port, password, output, controller, {
+    this.connectionManager = new ConnectionManager(host, port, password, logger, controller, {
       write: (text) => this.writeEmitter.fire(text),
       showPrompt: () => this.showPrompt(),
       onReconnected: () => this.initializeCommands(),
@@ -80,7 +79,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
         const result = await this.connectionManager.controller.send(cmd);
         return result ?? '';
       },
-      output,
+      logger,
       context,
       host,
       port
