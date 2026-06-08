@@ -1,288 +1,307 @@
-## 🔒 Security Update (<2.1.0)
-**If you used versions prior to v2.1.0:** Your password is now automatically migrated to 
-secure storage. The old plaintext password is removed from settings.json. 
+# Minecraft RCON Terminal
 
-# Minecraft RCON Terminal - Never Alt-Tab Again
+A full-featured RCON client for Minecraft servers — available both as a
+**VS Code extension** (integrated terminal panel) and as a **standalone CLI
+tool** (`rcon-minecraft`) that runs in any terminal.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
-![VS Code](https://img.shields.io/badge/VS%20Code-^1.95.0-green)
+![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
-## 🎮 The Problem
-Running a Minecraft server means constantly switching between:
-- Fullscreen Minecraft client (for testing)
-- Server console (no autocomplete, no history)
-- Config editors (separate windows)
-- Documentation (wikis, guides)
+---
 
-## ✨ The Solution
-Manage EVERYTHING from VS Code:
-- Full command autocomplete (better than vanilla!)
-- Edit configs and run commands side-by-side
-- Persistent command history
-- Use VS Code AI to analyze server output
-- Never leave your development environment
+## Features
 
-![demo-gif](images/demo-autocomplete.gif)
+**Command completion**
+- Real-time suggestions as you type, cycling with Tab / Shift+Tab
+- Argument hints showing the full usage signature of the current command
+- Works with vanilla, Bukkit/Spigot/Paper, and plugin-extended servers
+- When the [RconTabComplete](https://github.com/pop4959/RconTabComplete) plugin
+  is installed, completions come directly from the server (fastest, most
+  accurate). Without it, the extension builds a local command tree by crawling
+  `/help` output once per server and caching it.
 
-## ✨ What's New in v2.0
+**Emacs-style line editing**
+- Full cursor movement, word-jump, selection, and kill/yank (kill ring shared
+  with system clipboard in VS Code; in-process kill ring in the CLI)
+- Scrollable command history, persistent across reconnects
 
-### 🎉 No More Truncated Commands!
-- **BEFORE:** `/help` cut off at ~150 commands
-- **AFTER:** `/help` shows ALL 300+ commands properly
-- Custom RCON protocol implementation with full fragmentation support
-- Commands like `/status`, `/cvarlist` return complete data
+**Minecraft color codes** — server responses render with full `§` color support
 
-## 🚀 Features
+**Robust connection handling** — exponential-backoff auto-reconnect on drop;
+TCP keepalive to detect silent disconnects
 
-### 🎮 Smart Command Autocomplete
-- **Intelligent suggestions** - Real-time command completion as you type
-- **Tab completion** - Minecraft-style tab cycling through suggestions
-- **Argument hints** - Context-aware help showing required and optional arguments
-- **Deep command trees** - Full support for subcommands and complex parameters
-- **Hyphenated commands** - Commands like `/titanium-rewards` work perfectly
-- **Command caching** - Lightning-fast autocomplete after initial load
-- **Fallback system** - Common commands available even if server help fails
+**No response truncation** — custom RCON protocol implementation handles
+fragmented multi-packet responses correctly (vanilla server `/help` returns
+300+ commands in full)
 
-### 🖥️ Rich Terminal Experience
-- **Minecraft color codes** - Full support for all formatting codes (§0-§f, §l, §o, etc.)
-- **Command history** - Navigate through previous commands with Up/Down arrows
-- **Text selection** - Select, copy, cut, and paste with standard keyboard shortcuts
-- **Multi-line output** - Properly formatted server responses of any size
-- **Clean rendering** - No artifacts or corruption, even after 1000+ line outputs
-- **Connection status** - Visual indicators for connection state
+---
 
-### 🔄 Robust Connection Management
-- **Auto-reconnection** - Automatic reconnection with exponential backoff
-- **Save credentials** - Store your favorite server connections
-- **Multiple connections** - Open multiple RCON terminals simultaneously
-- **Connection persistence** - Maintains connection across VS Code restarts
-- **Error recovery** - Graceful handling of network issues
+## Server setup
 
-## 📦 Installation
+Add these lines to `server.properties` and restart:
 
-### From VS Code Marketplace
-1. Open VS Code
-2. Press `Ctrl+Shift+X` to open Extensions
-3. Search for "Minecraft RCON Terminal"
-4. Click Install
-
-### From VSIX Package
-1. Download the `.vsix` file from [Releases](https://github.com/jaketcooper/Minecraft-rcon/releases)
-2. Open VS Code
-3. Press `Ctrl+Shift+P` and run "Extensions: Install from VSIX..."
-4. Select the downloaded `.vsix` file
-
-## 🚀 Getting Started
-
-### Enable RCON on Your Server
-Add these lines to your `server.properties`:
 ```properties
 enable-rcon=true
 rcon.port=25575
 rcon.password=your-secure-password
 ```
 
-### Connect to Your Server
-
-#### Quick Connect (uses saved defaults if available)
-1. Press `Ctrl+Shift+P`
-2. Run "Minecraft RCON: Connect to Server"
-3. Enter credentials if not saved
-
-#### Connect with New Credentials
-1. Press `Ctrl+Shift+P`
-2. Run "Minecraft RCON: Connect with New Credentials"
-3. Enter host, port, and password
-
-#### Save Connection as Default
-1. Connect to a server
-2. Press `Ctrl+Shift+P`
-3. Run "Minecraft RCON: Save Current Connection as Default"
-
-## ⌨️ Keyboard Shortcuts
-
-### Command Navigation
-| Shortcut | Action |
-|----------|--------|
-| `Tab` | Autocomplete command/cycle suggestions |
-| `Shift+Tab` | Reverse cycle through suggestions |
-| `↑/↓` | Navigate command history or suggestions |
-| `Home/End` | Jump to first/last suggestion |
-| `Page Up/Down` | Navigate suggestion pages |
-| `Esc` | Cancel autocomplete or clear line |
-
-### Text Editing
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+A` | Select all |
-| `Ctrl+C` | Copy selection or cancel input |
-| `Ctrl+V` | Paste |
-| `Ctrl+X` | Cut selection |
-| `Ctrl+←/→` | Jump word left/right |
-| `Ctrl+Shift+←/→` | Select word left/right |
-| `Shift+Home/End` | Select to start/end of line |
-
-### Terminal Control
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+L` | Clear screen |
-| `Ctrl+W` | Delete word backward |
-| `Ctrl+U` | Clear entire line |
-| `Ctrl+K` | Delete from cursor to end |
-| `Ctrl+D` | Disconnect from server |
-
-## 📋 Built-in Commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show Minecraft commands (now shows ALL commands!) |
-| `/clear` | Clear terminal screen |
-| `/reconnect` | Manually reconnect to server |
-| `/disconnect` | Disconnect from server |
-| `/reload-commands` | Force reload command database from server |
-| `/clear-cache` | Clear cached command database |
-| `/cache-info` | Show command cache information |
-
-## ⚙️ Configuration
-
-Configure default settings in VS Code (`File` → `Preferences` → `Settings` → Search "Minecraft RCON"):
-
-```json
-{
-  // Default connection settings
-  "minecraftRcon.defaultHost": "localhost",
-  "minecraftRcon.defaultPort": 25575,
-}
-```
-
-## 🎯 Usage Examples
-
-### Basic Commands
-```minecraft
-/gamemode creative Steve
-/give @a diamond 64
-/tp @p ~ ~10 ~
-/weather clear 1000
-/help  # Now shows ALL commands!
-```
-
-### Using Autocomplete
-1. Type `/` to see all available commands
-2. Start typing a command name to filter suggestions
-3. Press `Tab` to complete the selected suggestion
-4. Continue typing for argument hints
-
-### Command Arguments
-When typing commands, you'll see helpful hints:
-- `<required>` - Required arguments in angle brackets
-- `[optional]` - Optional arguments in square brackets
-- `(choice1|choice2)` - Multiple options separated by pipes
-- `@selectors` - Target selectors (@p, @a, @r, @e, @s)
-
-## 🔧 Troubleshooting
-
-### After Updating to v2.0
-If upgrading from v1.x, run these commands:
-```
-/clear-cache
-/reload-commands
-```
-
-### Connection Issues
-- **"Connection refused"** - Check if RCON is enabled in server.properties
-- **"Authentication failed"** - Verify your RCON password
-- **"Timeout"** - Check firewall settings and ensure port is open
-
-### Autocomplete Not Working
-1. Clear cache: `/clear-cache`
-2. Reload: `/reload-commands`
-3. Check output panel: `View → Output → Minecraft RCON`
-4. Ensure you have permission to run `/help` on the server
-
-### Large Command Output Issues (Fixed in v2.0!)
-- `/help` now returns complete list
-- `/status` shows all players
-- `/scoreboard` displays everything
-- No more truncation at 4096 bytes!
-
-### Visual Issues
-- Terminal rendering has been completely fixed in v2.0
-- No more duplicate suggestion lists
-- No more corrupted displays after large outputs
-- If you see any artifacts, use `/clear` to reset
-
-## 🤝 Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
-
-### Development
-```bash
-# Clone repository
-git clone https://github.com/jaketcooper/minecraft-rcon.git
-
-# Install dependencies
-npm install
-
-# Compile and watch
-npm run compile
-
-# Run tests
-npm test
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Minecraft community for feedback and testing
-- VS Code extension developers community
-
-## 📊 Version History
-
-### v2.0.0 (Latest) - The Fragmentation Fix Update
-- **Custom RCON protocol** replacing limited rcon-client library
-- **Full fragmentation support** - no more truncated responses!
-- **Hyphenated command fix** - all command types now work
-- **Terminal rendering fixes** - clean display even after huge outputs
-- **Fallback commands** - autocomplete works even if help fails
-- **Better error handling** - improved connection stability
-- See [CHANGELOG.md](CHANGELOG.md) for full details
-
-### v1.1.1
-- VS Code compatibility updates
-- Repository cleanup
-
-### v1.1.0
-- Initial autocomplete system
-- Suggestion rendering
-- Command caching
-
-### v1.0.0
-- Full terminal interface
-- Minecraft color support
-- Keyboard shortcuts
-
-## 🐛 Known Issues
-
-- None! The v2.0 update fixed all major issues
-
-## 📚 Documentation
-
-- [CHANGELOG.md](CHANGELOG.md) - Detailed version history
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Development guide
-- [docs/TECHNICAL.md](docs/TECHNICAL.md) - Protocol implementation details
-
-## 💬 Support
-
-- **Issues**: [GitHub Issues](https://github.com/jaketcooper/Minecraft-rcon/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/jaketcooper/Minecraft-rcon/discussions)
-- **Latest Release**: [v2.0.0](https://github.com/jaketcooper/Minecraft-rcon/releases/latest)
+The password is only needed at connect time and is never written to disk by
+this tool.
 
 ---
 
-Made with ❤️ for the Minecraft community
+## VS Code extension
 
-**Now with 100% less truncation!** 🎉
+### Installation
+
+Search **"Minecraft RCON Terminal"** in the VS Code Extensions panel, or
+install from a `.vsix` file:
+
+```
+Ctrl+Shift+P → Extensions: Install from VSIX...
+```
+
+### Connecting
+
+| Command (Ctrl+Shift+P) | Description |
+|---|---|
+| Minecraft RCON: Connect to Server | Connect using saved defaults, or prompt if none saved |
+| Minecraft RCON: Connect with New Credentials | Always prompt for host, port, and password |
+| Minecraft RCON: Save Current Connection as Default | Save the current connection's host and port; password goes to VS Code's secure secret storage |
+
+You can also open a terminal via the **Terminal** menu → **New Terminal** →
+select **Minecraft Server** from the terminal profile picker.
+
+Multiple RCON terminals can be open simultaneously, each to a different server.
+
+### VS Code settings
+
+```json
+{
+  "minecraftRcon.defaultHost": "localhost",
+  "minecraftRcon.defaultPort": 25575
+}
+```
+
+The password is not stored in settings — it lives in VS Code's encrypted
+secret storage.
+
+---
+
+## CLI tool
+
+### Installation
+
+```sh
+npm install -g minecraft-rcon
+```
+
+Or, after cloning and building locally:
+
+```sh
+npm run compile
+node out/rcon-minecraft --help
+```
+
+### Usage
+
+```
+rcon-minecraft [host] [port] [options]
+
+Options:
+  -p, --password <pw>   RCON password
+  --save                Save host/port to ~/.config/minecraft-rcon/config.json
+  --log-file <path>     Write log output to a file instead of stderr
+  -h, --help            Show help
+
+Environment variables:
+  MCRCON_PASSWORD       RCON password (used when --password is not given)
+  MCRCON_LOG_FILE       Log file path (used when --log-file is not given)
+```
+
+**Password handling:** the CLI never writes the password to disk. Supply it
+with `--password`, the `MCRCON_PASSWORD` environment variable, or leave both
+unset and you will be prompted with masked input.
+
+**Saved host/port:** `--save` writes host and port (never the password) to
+`~/.config/minecraft-rcon/config.json`. On subsequent invocations, those
+values are used as defaults so you can just run `rcon-minecraft` with no
+arguments.
+
+**Kill/yank:** the CLI uses an in-process kill ring (Ctrl+K stashes text;
+Ctrl+Y yanks it back). The kill ring is not connected to the system clipboard.
+Ctrl+X / Ctrl+C-with-selection do the same within the session.
+
+**Log output:** diagnostic messages go to stderr by default, colored by level.
+Use `--log-file` to redirect them to a file (useful when stderr would
+interfere with piped output).
+
+### Quick examples
+
+```sh
+# One-off connection (prompts for password)
+rcon-minecraft localhost 25575
+
+# Password from environment
+MCRCON_PASSWORD=secret rcon-minecraft mc.example.com
+
+# Save host/port for future sessions
+rcon-minecraft mc.example.com 25575 --password secret --save
+
+# Next time, no arguments needed
+rcon-minecraft
+```
+
+---
+
+## Keyboard shortcuts
+
+### Navigation and completion
+
+| Key | Action |
+|---|---|
+| `Tab` | Fetch / cycle to next suggestion |
+| `Shift+Tab` | Cycle to previous suggestion |
+| `Up` / `Ctrl+P` | Previous command in history (or move up in suggestion list) |
+| `Down` / `Ctrl+N` | Next command in history (or move down in suggestion list) |
+| `Page Up` / `Page Down` | Page through suggestion list |
+| `Esc` | Close suggestion list; if already closed, clear the line |
+| `Enter` | Submit the current command |
+
+### Cursor movement
+
+| Key | Action |
+|---|---|
+| `Left` / `Ctrl+B` | Move left one character |
+| `Right` / `Ctrl+F` | Move right one character |
+| `Ctrl+Left` / `Alt+B` | Move left one word |
+| `Ctrl+Right` / `Alt+F` | Move right one word |
+| `Home` / `Ctrl+A` | Move to start of line |
+| `End` / `Ctrl+E` | Move to end of line |
+
+### Selection
+
+| Key | Action |
+|---|---|
+| `Shift+Left` | Extend selection left |
+| `Shift+Right` | Extend selection right |
+| `Ctrl+Shift+Left` | Extend selection left by word |
+| `Ctrl+Shift+Right` | Extend selection right by word |
+| `Shift+Home` | Select to start of line |
+| `Shift+End` | Select to end of line |
+
+### Editing
+
+| Key | Action |
+|---|---|
+| `Backspace` | Delete character before cursor |
+| `Delete` | Delete character after cursor |
+| `Ctrl+T` | Transpose characters around cursor |
+| `Ctrl+K` | Kill (cut) from cursor to end of line → kill ring |
+| `Ctrl+U` | Kill from cursor to start of line → kill ring |
+| `Ctrl+W` / `Alt+Backspace` | Kill word before cursor → kill ring |
+| `Alt+D` | Kill word after cursor → kill ring |
+| `Ctrl+Y` | Yank (paste) from kill ring |
+| `Ctrl+X` | Cut selection → kill ring |
+| `Ctrl+C` | Copy selection → kill ring (if text selected); otherwise echo `^C` and clear line |
+| `Ctrl+V` | Paste from kill ring |
+
+In VS Code mode the kill ring is the system clipboard, so killed/copied text
+can be pasted into other applications. In the CLI the kill ring is
+session-local.
+
+### Terminal control
+
+| Key | Action |
+|---|---|
+| `Ctrl+L` | Clear screen and redraw |
+| `Ctrl+D` | Disconnect and exit |
+
+---
+
+## Built-in commands
+
+These are handled by the terminal itself and never sent to the server.
+
+| Command | Description |
+|---|---|
+| `/help` | Show this list of built-in commands and keyboard shortcuts |
+| `/clear` | Clear the terminal screen |
+| `/reconnect` | Manually reconnect to the server |
+| `/disconnect` | Disconnect (stays open; use `Ctrl+D` to also exit) |
+| `/reload-commands` | Force a fresh crawl of the server's command tree (local mode only) |
+| `/clear-cache` | Delete the cached command tree for this server (local mode only) |
+| `/cache-info` | Show the age and location of the cached command tree |
+
+Any command that does **not** start with `/`, or that starts with `/` but is
+not in the list above, is sent directly to the server as an RCON command.
+
+---
+
+## Tab completion modes
+
+The terminal detects which mode to use automatically when it first connects.
+
+**Plugin mode** (preferred) — requires the
+[RconTabComplete](https://github.com/pop4959/RconTabComplete) plugin on the
+server. Completions are fetched live from the server as you type, identical to
+in-game tab completion.
+
+**Local mode** (fallback) — the terminal fetches and parses your server's
+`/help` output once, builds a command tree, and caches it to disk. Subsequent
+connections load from cache (nearly instant). Use `/reload-commands` to
+refresh after a server update.
+
+Cache location:
+- VS Code: `<extension global storage>/command-cache/<host>_<port>.json`
+- CLI: `~/.config/minecraft-rcon/command-cache/<host>_<port>.json`
+
+---
+
+## Troubleshooting
+
+**"Connection refused"** — verify `enable-rcon=true` in `server.properties`
+and that the RCON port is not blocked by a firewall.
+
+**"Authentication failed"** — double-check `rcon.password` in
+`server.properties`. Passwords are case-sensitive.
+
+**Autocomplete not working in local mode**
+1. `/clear-cache` to discard the old tree
+2. `/reload-commands` to re-crawl
+3. Check that your account has permission to run `/help` on the server
+4. In VS Code, check View → Output → Minecraft RCON for crawl diagnostics
+
+**Truncated responses** — this was a bug in versions before v2.0, which used
+an external library with a 4096-byte limit. The current implementation has no
+such limit.
+
+**Suggestion display looks wrong** — try `/clear` to redraw the screen. If
+the issue persists in the CLI, ensure your terminal reports correct dimensions
+(`echo $COLUMNS $LINES`).
+
+---
+
+## Contributing
+
+```sh
+git clone https://github.com/jaketcooper/minecraft-rcon.git
+cd minecraft-rcon
+npm install
+npm run compile
+npm test
+```
+
+The test suite runs inside VS Code's extension host. Run it with `npm test`; no
+live server is required — the RCON layer has a record/replay fixture harness.
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and
+[CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
