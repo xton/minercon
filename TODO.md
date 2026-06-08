@@ -31,7 +31,7 @@ anything non-obvious.
 - [x] `completionEngine.ts` `applySuggestion` — extracted as pure fn + 7 new unit tests (61 → 68 passing)
 - [x] `helpTextParsing.ts`/`commandTreeCache.ts`/`commandSuggestions.ts` — each of the three modules extracted in §2's `commandAutocomplete.ts` split now has its own 1:1 test file (`commandAutocomplete.test.ts` renamed to `helpTextParsing.test.ts`; `commandSuggestions.test.ts` and `commandTreeCache.test.ts` are new — the latter introduces a `mkdtemp`-backed `vscode.ExtensionContext` stub, the first filesystem-IO test in the suite). Plus `classifyParameterTokens`/`buildParameterStructureFromVariants` (newly extracted from §1's long-methods de-dup) get their own unit tests too. 71 → 100 passing
 - [x] `lineEditor.ts` pure logic — `LineEditor` is stateful but already had a clean test seam (`LineEditorHost`); added `lineEditor.test.ts` with a `FakeHost` stub and 39 tests across editing, cursor movement, selection math, kill operations, `transposeChars`, history navigation (dedup, 100-entry cap, temp-line save/restore), and whole-line ops, asserting on observable state (`line`/`cursor`/`hasSelection`/`getSelectedText`). 100 → 139 passing
-- [ ] `rconTerminal.ts` — still has no dedicated test file (the original review item's share for this module). The selection/history/word-boundary logic itself already moved to `LineEditor` and is covered by the suite above; what's left here is `RconTerminal` itself — `buildKeyHandlers`/`handleInput` dispatch, `dispatchToEngine`/`executeEngineEffect` (wiring `completionEngine`'s `Machine` to the UI), and `executeCommand`'s output-line bookkeeping. Like `extension.ts` (§5, closed as decided-against) it's largely vscode-pty/IO orchestration glued together with `LineEditor`/`SuggestionDisplay`/`ConnectionManager`/`CommandAutocomplete` collaborators — but unlike `extension.ts`, the engine-dispatch and key-handler-lookup pieces *are* reasonably pure state-machine logic over a `LineEditorHost`-style seam, so a `FakeHost`-driven suite (mirroring `lineEditor.test.ts`) looks tractable rather than a call-order-assertion exercise. Worth a closer look before deciding whether to test or close-as-decided-against
+- [x] `rconTerminal.ts` — added `rconTerminal.test.ts` (12 tests, 147 → 159 passing). The trick that makes it tractable (unlike `extension.ts`): driving the terminal into *plugin mode* (a `FakeController` that answers the `tabcomplete` probe with the magic phrase) sidesteps the entire command-tree-crawling startup path, leaving a small, fast, fully-isolated surface to drive end-to-end through `handleInput`/`open`/`close` and observe via `onDidWrite` — exactly like `lineEditor.test.ts` drives `LineEditor` through a `FakeHost`. Covers: welcome-banner/plugin-detection on `open`, regular-character assembly + Enter → RCON send + response rendering (incl. "(no response)"), Escape/Ctrl+C line-clearing (and that cleared text is never sent), Ctrl+L screen-redraw, Tab → `dispatchToEngine`/`executeEngineEffect` → live `tabcomplete <query>` fetch through the active backend, the `/help`/`/clear`/`/disconnect` built-in-command router (and that built-ins never reach the server as RCON commands — only the engine's live-as-you-type "tabcomplete -" fetches do), the "not connected" guard in `executeCommand`, and `close()` → `ConnectionManager.dispose()` → controller teardown. Deliberately never exercises the "connection lost → auto-reconnect" path: `ConnectionManager.attemptReconnect` constructs a real `RconController` directly (no injection seam), which would attempt a live socket connection from the test
 - [x] `rconProtocol.ts`/`rconClient.ts` — `rconProtocol.ts`'s framing/fragmentation/auth turned out to already be covered byte-exact by §6's record/replay harness; the real gap was `RconController` (rconClient.ts), which had zero coverage and no injection seam. Added a `createProtocol` factory (mirroring `RconProtocol`'s own `createSocket` pattern — same "only production change, default behavior unchanged" shape) and `rconClient.test.ts` with a `FakeProtocol` stub: 8 tests covering queue serialization (a second `send` provably waits for the first, not just schedules later), error containment (a rejected send doesn't wedge the queue), `Not connected` guards, and `error`/`close` event wiring. 139 → 147 passing
 - [x] `extension.test.ts` — replaced the meaningless scaffold "Sample test" (`assert.strictEqual(-1, [1,2,3].indexOf(5))`) with a minimal smoke test that the module loads under the real vscode host and exports `activate`/`deactivate`. Deep-mocking the vscode API to test `activate`/`createRconTerminalProfile`/`connectToRcon` was decided against — like §7's readline-library item — because `extension.ts` is ~100% IO/UI orchestration with no pure logic to extract; such tests would mostly assert mock call-order rather than real behavior
 
@@ -49,31 +49,33 @@ anything non-obvious.
 - [x] **Canceled** — decided against by design: adapter complexity, fights the custom multi-line/selection UI, no equivalent for features already built. No action item.
 
 ---
-*Last updated: 2026-06-08 — §1 (Code smells) is now fully checked off too:
-the last two items were the `commandAutocomplete.ts` debug-logging cleanup
+*Last updated: 2026-06-08 — §1 (Code smells) AND §5 (Test coverage) are now
+both fully checked off, closing out the last two open threads in the
+checklist bar one.
+
+§1's last two items: the `commandAutocomplete.ts` debug-logging cleanup
 (scratch dumps/traces removed, legitimate diagnostics kept and tidied) and
 the remaining `any` typing (a new `errorMessage(unknown): string` helper in
 `logger.ts` retired every `catch (err: any)` across `rconClient.ts`,
 `extension.ts`, `rconTerminal.ts`, and `connectionManager.ts`, plus a
-`'pty' in ...` type-guard fix in `extension.ts`). Pure refactor — still 147
-tests passing, `tsc`/`eslint` clean.
+`'pty' in ...` type-guard fix in `extension.ts`).
 
-§5 (Test coverage) was fully checked off in the prior pass: beyond the
-`completionEngine`/split-module/`classifyParameterTokens` work, that pass
-added a `FakeHost`-driven suite for `lineEditor.ts`'s selection math/history
-nav/word-boundary logic, a `FakeProtocol`-driven suite for `RconController`'s
-queue-serialization/error-containment logic (a new `createProtocol` injection
-seam was added to make it testable, mirroring `RconProtocol`'s
-`createSocket`), and a smoke test replacing `extension.test.ts`'s meaningless
-scaffold sample (deep vscode-API mocking for `extension.ts` was decided
-against, like §7). One loose thread remains: `rconTerminal.ts`'s share of the
-selection/history/word-boundary item still has no dedicated test file.
+§5's last loose thread — `rconTerminal.ts` had no dedicated test file — is
+now closed too: `rconTerminal.test.ts` (12 tests) drives the terminal in
+*plugin mode* (sidestepping the command-tree-crawl startup path entirely) end
+to end through `handleInput`/`open`/`close`, observing via `onDidWrite`, the
+same way `lineEditor.test.ts` drives `LineEditor` through a `FakeHost`. Covers
+key dispatch (Escape/Ctrl+C/Ctrl+L/Tab), the `/`-built-in-command router, and
+`executeCommand`'s response/error/not-connected handling — deliberately
+stopping short of the "connection lost → auto-reconnect" path, since
+`ConnectionManager.attemptReconnect` constructs a real `RconController`
+directly (no injection seam) and would attempt a live socket connection from
+a test.
 
 §2 (mega-module splits), §4 (dead code), §6 (record/replay harness), and the
-`rconProtocolTest.ts` dead-code item are also fully done. The only items left
-open across the whole checklist are §3's "Strategy pattern for
-local-vs-plugin parsing" and the `rconTerminal.ts` test-coverage loose thread
-above. 147 tests passing.*
+`rconProtocolTest.ts` dead-code item are also fully done. The only item left
+open across the whole checklist is §3's "Strategy pattern for local-vs-plugin
+parsing". 147 → 159 tests passing, `tsc`/`eslint` clean throughout.*
 
 ## How to record a live RCON fixture
 
