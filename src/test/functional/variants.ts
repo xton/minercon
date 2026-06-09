@@ -5,7 +5,10 @@ export const MC_VERSION = '1.21.4';
 // In CI, the Spigot pre-built image (ghcr.io/xton/minecraft-rcon/spigot-prebuilt:VERSION)
 // is set via SPIGOT_IMAGE so BuildTools doesn't run during tests. Locally, fall
 // back to itzg/minecraft-server and let it build on first pull (slow, one-time).
-const SPIGOT_IMAGE = process.env.SPIGOT_IMAGE ?? 'itzg/minecraft-server';
+// Spigot 1.21.4 supports Java up to version 24; use the java21 image tag to
+// avoid the "Unsupported Java" exit that occurs when the default itzg image
+// ships a newer JVM (e.g. Java 25).
+const SPIGOT_IMAGE = process.env.SPIGOT_IMAGE ?? 'itzg/minecraft-server:java21';
 
 export interface ServerVariant {
   name: string;

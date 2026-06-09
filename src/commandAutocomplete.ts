@@ -191,8 +191,8 @@ export class CommandAutocomplete {
         if (match) {
           const commandName = match[1];
 
-          // Skip common non-command words
-          if (['usage', 'help', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
+          // Skip common non-command words that appear in descriptions
+          if (['usage', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
             continue;
           }
 
