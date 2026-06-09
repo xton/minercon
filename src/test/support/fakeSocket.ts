@@ -16,11 +16,11 @@
 //
 // Cross-checking what gets written against the script (rather than just
 // blindly feeding back responses) is what turns this into a regression guard
-// on `createPacket`/the auth handshake/the double-packet fragmentation
-// technique: if the protocol's wire format ever drifts from what was
-// recorded, `assertSatisfied()` fails with a clear diff instead of the test
-// either hanging (waiting on a response that never comes) or silently
-// passing against a conversation that no longer matches reality.
+// on `createPacket`/the auth handshake/size-based fragmentation termination:
+// if the protocol's wire format ever drifts from what was recorded,
+// `assertSatisfied()` fails with a clear diff instead of the test either
+// hanging (waiting on a response that never comes) or silently passing
+// against a conversation that no longer matches reality.
 
 import { EventEmitter } from 'events';
 import { SocketLike } from '../../rconProtocol';

@@ -126,13 +126,19 @@ export class RconProtocol extends EventEmitter {
         this.logger.info('Connection closed');
         this.authenticated = false;
         this.emit('close');
-        
-        // Reject all pending requests
-        for (const [id, request] of this.pendingRequests) {
+
+        for (const [, request] of this.pendingRequests) {
           if (request.timeout) {
             clearTimeout(request.timeout);
           }
-          request.reject(new Error('Connection closed'));
+          // Deliver any accumulated fragments if the server closed mid-response
+          // (e.g. the final fragment was exactly MAX_PACKET_SIZE bytes and we
+          // were still waiting for more).
+          if (request.fragments.length > 0) {
+            request.resolve(request.fragments.join(''));
+          } else {
+            request.reject(new Error('Connection closed'));
+          }
         }
         this.pendingRequests.clear();
       });
@@ -160,7 +166,7 @@ export class RconProtocol extends EventEmitter {
       }, 5000);
       
       this.pendingRequests.set(authId, {
-        resolve: (response: string) => {
+        resolve: (_response: string) => {
           clearTimeout(authTimeout);
           this.authenticated = true;
           this.logger.info('Authentication successful');
@@ -193,63 +199,31 @@ export class RconProtocol extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const requestId = this.getNextRequestId();
-      
-      // Use the double-packet technique for detecting end of fragmented responses
-      // We'll send the actual command, then immediately send a dummy command
-      const dummyId = this.getNextRequestId();
-      
-      // Set up response handler for the actual command
+
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
-        this.pendingRequests.delete(dummyId);
         reject(new Error(`Command timeout: ${command}`));
       }, this.RESPONSE_TIMEOUT);
-      
-      // Track the main request
+
       this.pendingRequests.set(requestId, {
         resolve: (response: string) => {
           clearTimeout(timeout);
           this.pendingRequests.delete(requestId);
-          this.pendingRequests.delete(dummyId);
           resolve(response);
         },
         reject: (error: Error) => {
           clearTimeout(timeout);
           this.pendingRequests.delete(requestId);
-          this.pendingRequests.delete(dummyId);
           reject(error);
         },
         command: command,
         fragments: [],
-        timeout: timeout
+        timeout: timeout,
       });
-      
-      // Track the dummy request (used to detect end of fragmented response)
-      this.pendingRequests.set(dummyId, {
-        resolve: () => {
-          // When dummy response arrives, we know the main response is complete
-          const mainRequest = this.pendingRequests.get(requestId);
-          if (mainRequest) {
-            const fullResponse = mainRequest.fragments.join('');
-            mainRequest.resolve(fullResponse);
-          }
-        },
-        reject: () => {},
-        command: 'dummy',
-        fragments: []
-      });
-      
-      // Send the actual command
+
       const commandPacket = this.createPacket(requestId, PacketType.COMMAND, command);
       if (this.socket) {
         this.socket.write(commandPacket);
-      }
-      
-      // Send dummy command to detect end of fragmentation
-      // Using an invalid type should generate a small, predictable response
-      const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
-      if (this.socket) {
-        this.socket.write(dummyPacket);
       }
     });
   }
@@ -273,8 +247,8 @@ export class RconProtocol extends EventEmitter {
       }
       
       // Extract the packet
-      const packetBuffer = this.responseBuffer.slice(0, size + 4);
-      this.responseBuffer = this.responseBuffer.slice(size + 4);
+      const packetBuffer = this.responseBuffer.subarray(0, size + 4);
+      this.responseBuffer = this.responseBuffer.subarray(size + 4);
       
       // Parse the packet
       try {
@@ -323,24 +297,23 @@ export class RconProtocol extends EventEmitter {
     
     // Handle based on packet type
     if (packet.type === PacketType.RESPONSE) {
-      // Accumulate response fragments
+      if (request.command === 'auth') {
+        // First of the two auth-acknowledgement packets — ignore it; the
+        // AUTH_RESPONSE packet that follows is what we actually resolve on.
+        return;
+      }
       request.fragments.push(packet.body);
-      
-      // For single-packet responses (< 4096 bytes), resolve immediately
-      // unless we're expecting fragmentation (body length is near max)
+      // A fragment shorter than the maximum packet body size is the last one —
+      // resolve immediately. If the final fragment is exactly MAX_PACKET_SIZE
+      // bytes the 10 s timeout catches it (very rare in practice).
       if (packet.body.length < this.MAX_PACKET_SIZE - 100) {
-        // This is likely not fragmented or is the last fragment
-        // But we'll let the dummy packet technique confirm
-        // For immediate commands like simple queries, this helps responsiveness
-        
-        // If this is a dummy request, trigger completion of the main request
-        if (request.command === 'dummy' || request.command === '') {
-          request.resolve('');
-        }
+        request.resolve(request.fragments.join(''));
       }
     } else if (packet.type === PacketType.AUTH_RESPONSE) {
-      // Auth response
+      // Auth response — resolve and clean up so the auth entry doesn't linger
+      // in pendingRequests where the close handler could re-fire it.
       if (request.command === 'auth') {
+        this.pendingRequests.delete(packet.id);
         request.resolve('');
       }
     }
