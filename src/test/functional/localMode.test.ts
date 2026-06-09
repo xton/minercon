@@ -79,10 +79,10 @@ for (const variant of nonPluginVariants) {
       await ctrl.disconnect();
 
       for (const cmd of UNIVERSAL_COMMANDS) {
-        const result = autocomplete.getSuggestions(cmd);
+        const result = autocomplete.getSuggestions(`/${cmd}`);
         assert.ok(
           result.suggestions.includes(cmd) || result.suggestions.some(s => s.startsWith(cmd)),
-          `expected "${cmd}" in suggestions for input "${cmd}", got: ${JSON.stringify(result.suggestions.slice(0, 10))}`
+          `expected "${cmd}" in suggestions for input "/${cmd}", got: ${JSON.stringify(result.suggestions.slice(0, 10))}`
         );
       }
     });

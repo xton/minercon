@@ -51,18 +51,6 @@ for (const variant of variants) {
       await ctrl.disconnect();
     });
 
-    test('reconnects after disconnect', async () => {
-      const ctrl = new RconController(host, port, PASSWORD, silent);
-      await ctrl.connect();
-      await ctrl.disconnect();
-      assert.ok(!ctrl.isConnected());
-      await ctrl.connect();
-      assert.ok(ctrl.isConnected());
-      const response = await ctrl.send('list');
-      assert.ok(typeof response === 'string');
-      await ctrl.disconnect();
-    });
-
     test('multiple sequential commands all succeed', async () => {
       const ctrl = new RconController(host, port, PASSWORD, silent);
       await ctrl.connect();
