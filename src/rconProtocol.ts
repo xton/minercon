@@ -115,15 +115,16 @@ export class RconProtocol extends EventEmitter {
       
       // Handle timeout (shouldn't happen now that we removed setTimeout)
       this.socket.on('timeout', () => {
+        this.logger.warning('Socket timeout — calling disconnect()');
         const error = new Error('Connection timeout');
-        this.logger.warning('Socket timeout');
         this.emit('error', error);
         this.disconnect();
       });
       
       // Handle close
       this.socket.on('close', () => {
-        this.logger.info('Connection closed');
+        const pending = [...this.pendingRequests.values()].map(r => r.command).join(', ');
+        this.logger.info(`Connection closed (pending: ${pending || 'none'})`);
         this.authenticated = false;
         this.emit('close');
 
@@ -232,8 +233,11 @@ export class RconProtocol extends EventEmitter {
         command: command,
         fragments: [],
         timeout: timeout,
-        // Sent on the first response fragment — ensures the server has started
-        // replying before we ask it to process the fence packet.
+        // Sent on the first response fragment — ensures the fence arrives in
+        // its own TCP read() on the server, not batched with the command packet.
+        // RconClient.run() closes the connection if read() returns more bytes
+        // than the first packet's length field, so back-to-back writes that
+        // arrive in one read() cause an immediate disconnect.
         sendFence: () => {
           if (this.socket) {
             const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
@@ -413,16 +417,16 @@ export class RconProtocol extends EventEmitter {
   public async disconnect(): Promise<void> {
     if (this.socket) {
       this.authenticated = false;
-      
+
       // Clear pending requests
-      for (const [id, request] of this.pendingRequests) {
+      for (const [, request] of this.pendingRequests) {
         if (request.timeout) {
           clearTimeout(request.timeout);
         }
         request.reject(new Error('Disconnected'));
       }
       this.pendingRequests.clear();
-      
+
       // Close socket
       this.socket.destroy();
       this.socket = null;
