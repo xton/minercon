@@ -55,7 +55,6 @@ export class RconProtocol extends EventEmitter {
   
   // Configuration
   private readonly RESPONSE_TIMEOUT = 10000; // 10 seconds for command responses
-  private readonly MAX_PACKET_SIZE = 4096;
   
   constructor(
     host: string,
@@ -199,9 +198,15 @@ export class RconProtocol extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       const requestId = this.getNextRequestId();
+      const dummyId = this.getNextRequestId();
 
+      // Use the double-packet technique for detecting end of fragmented
+      // responses: send the real command, then immediately send an empty
+      // command. RCON processes commands in order, so when the dummy
+      // response arrives all real fragments have already been delivered.
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
+        this.pendingRequests.delete(dummyId);
         reject(new Error(`Command timeout: ${command}`));
       }, this.RESPONSE_TIMEOUT);
 
@@ -209,11 +214,13 @@ export class RconProtocol extends EventEmitter {
         resolve: (response: string) => {
           clearTimeout(timeout);
           this.pendingRequests.delete(requestId);
+          this.pendingRequests.delete(dummyId);
           resolve(response);
         },
         reject: (error: Error) => {
           clearTimeout(timeout);
           this.pendingRequests.delete(requestId);
+          this.pendingRequests.delete(dummyId);
           reject(error);
         },
         command: command,
@@ -221,9 +228,26 @@ export class RconProtocol extends EventEmitter {
         timeout: timeout,
       });
 
+      this.pendingRequests.set(dummyId, {
+        resolve: () => {
+          const mainRequest = this.pendingRequests.get(requestId);
+          if (mainRequest) {
+            mainRequest.resolve(mainRequest.fragments.join(''));
+          }
+        },
+        reject: () => {},
+        command: 'dummy',
+        fragments: [],
+      });
+
       const commandPacket = this.createPacket(requestId, PacketType.COMMAND, command);
       if (this.socket) {
         this.socket.write(commandPacket);
+      }
+
+      const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
+      if (this.socket) {
+        this.socket.write(dummyPacket);
       }
     });
   }
@@ -303,11 +327,10 @@ export class RconProtocol extends EventEmitter {
         return;
       }
       request.fragments.push(packet.body);
-      // A fragment shorter than the maximum packet body size is the last one —
-      // resolve immediately. If the final fragment is exactly MAX_PACKET_SIZE
-      // bytes the 10 s timeout catches it (very rare in practice).
-      if (packet.body.length < this.MAX_PACKET_SIZE - 100) {
-        request.resolve(request.fragments.join(''));
+      // Dummy response arriving means all real fragments have been delivered
+      // (RCON processes commands in order).
+      if (request.command === 'dummy') {
+        request.resolve('');
       }
     } else if (packet.type === PacketType.AUTH_RESPONSE) {
       // Auth response — resolve and clean up so the auth entry doesn't linger

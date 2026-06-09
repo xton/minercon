@@ -7,7 +7,7 @@
 // hand-built (synthetic.ts) or recorded against a real server with
 // `npm run record-rcon-fixtures` — replayed through a `FakeSocket` so the
 // whole stack (auth handshake, packet framing, fragmentation reassembly,
-// size-based termination, error responses) gets exercised deterministically
+// double-packet termination, error responses) gets exercised deterministically
 // and offline.
 //
 // To register a freshly recorded fixture: run the recorder, review the
@@ -69,8 +69,8 @@ suite('rconProtocol: connection dropped mid-request', () => {
     // Hand-authored — this isn't something a recorder can capture on demand
     // (you can't ask a real server to drop the connection at a precise
     // moment), so it's built directly from the wire-format primitives:
-    // a normal auth handshake, the single packet `send('list')` emits,
-    // and then... nothing. The server just hangs up.
+    // a normal auth handshake, the two packets `send('list')` emits
+    // (command + fence), and then... nothing. The server just hangs up.
     const socket = new FakeSocket([
       { direction: 'sent', data: encodeRconPacket(1, RconPacketType.AUTH, password) },
       { direction: 'received', data: Buffer.concat([
@@ -78,6 +78,7 @@ suite('rconProtocol: connection dropped mid-request', () => {
         encodeRconPacket(1, RconPacketType.AUTH_RESPONSE, ''),
       ]) },
       { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
+      { direction: 'sent', data: encodeRconPacket(3, RconPacketType.COMMAND, '') },
       { direction: 'close' },
     ]);
     const protocol = new RconProtocol('fixture-host', 25575, password, silentLogger(), () => socket);

@@ -48,39 +48,40 @@ received(concatPackets(
   encodeRconPacket(1, RconPacketType.AUTH_RESPONSE, ''),
 ));
 
-// ── send('list') — short, single-packet response (request id 2) ──
-// Body is well under MAX_PACKET_SIZE, so RconProtocol resolves immediately
-// on receipt without waiting for any additional packet.
+// ── send('list') — short, single-packet response (request id 2, dummy id 3) ──
 sent(2, RconPacketType.COMMAND, 'list');
+sent(3, RconPacketType.COMMAND, '');
 received(
   encodeRconPacket(2, RconPacketType.RESPONSE, LIST_RESPONSE),
+  encodeRconPacket(3, RconPacketType.RESPONSE, ''),
 );
 
 // ── send('minecraft:help') — long response, fragmented across packets
-//    *and* across `data` events (request id 3) ──
-// HELP_FRAGMENT_1 is 4000 bytes (>= MAX_PACKET_SIZE - 100 = 3996), so
-// RconProtocol accumulates it and waits for the next fragment.
-// HELP_FRAGMENT_2 is 612 bytes (< 3996), so it triggers resolution.
+//    *and* across `data` events (request id 4, dummy id 5) ──
 // Splitting the first fragment's bytes across two `data` chunks, and
 // delivering the second fragment's packet in the same chunk as the tail of
 // the first, exercises both halves of `handleData`'s reassembly buffer:
 // completing a partial packet, and draining multiple complete packets that
 // arrived back-to-back in one read.
-sent(3, RconPacketType.COMMAND, 'minecraft:help');
-const helpPacket1 = encodeRconPacket(3, RconPacketType.RESPONSE, HELP_FRAGMENT_1);
-const helpPacket2 = encodeRconPacket(3, RconPacketType.RESPONSE, HELP_FRAGMENT_2);
+sent(4, RconPacketType.COMMAND, 'minecraft:help');
+sent(5, RconPacketType.COMMAND, '');
+const helpPacket1 = encodeRconPacket(4, RconPacketType.RESPONSE, HELP_FRAGMENT_1);
+const helpPacket2 = encodeRconPacket(4, RconPacketType.RESPONSE, HELP_FRAGMENT_2);
 // however many pieces this comes back as, deliver the first on its own and
 // fold the rest in with the next packet — generic regardless of chunk count
 const [helpPacket1Head, ...helpPacket1Rest] = splitIntoChunks(helpPacket1, 2000);
 received(
   helpPacket1Head,
   concatPackets(...helpPacket1Rest, helpPacket2),
+  encodeRconPacket(5, RconPacketType.RESPONSE, ''),
 );
 
-// ── send(<unknown command>) — server's error-response shape (request id 4) ──
-sent(4, RconPacketType.COMMAND, 'this-command-does-not-exist-zzz12345');
+// ── send(<unknown command>) — server's error-response shape (request id 6, dummy id 7) ──
+sent(6, RconPacketType.COMMAND, 'this-command-does-not-exist-zzz12345');
+sent(7, RconPacketType.COMMAND, '');
 received(
-  encodeRconPacket(4, RconPacketType.RESPONSE, UNKNOWN_COMMAND_RESPONSE),
+  encodeRconPacket(6, RconPacketType.RESPONSE, UNKNOWN_COMMAND_RESPONSE),
+  encodeRconPacket(7, RconPacketType.RESPONSE, ''),
 );
 
 export const password = PASSWORD;
