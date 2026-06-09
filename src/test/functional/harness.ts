@@ -66,7 +66,23 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
     }]);
   }
 
-  const started = await container.start();
+  const logs: string[] = [];
+  container = container.withLogConsumer(stream => {
+    stream.on('data', (chunk: Buffer | string) => logs.push(String(chunk)));
+    stream.on('err', (chunk: Buffer | string) => logs.push('[ERR] ' + String(chunk)));
+  });
+
+  let started: StartedTestContainer;
+  try {
+    started = await container.start();
+  } catch (e) {
+    if (logs.length > 0) {
+      process.stderr.write(`\n=== Container startup logs (${variant.name}) ===\n`);
+      process.stderr.write(logs.join(''));
+      process.stderr.write('\n=== End container logs ===\n\n');
+    }
+    throw e;
+  }
 
   if (tmpDir) {
     cleanupMap.set(started, () => fs.rmSync(tmpDir!, { recursive: true, force: true }));
