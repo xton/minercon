@@ -25,7 +25,7 @@ RUN curl -sSfL \
     && java -jar BuildTools.jar --rev "${MC_VERSION}"
 
 # ── Stage 2: drop the jar into the itzg image ─────────────────────────────
-FROM itzg/minecraft-server:latest
+FROM itzg/minecraft-server:java21
 
 ARG MC_VERSION
 

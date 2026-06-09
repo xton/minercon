@@ -45,7 +45,7 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
     // into the overlay before startup. Bind-mounting the plugins directory
     // directly bypasses the volume for that specific path.
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-plugins-'));
-    fs.chmodSync(tmpDir, 0o755);
+    fs.chmodSync(tmpDir, 0o777);
     fs.copyFileSync(PLUGIN_JAR, path.join(tmpDir, 'paper-tabcomplete.jar'));
     container = container.withBindMounts([{
       source: tmpDir,
@@ -59,7 +59,7 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
       );
     }
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-mods-'));
-    fs.chmodSync(tmpDir, 0o755);
+    fs.chmodSync(tmpDir, 0o777);
     fs.copyFileSync(FABRIC_MOD_JAR, path.join(tmpDir, 'fabric-tabcomplete.jar'));
     container = container.withBindMounts([{
       source: tmpDir,
