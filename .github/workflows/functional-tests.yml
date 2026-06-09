@@ -9,7 +9,8 @@ on:
 env:
   MC_VERSION: '1.21.4'
   # Pre-built Spigot image (no BuildTools at test time). Built by build-spigot-image.yml.
-  SPIGOT_IMAGE: ghcr.io/${{ github.repository }}/spigot-prebuilt:1.21.4
+  # github.repository preserves case (xton/Minecraft-rcon); Docker requires all-lowercase.
+  SPIGOT_IMAGE: ghcr.io/${{ github.repository_owner }}/minecraft-rcon/spigot-prebuilt:1.21.4
 
 jobs:
   unit-tests:
@@ -129,7 +130,7 @@ jobs:
   plugin-mode-tests:
     name: Plugin mode tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -149,19 +150,39 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Cache Gradle wrapper
+      - name: Cache Gradle wrapper (plugin)
         uses: actions/cache@v4
         with:
           path: plugin/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-wrapper-plugin-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Build plugin
         run: cd plugin && ./gradlew build
         env:
-          GRADLE_OPTS: -Dorg.gradle.daemon=false
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Xmx1g
+
+      - name: Cache Gradle wrapper (fabric-mod)
+        uses: actions/cache@v4
+        with:
+          path: fabric-mod/.gradle/wrapper
+          key: gradle-wrapper-fabric-${{ hashFiles('fabric-mod/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build fabric mod
+        run: cd fabric-mod && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false -Xmx1g
+
+      - name: Log in to GHCR (for pre-built Spigot image)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Compile
         run: npm run compile
 
       - name: Run plugin mode tests
         run: npx mocha --ui tdd --timeout 360000 out/test/functional/pluginMode.test.js
+        env:
+          SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}

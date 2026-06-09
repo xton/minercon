@@ -43,7 +43,7 @@ jobs:
           file: docker/Dockerfile.spigot
           build-args: MC_VERSION=${{ env.MC_VERSION }}
           push: true
-          tags: ghcr.io/${{ github.repository }}/spigot-prebuilt:${{ env.MC_VERSION }}
+          tags: ghcr.io/${{ github.repository_owner }}/minecraft-rcon/spigot-prebuilt:${{ env.MC_VERSION }}
           # Layer cache is stored in GHCR — BuildTools compile is cached across runs.
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/spigot-prebuilt:cache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/spigot-prebuilt:cache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/minecraft-rcon/spigot-prebuilt:cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/minecraft-rcon/spigot-prebuilt:cache,mode=max
