@@ -97,7 +97,14 @@ export async function stopServer(container: StartedTestContainer): Promise<void>
   const cleanup = cleanupMap.get(container);
   cleanupMap.delete(container);
   await container.stop();
-  cleanup?.();
+  try {
+    cleanup?.();
+  } catch (e) {
+    // The server runs as a different uid inside the container and may have
+    // created files/directories we can't remove from the host side. The CI
+    // runner's /tmp is ephemeral anyway, so just warn and move on.
+    console.warn(`Failed to clean up temp dir: ${e}`);
+  }
 }
 
 export function connectionParams(container: StartedTestContainer): { host: string; port: number; password: string } {
