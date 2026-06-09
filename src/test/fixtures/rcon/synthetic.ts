@@ -22,7 +22,7 @@ import { RconPacketType, encodeRconPacket, concatPackets, splitIntoChunks } from
 const PASSWORD = 'test-password';
 
 const LIST_RESPONSE = 'There are 2 of a max of 20 players online: Steve, Alex';
-const HELP_FRAGMENT_1 = '/advancement (grant|revoke) ...\n'.repeat(125);   // 4000 bytes — big enough that RconProtocol can't mistake it for the last fragment
+const HELP_FRAGMENT_1 = '/advancement (grant|revoke) ...\n'.repeat(125);   // 4000 bytes — big enough that a real server would fragment here
 const HELP_FRAGMENT_2 = '/xp (add|set|query) <targets> ...\n'.repeat(18); // 612 bytes — the tail end of the response
 const HELP_RESPONSE = HELP_FRAGMENT_1 + HELP_FRAGMENT_2;
 const UNKNOWN_COMMAND_RESPONSE =
@@ -48,41 +48,36 @@ received(concatPackets(
   encodeRconPacket(1, RconPacketType.AUTH_RESPONSE, ''),
 ));
 
-// ── send('list') — short, single-packet response (request id 2, dummy id 3) ──
+// ── send('list') — short, single-packet response (request id 2, fence id 3) ──
+// The fence is sent *after* the first response fragment arrives, so the
+// frame order is: send command → recv response → send fence → recv fence ack.
 sent(2, RconPacketType.COMMAND, 'list');
+received(encodeRconPacket(2, RconPacketType.RESPONSE, LIST_RESPONSE));
 sent(3, RconPacketType.COMMAND, '');
-received(
-  encodeRconPacket(2, RconPacketType.RESPONSE, LIST_RESPONSE),
-  encodeRconPacket(3, RconPacketType.RESPONSE, ''),
-);
+received(encodeRconPacket(3, RconPacketType.RESPONSE, ''));
 
 // ── send('minecraft:help') — long response, fragmented across packets
-//    *and* across `data` events (request id 4, dummy id 5) ──
-// Splitting the first fragment's bytes across two `data` chunks, and
-// delivering the second fragment's packet in the same chunk as the tail of
-// the first, exercises both halves of `handleData`'s reassembly buffer:
-// completing a partial packet, and draining multiple complete packets that
-// arrived back-to-back in one read.
+//    *and* across `data` events (request id 4, fence id 5) ──
+// The fence is sent when the first *complete* packet is parsed (which happens
+// on the second data event, since the first only carries a partial packet).
+// Fragment 2 and the fence ack may arrive in the same read.
 sent(4, RconPacketType.COMMAND, 'minecraft:help');
-sent(5, RconPacketType.COMMAND, '');
 const helpPacket1 = encodeRconPacket(4, RconPacketType.RESPONSE, HELP_FRAGMENT_1);
 const helpPacket2 = encodeRconPacket(4, RconPacketType.RESPONSE, HELP_FRAGMENT_2);
-// however many pieces this comes back as, deliver the first on its own and
-// fold the rest in with the next packet — generic regardless of chunk count
 const [helpPacket1Head, ...helpPacket1Rest] = splitIntoChunks(helpPacket1, 2000);
-received(
-  helpPacket1Head,
-  concatPackets(...helpPacket1Rest, helpPacket2),
-  encodeRconPacket(5, RconPacketType.RESPONSE, ''),
-);
+// First data event: partial packet only — handlePacket not yet called, fence not yet sent.
+received(helpPacket1Head);
+// Second data event: completes packet 1 (→ handlePacket → sendFence → write fence) plus packet 2.
+// The fence write happens synchronously during this data event, so sent(5) must follow immediately.
+received(concatPackets(...helpPacket1Rest, helpPacket2));
+sent(5, RconPacketType.COMMAND, '');
+received(encodeRconPacket(5, RconPacketType.RESPONSE, ''));
 
-// ── send(<unknown command>) — server's error-response shape (request id 6, dummy id 7) ──
+// ── send(<unknown command>) — server's error-response shape (request id 6, fence id 7) ──
 sent(6, RconPacketType.COMMAND, 'this-command-does-not-exist-zzz12345');
+received(encodeRconPacket(6, RconPacketType.RESPONSE, UNKNOWN_COMMAND_RESPONSE));
 sent(7, RconPacketType.COMMAND, '');
-received(
-  encodeRconPacket(6, RconPacketType.RESPONSE, UNKNOWN_COMMAND_RESPONSE),
-  encodeRconPacket(7, RconPacketType.RESPONSE, ''),
-);
+received(encodeRconPacket(7, RconPacketType.RESPONSE, ''));
 
 export const password = PASSWORD;
 

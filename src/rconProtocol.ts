@@ -51,6 +51,7 @@ export class RconProtocol extends EventEmitter {
     command: string;
     fragments: string[];
     timeout?: NodeJS.Timeout;
+    sendFence?: () => void;
   }> = new Map();
   
   // Configuration
@@ -196,14 +197,19 @@ export class RconProtocol extends EventEmitter {
       throw new Error('Not connected or authenticated');
     }
 
+    // Use the double-packet technique for detecting end of fragmented
+    // responses: send the real command, then — once the first response
+    // fragment arrives — send an empty "fence" command. RCON processes
+    // commands in order, so when the fence response arrives all real
+    // fragments have already been received. Sending the fence only after
+    // the first fragment (via sendFence below) ensures the server has
+    // started replying before it sees the fence, which prevents servers
+    // from treating two back-to-back packets with no intervening response
+    // as a protocol error and closing the connection.
     return new Promise((resolve, reject) => {
       const requestId = this.getNextRequestId();
       const dummyId = this.getNextRequestId();
 
-      // Use the double-packet technique for detecting end of fragmented
-      // responses: send the real command, then immediately send an empty
-      // command. RCON processes commands in order, so when the dummy
-      // response arrives all real fragments have already been delivered.
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
         this.pendingRequests.delete(dummyId);
@@ -226,6 +232,14 @@ export class RconProtocol extends EventEmitter {
         command: command,
         fragments: [],
         timeout: timeout,
+        // Sent on the first response fragment — ensures the server has started
+        // replying before we ask it to process the fence packet.
+        sendFence: () => {
+          if (this.socket) {
+            const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
+            this.socket.write(dummyPacket);
+          }
+        },
       });
 
       this.pendingRequests.set(dummyId, {
@@ -243,11 +257,6 @@ export class RconProtocol extends EventEmitter {
       const commandPacket = this.createPacket(requestId, PacketType.COMMAND, command);
       if (this.socket) {
         this.socket.write(commandPacket);
-      }
-
-      const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
-      if (this.socket) {
-        this.socket.write(dummyPacket);
       }
     });
   }
@@ -326,9 +335,11 @@ export class RconProtocol extends EventEmitter {
         // AUTH_RESPONSE packet that follows is what we actually resolve on.
         return;
       }
+      if (request.sendFence) {
+        request.sendFence();
+        request.sendFence = undefined;
+      }
       request.fragments.push(packet.body);
-      // Dummy response arriving means all real fragments have been delivered
-      // (RCON processes commands in order).
       if (request.command === 'dummy') {
         request.resolve('');
       }

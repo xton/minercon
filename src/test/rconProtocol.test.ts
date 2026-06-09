@@ -69,8 +69,10 @@ suite('rconProtocol: connection dropped mid-request', () => {
     // Hand-authored — this isn't something a recorder can capture on demand
     // (you can't ask a real server to drop the connection at a precise
     // moment), so it's built directly from the wire-format primitives:
-    // a normal auth handshake, the two packets `send('list')` emits
-    // (command + fence), and then... nothing. The server just hangs up.
+    // a normal auth handshake, the command packet `send('list')` emits,
+    // and then... nothing. The server just hangs up.
+    // The fence is only sent after the first response fragment arrives, so
+    // it never appears here — the server closed before replying at all.
     const socket = new FakeSocket([
       { direction: 'sent', data: encodeRconPacket(1, RconPacketType.AUTH, password) },
       { direction: 'received', data: Buffer.concat([
@@ -78,7 +80,6 @@ suite('rconProtocol: connection dropped mid-request', () => {
         encodeRconPacket(1, RconPacketType.AUTH_RESPONSE, ''),
       ]) },
       { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
-      { direction: 'sent', data: encodeRconPacket(3, RconPacketType.COMMAND, '') },
       { direction: 'close' },
     ]);
     const protocol = new RconProtocol('fixture-host', 25575, password, silentLogger(), () => socket);
