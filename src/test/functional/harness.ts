@@ -5,6 +5,7 @@ import * as os from 'os';
 import { ServerVariant, PASSWORD, RCON_PORT } from './variants';
 
 const PLUGIN_JAR = path.resolve(__dirname, '../../../plugin/build/libs/paper-tabcomplete-1.0.0.jar');
+const FABRIC_MOD_JAR = path.resolve(__dirname, '../../../fabric-mod/build/libs/fabric-tabcomplete-1.0.0.jar');
 
 const BASE_ENV: Record<string, string> = {
   EULA: 'TRUE',
@@ -19,7 +20,7 @@ const BASE_ENV: Record<string, string> = {
   VIEW_DISTANCE: '4',
 };
 
-// Tracks per-container cleanup functions (temp dirs for plugin bind mounts).
+// Tracks per-container cleanup functions (temp dirs for plugin/mod bind mounts).
 const cleanupMap = new Map<StartedTestContainer, () => void>();
 
 export async function startServer(variant: ServerVariant): Promise<StartedTestContainer> {
@@ -31,7 +32,7 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
     .withWaitStrategy(Wait.forListeningPorts())
     .withStartupTimeout(variant.startupTimeoutMs);
 
-  let tmpPluginsDir: string | undefined;
+  let tmpDir: string | undefined;
 
   if (variant.hasPlugin) {
     if (!fs.existsSync(PLUGIN_JAR)) {
@@ -43,19 +44,32 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
     // the volume mount at /data on container start overwrites anything copied
     // into the overlay before startup. Bind-mounting the plugins directory
     // directly bypasses the volume for that specific path.
-    tmpPluginsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-plugins-'));
-    fs.copyFileSync(PLUGIN_JAR, path.join(tmpPluginsDir, 'paper-tabcomplete.jar'));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-plugins-'));
+    fs.copyFileSync(PLUGIN_JAR, path.join(tmpDir, 'paper-tabcomplete.jar'));
     container = container.withBindMounts([{
-      source: tmpPluginsDir,
+      source: tmpDir,
       target: '/data/plugins',
+      mode: 'rw',
+    }]);
+  } else if (variant.hasMod) {
+    if (!fs.existsSync(FABRIC_MOD_JAR)) {
+      throw new Error(
+        `Fabric mod jar not found at ${FABRIC_MOD_JAR}.\nBuild it first: cd fabric-mod && ./gradlew build`
+      );
+    }
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-mods-'));
+    fs.copyFileSync(FABRIC_MOD_JAR, path.join(tmpDir, 'fabric-tabcomplete.jar'));
+    container = container.withBindMounts([{
+      source: tmpDir,
+      target: '/data/mods',
       mode: 'rw',
     }]);
   }
 
   const started = await container.start();
 
-  if (tmpPluginsDir) {
-    cleanupMap.set(started, () => fs.rmSync(tmpPluginsDir!, { recursive: true, force: true }));
+  if (tmpDir) {
+    cleanupMap.set(started, () => fs.rmSync(tmpDir!, { recursive: true, force: true }));
   }
 
   return started;

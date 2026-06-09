@@ -1,0 +1,18 @@
+{
+    "schemaVersion": 1,
+    "id": "fabric-tabcomplete",
+    "version": "${version}",
+    "name": "Fabric TabComplete",
+    "description": "Exposes RCON commands tabcomplete and cmdusage for querying the Brigadier command tree.",
+    "environment": "server",
+    "entrypoints": {
+        "main": [
+            "dev.rcon.tabcomplete.TabcompleteMod"
+        ]
+    },
+    "depends": {
+        "fabricloader": ">=0.16.0",
+        "fabric-api": "*",
+        "minecraft": "~1.21.4"
+    }
+}

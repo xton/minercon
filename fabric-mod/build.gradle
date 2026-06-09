@@ -1,0 +1,35 @@
+plugins {
+    id 'fabric-loom' version '1.16-SNAPSHOT'
+    id 'java'
+}
+
+version = '1.0.0'
+group = 'dev.rcon'
+
+base {
+    archivesName = 'fabric-tabcomplete'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+dependencies {
+    minecraft 'com.mojang:minecraft:1.21.4'
+    mappings loom.officialMojangMappings()
+    modImplementation 'net.fabricmc:fabric-loader:0.19.3'
+    // include bundles Fabric API as a JiJ dependency so the mod is self-contained
+    // — the itzg server image does not auto-install Fabric API.
+    include modImplementation('net.fabricmc.fabric-api:fabric-api:0.119.4+1.21.4')
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}

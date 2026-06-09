@@ -9,6 +9,7 @@ import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -26,6 +27,13 @@ public class TabCompletePlugin extends JavaPlugin {
     @Override
     @SuppressWarnings("rawtypes")
     public void onEnable() {
+        // Register executors first so commands always respond — even if the
+        // Brigadier NMS setup below fails, the handlers fall back to Bukkit's
+        // built-in CommandMap.tabComplete() so the plugin remains useful on
+        // servers (e.g. Spigot) where the NMS reflection chain differs.
+        getCommand("tabcomplete").setExecutor(this::handleCommand);
+        getCommand("cmdusage").setExecutor(this::handleUsageCommand);
+
         try {
             Object craftServer = Bukkit.getServer();
             nmsServer = craftServer.getClass().getMethod("getServer").invoke(craftServer);
@@ -34,12 +42,10 @@ public class TabCompletePlugin extends JavaPlugin {
             Object commands = nmsServer.getClass().getMethod("getCommands").invoke(nmsServer);
             dispatcher = (CommandDispatcher) commands.getClass().getMethod("getDispatcher").invoke(commands);
         } catch (Exception e) {
-            getLogger().severe("Failed to get Brigadier dispatcher: " + e.getMessage());
-            getServer().getPluginManager().disablePlugin(this);
-            return;
+            getLogger().warning("Could not access Brigadier dispatcher via NMS: " + e);
+            getLogger().warning("tabcomplete will fall back to Bukkit CommandMap completions.");
+            // dispatcher stays null; handlers detect this and use the fallback
         }
-        getCommand("tabcomplete").setExecutor(this::handleCommand);
-        getCommand("cmdusage").setExecutor(this::handleUsageCommand);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -49,6 +55,26 @@ public class TabCompletePlugin extends JavaPlugin {
             sender.sendMessage("Returns usage syntax for the command at the given position.");
             sender.sendMessage("Example: /" + label + " gamemode");
             sender.sendMessage("Example: /" + label + " gamemode crea");
+            return true;
+        }
+
+        if (dispatcher == null) {
+            // Fallback: look up the first word in the Bukkit CommandMap and
+            // return its registered usage string. Less detailed than Brigadier
+            // but works on servers where NMS access is unavailable.
+            try {
+                String rootName = args[0].toLowerCase();
+                Method getCmd = bukkitCommandMap.getClass().getMethod("getCommand", String.class);
+                org.bukkit.command.Command bc = (org.bukkit.command.Command) getCmd.invoke(bukkitCommandMap, rootName);
+                if (bc != null) {
+                    String usage = bc.getUsage().replace("<command>", bc.getName());
+                    sender.sendMessage(usage.isEmpty() ? "/" + bc.getName() : usage);
+                } else {
+                    sender.sendMessage("(no command found: " + rootName + ")");
+                }
+            } catch (Exception e) {
+                sender.sendMessage("Error getting usage: " + e.getMessage());
+            }
             return true;
         }
 
@@ -177,20 +203,39 @@ public class TabCompletePlugin extends JavaPlugin {
             effectiveArgs = java.util.Arrays.copyOf(args, args.length - 1);
             trailingSpace = " ";
         }
-        // A lone "-" (no real command parts) means "request root completions" —
-        // the partial must be "" rather than " ", since Brigadier suggests by
-        // prefix-matching the remaining string and no command name starts with a space.
+        // A lone "-" (no real command parts) means "request root completions".
         String partial = effectiveArgs.length == 0 ? "" : String.join(" ", effectiveArgs) + trailingSpace;
 
-        try {
-            Object source = createSourceStack.invoke(nmsServer);
-            ParseResults results = dispatcher.parse(partial, source);
-            Suggestions suggestions = (Suggestions) dispatcher.getCompletionSuggestions(results).join();
-            List<String> completions = suggestions.getList().stream()
-                    .map(Suggestion::getText)
-                    .toList();
+        // Fast path: Brigadier dispatcher available (Paper and compatible servers).
+        if (dispatcher != null) {
+            try {
+                Object source = createSourceStack.invoke(nmsServer);
+                ParseResults results = dispatcher.parse(partial, source);
+                Suggestions suggestions = (Suggestions) dispatcher.getCompletionSuggestions(results).join();
+                List<String> completions = suggestions.getList().stream()
+                        .map(Suggestion::getText)
+                        .toList();
 
-            if (completions.isEmpty()) {
+                if (completions.isEmpty()) {
+                    sender.sendMessage("(no completions)");
+                } else {
+                    sender.sendMessage(String.join("\n", completions));
+                }
+                return true;
+            } catch (Exception e) {
+                sender.sendMessage("Error getting completions: " + e.getMessage());
+                return true;
+            }
+        }
+
+        // Fallback: Brigadier not available — use Bukkit's built-in CommandMap
+        // tab-completion. Available on all Bukkit-based servers (Spigot etc.).
+        try {
+            CommandMap map = (CommandMap) bukkitCommandMap;
+            // CommandMap.tabComplete(sender, "") returns all root commands when
+            // the input has no space (prefix-matching against all known names).
+            List<String> completions = map.tabComplete(sender, partial);
+            if (completions == null || completions.isEmpty()) {
                 sender.sendMessage("(no completions)");
             } else {
                 sender.sendMessage(String.join("\n", completions));
