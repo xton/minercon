@@ -98,8 +98,13 @@ jobs:
       - name: Compile
         run: npm run compile
 
-      - name: Run connection tests
-        run: npx mocha --ui tdd --timeout 360000 --grep '\[${{ matrix.variant }}\] connection' out/test/functional/connection.test.js
+      - name: Run connection and plugin-mode tests
+        # Variant names like "paper+plugin" contain regex metacharacters, so
+        # escape them before building the --grep pattern (a literal "+" is
+        # otherwise treated as a quantifier and matches nothing).
+        run: |
+          VARIANT_RE=$(printf '%s' "${{ matrix.variant }}" | sed 's/[+]/\\+/g')
+          npx mocha --ui tdd --timeout 360000 --grep "\[$VARIANT_RE\]" out/test/functional/connection.test.js out/test/functional/pluginMode.test.js out/test/functional/autocompleteSession.test.js
         env:
           SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
 
@@ -137,65 +142,5 @@ jobs:
 
       - name: Run local mode tests
         run: npx mocha --ui tdd --timeout 600000 --grep '\[${{ matrix.variant }}\] local mode' out/test/functional/localMode.test.js
-        env:
-          SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
-
-  plugin-mode-tests:
-    name: Plugin mode tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Cache Gradle wrapper (plugin)
-        uses: actions/cache@v4
-        with:
-          path: plugin/.gradle/wrapper
-          key: gradle-wrapper-plugin-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
-
-      - name: Build plugin
-        run: cd plugin && ./gradlew build
-        env:
-          GRADLE_OPTS: -Dorg.gradle.daemon=false -Xmx1g
-
-      - name: Cache Gradle wrapper (fabric-mod)
-        uses: actions/cache@v4
-        with:
-          path: fabric-mod/.gradle/wrapper
-          key: gradle-wrapper-fabric-${{ hashFiles('fabric-mod/gradle/wrapper/gradle-wrapper.properties') }}
-
-      - name: Build fabric mod
-        run: cd fabric-mod && ./gradlew build
-        env:
-          GRADLE_OPTS: -Dorg.gradle.daemon=false -Xmx1g
-
-      - name: Log in to GHCR (for pre-built Spigot image)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Compile
-        run: npm run compile
-
-      - name: Run plugin mode tests
-        run: npx mocha --ui tdd --timeout 360000 out/test/functional/pluginMode.test.js out/test/functional/autocompleteSession.test.js
         env:
           SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}
