@@ -38,14 +38,102 @@ public class TabCompletePlugin extends JavaPlugin {
             Object craftServer = Bukkit.getServer();
             nmsServer = craftServer.getClass().getMethod("getServer").invoke(craftServer);
             bukkitCommandMap = craftServer.getClass().getMethod("getCommandMap").invoke(craftServer);
-            createSourceStack = nmsServer.getClass().getMethod("createCommandSourceStack");
-            Object commands = nmsServer.getClass().getMethod("getCommands").invoke(nmsServer);
-            dispatcher = (CommandDispatcher) commands.getClass().getMethod("getDispatcher").invoke(commands);
+            try {
+                // Mojang-mapped path (Paper and other fully-mapped servers).
+                createSourceStack = nmsServer.getClass().getMethod("createCommandSourceStack");
+                Object commands = nmsServer.getClass().getMethod("getCommands").invoke(nmsServer);
+                dispatcher = (CommandDispatcher) commands.getClass().getMethod("getDispatcher").invoke(commands);
+            } catch (NoSuchMethodException notMojangMapped) {
+                // Spigot's reobfuscated server jar uses a hybrid mapping where
+                // these methods exist under different (partially obfuscated)
+                // names that vary by Minecraft version. Locate them
+                // structurally instead, by return type rather than name.
+                findDispatcherAndSourceReflectively();
+            }
         } catch (Exception e) {
             getLogger().warning("Could not access Brigadier dispatcher via NMS: " + e);
             getLogger().warning("tabcomplete will fall back to Bukkit CommandMap completions.");
             // dispatcher stays null; handlers detect this and use the fallback
         }
+    }
+
+    /**
+     * Locates the Brigadier {@link CommandDispatcher} and a usable parse()
+     * source object on servers (e.g. Spigot) where the Mojang-mapped
+     * {@code createCommandSourceStack}/{@code getCommands().getDispatcher()}
+     * accessors don't exist by those names.
+     *
+     * <p>{@code com.mojang.brigadier.CommandDispatcher} itself ships as its own
+     * library and is never obfuscated, so it can be found by return type: scan
+     * the server's no-arg methods for one whose return type has a no-arg method
+     * returning a {@code CommandDispatcher}. The source object's type (Spigot's
+     * {@code CommandListenerWrapper}, Mojang's {@code CommandSourceStack}) is
+     * obfuscated, so it's found by trial: the first no-arg NMS-typed getter on
+     * the server whose result {@link CommandDispatcher#parse} accepts.
+     */
+    @SuppressWarnings("rawtypes")
+    private void findDispatcherAndSourceReflectively() throws Exception {
+        Class<?> nmsClass = nmsServer.getClass();
+
+        Method commandsGetter = null;
+        Method dispatcherGetter = null;
+        CommandDispatcher foundDispatcher = null;
+        for (Method m : nmsClass.getMethods()) {
+            if (m.getParameterCount() != 0) continue;
+            Class<?> returnType = m.getReturnType();
+            if (returnType.isPrimitive() || returnType == void.class) continue;
+            for (Method nested : returnType.getMethods()) {
+                if (nested.getParameterCount() != 0 || nested.getReturnType() != CommandDispatcher.class) continue;
+                try {
+                    Object commandsObj = m.invoke(nmsServer);
+                    CommandDispatcher candidate = (CommandDispatcher) nested.invoke(commandsObj);
+                    // The real command dispatcher has hundreds of registered
+                    // root commands; reject smaller dispatchers some other
+                    // subsystem (e.g. custom functions) might expose.
+                    if (candidate.getRoot().getChildren().size() > 50) {
+                        commandsGetter = m;
+                        dispatcherGetter = nested;
+                        foundDispatcher = candidate;
+                        break;
+                    }
+                } catch (Exception ignored) {
+                    // not the right accessor pair — keep looking
+                }
+            }
+            if (foundDispatcher != null) break;
+        }
+        if (foundDispatcher == null) {
+            throw new NoSuchMethodException("could not locate the Brigadier CommandDispatcher by return type");
+        }
+
+        Method foundSourceMethod = null;
+        for (Method m : nmsClass.getMethods()) {
+            if (m.getParameterCount() != 0) continue;
+            if (!m.getReturnType().getName().startsWith("net.minecraft.")) continue;
+            try {
+                Object candidate = m.invoke(nmsServer);
+                if (candidate == null) continue;
+                // "gamemode" requires a real CommandSourceStack-equivalent: its
+                // permission-requirement predicate casts source to that type, so
+                // an unrelated NMS object throws here (e.g. ClassCastException)
+                // and we move on to the next candidate.
+                ParseResults probe = foundDispatcher.parse("gamemode", candidate);
+                List<ParsedCommandNode> nodes = probe.getContext().getNodes();
+                if (nodes.isEmpty() || !"gamemode".equals(nodes.get(0).getNode().getName())) continue;
+                foundSourceMethod = m;
+                break;
+            } catch (Exception ignored) {
+                // not a usable source type — keep looking
+            }
+        }
+        if (foundSourceMethod == null) {
+            throw new NoSuchMethodException("could not locate a createCommandSourceStack() equivalent");
+        }
+
+        dispatcher = foundDispatcher;
+        createSourceStack = foundSourceMethod;
+        getLogger().info("Located Brigadier dispatcher via " + commandsGetter.getName() + "()." + dispatcherGetter.getName()
+                + "() and command source via " + foundSourceMethod.getName() + "() (non-Mojang-mapped server jar).");
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
