@@ -1,14 +1,13 @@
 {
-  "name": "minecraft-rcon",
-  "displayName": "Minecraft RCON",
+  "name": "minercon",
+  "displayName": "Minercon",
   "description": "A powerful RCON client for Minecraft servers with advanced fragmentation support",
   "version": "3.0.0",
   "icon": "images/icon.png",
   "license": "MIT",
-  "publisher": "jaketcooper",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jaketcooper/minecraft-rcon"
+    "url": "https://github.com/xton/minercon"
   },
   "engines": {
     "vscode": "^1.95.0"
@@ -19,11 +18,11 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "bin": {
-    "rcon-minecraft": "./out/rcon-minecraft"
+    "minercon": "./out/minercon"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && cp out/cli.js out/rcon-minecraft && chmod +x out/rcon-minecraft",
+    "compile": "tsc -p ./ && cp out/cli.js out/minercon && chmod +x out/minercon",
     "watch": "tsc -w -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
@@ -50,41 +49,41 @@
   "contributes": {
     "commands": [
       {
-        "command": "minecraftRcon.connect",
-        "title": "Minecraft RCON: Connect to Server",
-        "category": "Minecraft RCON",
+        "command": "minercon.connect",
+        "title": "Minercon: Connect to Server",
+        "category": "Minercon",
         "icon": "$(terminal)"
       },
       {
-        "command": "minecraftRcon.connectNew",
-        "title": "Minecraft RCON: Connect with New Credentials",
-        "category": "Minecraft RCON",
+        "command": "minercon.connectNew",
+        "title": "Minercon: Connect with New Credentials",
+        "category": "Minercon",
         "icon": "$(terminal)"
       },
       {
-        "command": "minecraftRcon.saveDefaults",
-        "title": "Minecraft RCON: Save Current Connection as Default",
-        "category": "Minecraft RCON",
+        "command": "minercon.saveDefaults",
+        "title": "Minercon: Save Current Connection as Default",
+        "category": "Minercon",
         "icon": "$(terminal)"
       }
     ],
     "terminal": {
       "profiles": [
         {
-          "id": "minecraftRcon.terminal",
+          "id": "minercon.terminal",
           "title": "Minecraft Server"
         }
       ]
     },
     "configuration": {
-      "title": "Minecraft RCON",
+      "title": "Minercon",
       "properties": {
-        "minecraftRcon.defaultHost": {
+        "minercon.defaultHost": {
           "type": "string",
           "default": "",
           "description": "Default RCON host address"
         },
-        "minecraftRcon.defaultPort": {
+        "minercon.defaultPort": {
           "type": "number",
           "default": null,
           "description": "Default RCON port"

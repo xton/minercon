@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-We take security seriously and will patch security vulnerabilities in all recent versions of the Minecraft RCON extension.
+We take security seriously and will patch security vulnerabilities in all recent versions of the Minercon extension.
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -20,13 +20,13 @@ We take security seriously and will patch security vulnerabilities in all recent
 Instead, please report security issues via one of these methods:
 
 1. **GitHub Security Advisory** (Preferred)
-   - Go to https://github.com/jaketcooper/minecraft-rcon/security/advisories
+   - Go to https://github.com/xton/minercon/security/advisories
    - Click "New draft security advisory"
    - Fill out the form with details
 
 2. **Email**
    - Send details to the repository maintainer via GitHub profile contact
-   - Use subject line: `[SECURITY] Minecraft RCON Extension`
+   - Use subject line: `[SECURITY] Minercon`
 
 ### What to Include
 
@@ -146,8 +146,8 @@ We appreciate security researchers who help keep our users safe. Contributors wh
 ## Contact
 
 For non-security questions:
-- GitHub Issues: https://github.com/jaketcooper/minecraft-rcon/issues
-- Discussions: https://github.com/jaketcooper/minecraft-rcon/discussions
+- GitHub Issues: https://github.com/xton/minercon/issues
+- Discussions: https://github.com/xton/minercon/discussions
 
 ---
 

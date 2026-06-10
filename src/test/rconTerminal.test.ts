@@ -128,7 +128,7 @@ suite('RconTerminal', () => {
         await waitUntil(() => h.output().includes('tab-complete plugin detected'));
 
         const out = h.output();
-        assert.ok(out.includes('Minecraft RCON Terminal'), 'shows the welcome banner');
+        assert.ok(out.includes('Minercon Terminal'), 'shows the welcome banner');
         assert.ok(out.includes('localhost:25575'), 'reports the connection target');
         assert.ok(h.controller.sendCalls.includes('tabcomplete'), 'probes for the server-side plugin');
         assert.ok(out.includes('\x1b[32m>\x1b[0m '), 'lands on the connected prompt');
@@ -191,7 +191,7 @@ suite('RconTerminal', () => {
 
         const out = h.output();
         assert.ok(out.includes('\x1b[2J\x1b[H'), 'clears the screen');
-        assert.ok(out.includes('Minecraft RCON Terminal'), 'redraws the welcome banner');
+        assert.ok(out.includes('Minercon Terminal'), 'redraws the welcome banner');
         assert.ok(out.includes('partial'), 'redraws the in-progress line');
     });
 

@@ -9,8 +9,8 @@ on:
 env:
   MC_VERSION: '1.21.4'
   # Pre-built Spigot image (no BuildTools at test time). Built by build-spigot-image.yml.
-  # github.repository preserves case (xton/Minecraft-rcon); Docker requires all-lowercase.
-  SPIGOT_IMAGE: ghcr.io/${{ github.repository_owner }}/minecraft-rcon/spigot-prebuilt:1.21.4
+  # github.repository preserves case (xton/minercon); Docker requires all-lowercase.
+  SPIGOT_IMAGE: ghcr.io/${{ github.repository_owner }}/minercon/spigot-prebuilt:1.21.4
 
 jobs:
   unit-tests:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// src/cli.ts — standalone CLI entry point for the Minecraft RCON terminal.
-// Compiles to out/cli.js; the build script copies it to out/rcon-minecraft.
+// src/cli.ts — standalone CLI entry point for the Minercon terminal.
+// Compiles to out/cli.js; the build script copies it to out/minercon.
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -14,7 +14,7 @@ import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePa
 
 // ── Config file ──────────────────────────────────────────────────────────────
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'minecraft-rcon');
+const CONFIG_DIR = path.join(os.homedir(), '.config', 'minercon');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 // ── Logger ───────────────────────────────────────────────────────────────────
@@ -106,11 +106,11 @@ async function main(): Promise<void> {
 
   if (values.help) {
     process.stdout.write([
-      'Usage: rcon-minecraft [host] [port] [options]',
+      'Usage: minercon [host] [port] [options]',
       '',
       'Options:',
       '  -p, --password <pw>   RCON password (also: MCRCON_PASSWORD env var)',
-      '  --save                Save host/port to ~/.config/minecraft-rcon/config.json',
+      '  --save                Save host/port to ~/.config/minercon/config.json',
       '  --log-file <path>     Append log output to a file instead of stderr',
       '  -h, --help            Show this help',
       '',

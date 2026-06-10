@@ -1,8 +1,8 @@
-# Minecraft RCON Terminal
+# Minercon
 
 A full-featured RCON client for Minecraft servers — available both as a
 **VS Code extension** (integrated terminal panel) and as a **standalone CLI
-tool** (`rcon-minecraft`) that runs in any terminal.
+tool** (`minercon`) that runs in any terminal.
 
 ![Version](https://img.shields.io/badge/version-3.0.0-blue)
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-green)
@@ -56,7 +56,7 @@ this tool.
 
 ### Installation
 
-Search **"Minecraft RCON Terminal"** in the VS Code Extensions panel, or
+Search **"Minercon"** in the VS Code Extensions panel, or
 install from a `.vsix` file:
 
 ```
@@ -67,9 +67,9 @@ Ctrl+Shift+P → Extensions: Install from VSIX...
 
 | Command (Ctrl+Shift+P) | Description |
 |---|---|
-| Minecraft RCON: Connect to Server | Connect using saved defaults, or prompt if none saved |
-| Minecraft RCON: Connect with New Credentials | Always prompt for host, port, and password |
-| Minecraft RCON: Save Current Connection as Default | Save the current connection's host and port; password goes to VS Code's secure secret storage |
+| Minercon: Connect to Server | Connect using saved defaults, or prompt if none saved |
+| Minercon: Connect with New Credentials | Always prompt for host, port, and password |
+| Minercon: Save Current Connection as Default | Save the current connection's host and port; password goes to VS Code's secure secret storage |
 
 You can also open a terminal via the **Terminal** menu → **New Terminal** →
 select **Minecraft Server** from the terminal profile picker.
@@ -80,8 +80,8 @@ Multiple RCON terminals can be open simultaneously, each to a different server.
 
 ```json
 {
-  "minecraftRcon.defaultHost": "localhost",
-  "minecraftRcon.defaultPort": 25575
+  "minercon.defaultHost": "localhost",
+  "minercon.defaultPort": 25575
 }
 ```
 
@@ -95,24 +95,24 @@ secret storage.
 ### Installation
 
 ```sh
-npm install -g minecraft-rcon
+npm install -g minercon
 ```
 
 Or, after cloning and building locally:
 
 ```sh
 npm run compile
-node out/rcon-minecraft --help
+node out/minercon --help
 ```
 
 ### Usage
 
 ```
-rcon-minecraft [host] [port] [options]
+minercon [host] [port] [options]
 
 Options:
   -p, --password <pw>   RCON password
-  --save                Save host/port to ~/.config/minecraft-rcon/config.json
+  --save                Save host/port to ~/.config/minercon/config.json
   --log-file <path>     Write log output to a file instead of stderr
   -h, --help            Show help
 
@@ -126,8 +126,8 @@ with `--password`, the `MCRCON_PASSWORD` environment variable, or leave both
 unset and you will be prompted with masked input.
 
 **Saved host/port:** `--save` writes host and port (never the password) to
-`~/.config/minecraft-rcon/config.json`. On subsequent invocations, those
-values are used as defaults so you can just run `rcon-minecraft` with no
+`~/.config/minercon/config.json`. On subsequent invocations, those
+values are used as defaults so you can just run `minercon` with no
 arguments.
 
 **Kill/yank:** the CLI uses an in-process kill ring (Ctrl+K stashes text;
@@ -142,16 +142,16 @@ interfere with piped output).
 
 ```sh
 # One-off connection (prompts for password)
-rcon-minecraft localhost 25575
+minercon localhost 25575
 
 # Password from environment
-MCRCON_PASSWORD=secret rcon-minecraft mc.example.com
+MCRCON_PASSWORD=secret minercon mc.example.com
 
 # Save host/port for future sessions
-rcon-minecraft mc.example.com 25575 --password secret --save
+minercon mc.example.com 25575 --password secret --save
 
 # Next time, no arguments needed
-rcon-minecraft
+minercon
 ```
 
 ---
@@ -255,7 +255,7 @@ refresh after a server update.
 
 Cache location:
 - VS Code: `<extension global storage>/command-cache/<host>_<port>.json`
-- CLI: `~/.config/minecraft-rcon/command-cache/<host>_<port>.json`
+- CLI: `~/.config/minercon/command-cache/<host>_<port>.json`
 
 ---
 
@@ -291,7 +291,7 @@ and that the RCON port is not blocked by a firewall.
 1. `/clear-cache` to discard the old tree
 2. `/reload-commands` to re-crawl
 3. Check that your account has permission to run `/help` on the server
-4. In VS Code, check View → Output → Minecraft RCON for crawl diagnostics
+4. In VS Code, check View → Output → Minercon for crawl diagnostics
 
 **Truncated responses** — this was a bug in versions before v2.0, which used
 an external library with a 4096-byte limit. The current implementation has no
@@ -306,8 +306,8 @@ the issue persists in the CLI, ensure your terminal reports correct dimensions
 ## Contributing
 
 ```sh
-git clone https://github.com/xton/Minecraft-rcon.git
-cd Minecraft-rcon
+git clone https://github.com/xton/minercon.git
+cd minercon
 npm install
 npm run compile
 npm test
@@ -323,11 +323,12 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and
 
 ## Acknowledgements
 
-This project began as [jaketcooper/Minecraft-rcon](https://github.com/jaketcooper/Minecraft-rcon),
+Minercon (formerly "Minecraft RCON Terminal") began as a fork of
+[jaketcooper/Minecraft-rcon](https://github.com/jaketcooper/Minecraft-rcon),
 which provided the initial RCON protocol implementation and VS Code extension
-scaffold. The interactive terminal experience, tab completion, line editing, and
-standalone CLI were developed from there with significant help from
-[Claude](https://claude.ai).
+scaffold. The interactive terminal experience, tab completion, line editing,
+standalone CLI, and the new name were developed from there with significant
+help from [Claude](https://claude.ai).
 
 ---
 

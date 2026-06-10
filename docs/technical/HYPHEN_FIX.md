@@ -66,7 +66,7 @@ if (commandName.includes('-')) {
    Should now show: `/titanium-rewards <action> <reward> <option>`
 
 3. **Check debug output:**
-   - View → Output → Minecraft RCON
+   - View → Output → Minercon
    - Look for:
      ```
      Found hyphenated command: titanium-rewards
@@ -130,7 +130,7 @@ If you only need to fix this specific issue, just replace your `src/commandAutoc
 cp commandAutocomplete.ts src/
 
 # Clear cache
-rm -rf ~/.vscode/extensions/minecraft-rcon/command-cache/
+rm -rf ~/.vscode/extensions/minercon/command-cache/
 
 # Recompile
 npm run compile

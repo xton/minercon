@@ -2,7 +2,7 @@ export const PASSWORD = 'testpassword';
 export const RCON_PORT = 25575;
 export const MC_VERSION = '1.21.4';
 
-// In CI, the Spigot pre-built image (ghcr.io/xton/minecraft-rcon/spigot-prebuilt:VERSION)
+// In CI, the Spigot pre-built image (ghcr.io/xton/minercon/spigot-prebuilt:VERSION)
 // is set via SPIGOT_IMAGE so BuildTools doesn't run during tests. Locally, fall
 // back to itzg/minecraft-server and let it build on first pull (slow, one-time).
 // Spigot 1.21.4 supports Java up to version 24; use the java21 image tag to

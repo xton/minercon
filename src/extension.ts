@@ -6,7 +6,7 @@ import { Logger, createOutputChannelLogger, errorMessage } from './logger';
 import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext) {
-  const output = vscode.window.createOutputChannel('Minecraft RCON');
+  const output = vscode.window.createOutputChannel('Minercon');
   const logger = createOutputChannelLogger(output);
   let activeTerminals = new Map<vscode.Terminal, RconController>();
   let ptyToController = new Map<RconTerminal, RconController>();
@@ -18,7 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register the terminal profile provider
   context.subscriptions.push(
-    vscode.window.registerTerminalProfileProvider('minecraftRcon.terminal', {
+    vscode.window.registerTerminalProfileProvider('minercon.terminal', {
       provideTerminalProfile: async (token: vscode.CancellationToken) => {
         const { profile, controller, pty, connectionInfo } = await createRconTerminalProfile(logger, context);
 
@@ -53,30 +53,30 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   // Keep the original connect command
-  const connectCommand = vscode.commands.registerCommand('minecraftRcon.connect', async () => {
+  const connectCommand = vscode.commands.registerCommand('minercon.connect', async () => {
     const connectionInfo = await connectToRcon(logger, activeTerminals, context);
     if (connectionInfo) { currentConnection = connectionInfo; }
   });
 
   // Add command to connect with new credentials (always prompts)
-  const connectNewCommand = vscode.commands.registerCommand('minecraftRcon.connectNew', async () => {
+  const connectNewCommand = vscode.commands.registerCommand('minercon.connectNew', async () => {
     const connectionInfo = await connectToRcon(logger, activeTerminals, context, false);
     if (connectionInfo) { currentConnection = connectionInfo; }
   });
 
   // Add command to save current connection as default
-  const saveDefaultsCommand = vscode.commands.registerCommand('minecraftRcon.saveDefaults', async () => {
+  const saveDefaultsCommand = vscode.commands.registerCommand('minercon.saveDefaults', async () => {
     if (!currentConnection) {
       vscode.window.showWarningMessage('No active connection to save');
       return;
     }
 
-    const config = vscode.workspace.getConfiguration('minecraftRcon');
+    const config = vscode.workspace.getConfiguration('minercon');
 
     try {
       await config.update('defaultHost', currentConnection.host, vscode.ConfigurationTarget.Global);
       await config.update('defaultPort', currentConnection.port, vscode.ConfigurationTarget.Global);
-      await context.secrets.store('minecraftRcon.defaultPassword', currentConnection.password);
+      await context.secrets.store('minercon.defaultPassword', currentConnection.password);
 
       vscode.window.showInformationMessage(
         `Saved connection settings for ${currentConnection.host}:${currentConnection.port} as defaults`
@@ -107,12 +107,12 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 async function migratePasswordToSecureStorage(context: vscode.ExtensionContext) {
-  const config = vscode.workspace.getConfiguration('minecraftRcon');
+  const config = vscode.workspace.getConfiguration('minercon');
   const oldPassword = config.get<string>('defaultPassword');
 
   if (oldPassword && oldPassword !== '') {
     // Move to secure storage
-    await context.secrets.store('minecraftRcon.defaultPassword', oldPassword);
+    await context.secrets.store('minercon.defaultPassword', oldPassword);
 
     // Clear from settings.json
     await config.update('defaultPassword', undefined, vscode.ConfigurationTarget.Global);
@@ -135,11 +135,11 @@ async function createRconTerminalProfile(
   connectionInfo: { host: string; port: number; password: string }
 }> {
   // Gather settings
-  const config = vscode.workspace.getConfiguration('minecraftRcon');
+  const config = vscode.workspace.getConfiguration('minercon');
 
   const defaultHost = config.get<string>('defaultHost');
   const defaultPort = config.get<number>('defaultPort');
-  const defaultPassword = await context.secrets.get('minecraftRcon.defaultPassword');
+  const defaultPassword = await context.secrets.get('minercon.defaultPassword');
 
   let host: string | undefined;
   let port: number;
@@ -251,8 +251,8 @@ async function connectToRcon(
 
     // Show different messages based on whether defaults were used
     if (useDefaults) {
-      const config = vscode.workspace.getConfiguration('minecraftRcon');
-      const savedPassword = await context.secrets.get('minecraftRcon.defaultPassword');
+      const config = vscode.workspace.getConfiguration('minercon');
+      const savedPassword = await context.secrets.get('minercon.defaultPassword');
       const hasDefaults = config.get('defaultHost') && config.get('defaultPort') && savedPassword;
       if (hasDefaults) {
         vscode.window.showInformationMessage(`Connected to Minecraft server using saved settings`);

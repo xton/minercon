@@ -80,7 +80,7 @@ this.output.appendLine(`Found ${commandCount} root commands`);
    ```
 
 3. **Check the output channel for debug info:**
-   - View → Output → Select "Minecraft RCON"
+   - View → Output → Select "Minercon"
    - Look for lines like:
      - "Help response received: XXXX bytes"
      - "Found XX root commands"

@@ -122,7 +122,7 @@ export class RconSession {
   }
 
   private writeWelcomeBanner(): void {
-    this.sessionHost.write('\x1b[1;36mMinecraft RCON Terminal\x1b[0m\r\n');
+    this.sessionHost.write('\x1b[1;36mMinercon Terminal\x1b[0m\r\n');
     this.sessionHost.write('Connected to \x1b[33m' + this.serverHost + ':' + this.serverPort + '\x1b[0m\r\n\r\n');
     this.sessionHost.write('\x1b[2mUseful shortcuts:\x1b[0m\r\n');
     this.sessionHost.write('  \x1b[2mTab: Autocomplete commands\x1b[0m\r\n');

@@ -1,4 +1,4 @@
-# Contributing to Minecraft RCON Extension
+# Contributing to Minercon
 
 ## Development Setup
 
@@ -11,8 +11,8 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/jaketcooper/minecraft-rcon.git
-   cd minecraft-rcon
+   git clone https://github.com/xton/minercon.git
+   cd minercon
    ```
 
 2. **Install dependencies**
@@ -33,7 +33,7 @@
 ### Project Structure
 
 ```
-minecraft-rcon/
+minercon/
 ├── src/
 │   ├── extension.ts          # Extension entry point
 │   ├── rconClient.ts         # RCON client wrapper
@@ -68,7 +68,7 @@ minecraft-rcon/
    ```
 
 3. **Debug Output**
-   - View → Output → Select "Minecraft RCON"
+   - View → Output → Select "Minercon"
    - Check for error messages and warnings
 
 ### Submitting Changes

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Minecraft RCON VS Code extension will be documented in this file.
+All notable changes to Minercon (formerly "Minecraft RCON Terminal") will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -302,7 +302,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    ```
 
 3. **Check output channel for issues**
-   - View → Output → Minecraft RCON
+   - View → Output → Minercon
    - Look for initialization messages
 
 4. **Test fragmentation fix**
