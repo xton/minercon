@@ -18,7 +18,7 @@ anything non-obvious.
 
 ## 3. Design patterns
 - [x] Command/lookup-table pattern for key dispatch (came along with the rconTerminal split)
-- [ ] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` — orthogonal to the §2 split (that extracted parsing/caching/suggestions; this would be about varying *how* the tree gets built per-server, inside what's left of `loadCommandDetails`/`loadSubcommandDetails`)
+- [x] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` — landed as a **merge strategy** rather than a class hierarchy: `fetchRootCommands()` detects `supportsMinecraftNamespace` once (vanilla/fabric reject the `minecraft:` prefix; paper/spigot accept it), then `loadCommandDetails`/`loadSubcommandDetails` always fetch both `help <path>` and (when supported) `minecraft:help <path>` and hand them to a new `mergeHelpSources()`, which picks whichever side has real `<args>` syntax (vanilla's `minecraft:help` vs. Bukkit's `help`/Usage-line for added commands) at every recursion depth. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for the full empirical writeup
 - [x] Extract a "terminal renderer" collaborator → `SuggestionDisplay` (pure content builders + `renderSuggestionArea`)
 
 ## 4. Dead code
@@ -73,9 +73,36 @@ directly (no injection seam) and would attempt a live socket connection from
 a test.
 
 §2 (mega-module splits), §4 (dead code), §6 (record/replay harness), and the
-`rconProtocolTest.ts` dead-code item are also fully done. The only item left
-open across the whole checklist is §3's "Strategy pattern for local-vs-plugin
-parsing". 147 → 159 tests passing, `tsc`/`eslint` clean throughout.*
+`rconProtocolTest.ts` dead-code item are also fully done. 147 → 159 tests
+passing, `tsc`/`eslint` clean throughout.*
+
+---
+*Last updated: 2026-06-10 — §3's last open item, the local-vs-plugin merge
+strategy, is now closed too, finishing the checklist.
+
+`mergeHelpSources()` (`commandAutocomplete.ts`) now dispatches explicitly by
+shape rather than a try/fallback cascade: `looksLikeBukkitHelpPage()` (a `---`
+banner line) routes to `extractBukkitUsageLines()`, which extracts the Usage
+line(s) verbatim — required because hand-written Bukkit Usage strings
+sometimes contain a literal `/` inside `[...]` (e.g. `[home/away]`), which
+must not be corrupted. Everything else (a `minecraft:help` blob, or vanilla's
+`help <path>` for multi-variant commands like `gamerule`/`team`) is a flat
+Brigadier blob with no separators between `/cmd ...` entries, normalized by
+the new shared `splitConcatenatedHelpLines()` helper (extracted from three
+duplicated `/`→`\n/` resplit call sites).
+
+Fixed along the way: a runaway-recursion bug where vanilla's concatenated
+`help <path>` responses (no `/`-resplit applied) produced malformed variant
+names that `loadSubcommandDetails` recursed into forever, eventually killing
+the RCON connection. `commandAutocomplete.test.ts`'s vanilla fixtures for
+`help`/`help gamerule`/`help team` now use the real concatenated (no
+separator) format specifically so this class of bug is caught at the unit
+level, not just by live functional tests.
+
+58 unit tests in `commandAutocomplete.test.ts`/`helpTextParsing.test.ts` (250
+total), plus all 32 functional tests across vanilla/paper/spigot/fabric, pass.
+`tsc`/`eslint` clean. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for the full
+empirical writeup.*
 
 ## How to record a live RCON fixture
 

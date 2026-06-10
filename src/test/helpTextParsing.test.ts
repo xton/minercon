@@ -9,6 +9,12 @@ import {
     parseCommandHelp,
     classifyParameterTokens,
     buildParameterStructureFromVariants,
+    parseHelpLines,
+    isGenericArgsPlaceholder,
+    isUnsupportedNamespaceError,
+    extractBukkitUsageLines,
+    looksLikeBukkitHelpPage,
+    splitConcatenatedHelpLines,
 } from '../helpTextParsing';
 
 suite('helpTextParsing', () => {
@@ -194,6 +200,192 @@ suite('classifyParameterTokens', () => {
     test('a leading [bracketed] token: a named variant with the brackets stripped from its name', () => {
         const result = classifyParameterTokens(['[reload]']);
         assert.deepStrictEqual(result, { kind: 'variant', name: 'reload', parameters: [] });
+    });
+});
+
+// Real responses captured from a live Paper 1.21.4 (no plugins) and a live
+// Vanilla/Fabric 1.21.4 server, used throughout this suite and in
+// commandAutocomplete.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+suite('parseHelpLines', () => {
+    test('vanilla "/help <cmd>" direct syntax (gamemode)', () => {
+        const result = parseHelpLines('/gamemode <gamemode> [<target>]', 'gamemode');
+        assert.strictEqual(result.variants.size, 0);
+        assert.deepStrictEqual(result.direct, [
+            { type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 },
+            { type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 1 },
+        ]);
+    });
+
+    test('"minecraft:help <cmd>" multi-variant syntax (gamerule), one entry per line', () => {
+        const text = '/gamerule announceAdvancements [<value>]\n/gamerule doDaylightCycle [<value>]\n/gamerule logAdminCommands [<value>]';
+        const result = parseHelpLines(text, 'gamerule');
+        assert.strictEqual(result.direct, null);
+        assert.deepStrictEqual([...result.variants.keys()], ['announceAdvancements', 'doDaylightCycle', 'logAdminCommands']);
+        assert.deepStrictEqual(result.variants.get('announceAdvancements'), [
+            { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
+        ]);
+    });
+
+    test('subcommand path "team list" matches "/team list [<team>]"', () => {
+        const result = parseHelpLines('/team list [<team>]', 'team list');
+        assert.strictEqual(result.variants.size, 0);
+        assert.deepStrictEqual(result.direct, [
+            { type: ParameterType.ARGUMENT, name: 'team', optional: true, position: 0 },
+        ]);
+    });
+
+    test('the generic "[<args>]" placeholder parses as a single optional "args" argument', () => {
+        const result = parseHelpLines('/version [<args>]', 'version');
+        assert.strictEqual(result.variants.size, 0);
+        assert.ok(isGenericArgsPlaceholder(result.direct!));
+    });
+
+    test('a normalized Bukkit usage line ("[plugin name]") becomes a variant', () => {
+        const result = parseHelpLines('/version [plugin name]', 'version');
+        assert.strictEqual(result.direct, null);
+        assert.deepStrictEqual([...result.variants.keys()], ['plugin name']);
+    });
+
+    test('error responses and lines for other commands are ignored', () => {
+        const result = parseHelpLines('Unknown command or insufficient permissions', 'version');
+        assert.strictEqual(result.variants.size, 0);
+        assert.strictEqual(result.direct, null);
+    });
+
+    test('a bare "Usage: <name>" line with nothing after the command name is ignored', () => {
+        const result = parseHelpLines('gamemode', 'gamemode');
+        assert.strictEqual(result.variants.size, 0);
+        assert.strictEqual(result.direct, null);
+    });
+
+    test('alias redirects ("-> target") are ignored', () => {
+        const result = parseHelpLines('/xp -> experience', 'xp');
+        assert.strictEqual(result.variants.size, 0);
+        assert.strictEqual(result.direct, null);
+    });
+
+    test('a concatenated "minecraft:help" blob requires the caller to split on "/" first', () => {
+        // Real minecraft:help responses pack consecutive commands onto one
+        // line with no separator; callers must replace('/', '\n/') before
+        // calling parseHelpLines (see commandAutocomplete.ts).
+        const blob = '/team list [<team>]/team add <team> [<displayName>]';
+        const split = blob.replace(/\//g, '\n/');
+        const result = parseHelpLines(split, 'team');
+        assert.deepStrictEqual([...result.variants.keys()], ['list', 'add']);
+    });
+});
+
+suite('isGenericArgsPlaceholder', () => {
+    test('true for the generic optional "args" argument', () => {
+        assert.ok(isGenericArgsPlaceholder([
+            { type: ParameterType.ARGUMENT, name: 'args', optional: true, position: 0 },
+        ]));
+    });
+
+    test('false for a real argument named "args" that is required', () => {
+        assert.ok(!isGenericArgsPlaceholder([
+            { type: ParameterType.ARGUMENT, name: 'args', optional: false, position: 0 },
+        ]));
+    });
+
+    test('false for an empty parameter list or any other shape', () => {
+        assert.ok(!isGenericArgsPlaceholder([]));
+        assert.ok(!isGenericArgsPlaceholder([
+            { type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 },
+            { type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 1 },
+        ]));
+    });
+});
+
+suite('isUnsupportedNamespaceError', () => {
+    test('true for the Brigadier "unknown namespace" error from minecraft:help on vanilla/fabric', () => {
+        assert.ok(isUnsupportedNamespaceError('Unknown or incomplete command, see below for errorminecraft:help<--[HERE]'));
+    });
+
+    test('false for the normal "unknown command" not-found message', () => {
+        assert.ok(!isUnsupportedNamespaceError('Unknown command or insufficient permissions'));
+    });
+
+    test('false for a real help response', () => {
+        assert.ok(!isUnsupportedNamespaceError('/gamemode <gamemode> [<target>]'));
+    });
+});
+
+suite('extractBukkitUsageLines', () => {
+    test('extracts a real Bukkit-added command\'s usage line (version)', () => {
+        const helpText = '§e--------- §fHelp: /version §e------------------------\n'
+            + '§6Description: §fGets the version of this server including\n'
+            + '§fany plugins in use\n'
+            + '§f§6Usage: §f/version [plugin name]\n'
+            + '§f§6Aliases: §fver, about';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'version'), ['/version [plugin name]']);
+    });
+
+    test('extracts a multi-token usage line (reload)', () => {
+        const helpText = '§e--------- §fHelp: /reload §e-------------------------\n'
+            + '§6Description: §fReloads the server configuration and\n'
+            + '§fplugins\n'
+            + '§f§6Usage: §f/reload [permissions|commands|confirm]\n'
+            + '§f§6Aliases: §frl';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'reload'), ['/reload [permissions|commands|confirm]']);
+    });
+
+    test('returns [] for the generic vanilla-command response (gamemode)', () => {
+        const helpText = '§e--------- §fHelp: /gamemode §e-----------------------\n'
+            + '§6Description: §fA Mojang provided command.\n'
+            + '§f§6Usage: §fgamemode';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'gamemode'), []);
+    });
+
+    test('returns [] for "No help for X" (no Usage line at all)', () => {
+        assert.deepStrictEqual(extractBukkitUsageLines('§cNo help for team list', 'team list'), []);
+    });
+
+    test('returns [] for a bare command with no arguments (plugins)', () => {
+        const helpText = '§e--------- §fHelp: /plugins §e------------------------\n'
+            + '§6Description: §fGets a list of plugins running on the\n'
+            + '§fserver\n'
+            + '§f§6Usage: §f/plugins\n'
+            + '§f§6Aliases: §fpl';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'plugins'), []);
+    });
+});
+
+suite('looksLikeBukkitHelpPage', () => {
+    test('true for a Bukkit help page (has a "---" banner line)', () => {
+        const helpText = '§e--------- §fHelp: /version §e------------------------\n'
+            + '§6Description: §fGets the version of this server including\n'
+            + '§f§6Usage: §f/version [plugin name]';
+        assert.ok(looksLikeBukkitHelpPage(helpText));
+    });
+
+    test('false for a flat concatenated Brigadier blob (no "---" line)', () => {
+        assert.ok(!looksLikeBukkitHelpPage('/gamemode <gamemode> [<target>]/team list [<team>]'));
+    });
+
+    test('false for "No help for X"', () => {
+        assert.ok(!looksLikeBukkitHelpPage('§cNo help for team list'));
+    });
+});
+
+suite('splitConcatenatedHelpLines', () => {
+    test('re-splits a concatenated Brigadier blob into one /cmd line each', () => {
+        const blob = '/gamemode <gamemode> [<target>]/team list [<team>]/team add <team> [<displayName>]';
+        assert.deepStrictEqual(
+            splitConcatenatedHelpLines(blob).split('\n').filter(l => l.trim()),
+            [
+                '/gamemode <gamemode> [<target>]',
+                '/team list [<team>]',
+                '/team add <team> [<displayName>]',
+            ]
+        );
+    });
+
+    test('drops a "Help: /<cmd> ----" banner line instead of splitting it on "/"', () => {
+        const helpText = '§e--------- §fHelp: /version §e------------------------\n'
+            + '§f§6Usage: §f/version [plugin name]';
+        const lines = splitConcatenatedHelpLines(helpText).split('\n').map(l => stripColors(l).trim()).filter(l => l);
+        assert.deepStrictEqual(lines, ['Usage:', '/version [plugin name]']);
     });
 });
 

@@ -4,11 +4,15 @@ import { Logger } from './logger';
 import {
   ParameterType,
   Parameter,
+  HelpLinesResult,
   formatMinecraftColors,
   stripColors,
-  tokenizeParameterString,
-  parseCommandHelp,
-  classifyParameterTokens,
+  parseHelpLines,
+  splitConcatenatedHelpLines,
+  looksLikeBukkitHelpPage,
+  isGenericArgsPlaceholder,
+  isUnsupportedNamespaceError,
+  extractBukkitUsageLines,
   buildParameterStructureFromVariants,
 } from './helpTextParsing';
 import { CommandTreeCache } from './commandTreeCache';
@@ -29,6 +33,15 @@ export class CommandAutocomplete {
   private loadingProgress: number = 0;
   private totalCommands: number = 0;
   public isReady: boolean = false;
+
+  // Whether the `minecraft:` command namespace prefix is registered on this
+  // server. Paper/Spigot (Bukkit-based) accept `minecraft:help ...` and use
+  // it to get Brigadier-accurate `<args>` syntax for vanilla commands; pure
+  // Vanilla/Fabric reject it as an unknown namespace (Brigadier syntax
+  // error), but their plain `/help [<cmd>]` already returns full `<args>`
+  // syntax directly. Detected once in fetchRootCommands() and reused for
+  // every per-command detail fetch. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+  private supportsMinecraftNamespace: boolean = true;
 
   private readonly cache: CommandTreeCache;
 
@@ -130,11 +143,28 @@ export class CommandAutocomplete {
   private async fetchRootCommands(): Promise<void> {
     try {
       this.logger.info('Fetching root commands with /help...');
-      const response = await this.sendCommand('minecraft:help');
+      const mcResponse = await this.sendCommand('minecraft:help');
 
-      this.logger.info(`Help response received: ${response.length} bytes`);
+      if (isUnsupportedNamespaceError(mcResponse)) {
+        // Vanilla/Fabric: the `minecraft:` namespace prefix isn't
+        // registered. Plain `/help` (paginated) already gives a complete,
+        // accurate, one-shot command list with full <args> syntax.
+        this.logger.info('minecraft: namespace not supported; using /help for root commands');
+        this.supportsMinecraftNamespace = false;
 
-      if (!response || response.length === 0) {
+        const response = await this.fetchPaginatedCommand('help');
+        this.logger.info(`Help response received: ${response.length} bytes`);
+        if (!response || response.length === 0) {
+          throw new Error('Unable to fetch command list from server');
+        }
+        this.parseHelpResponse(response);
+        return;
+      }
+
+      this.supportsMinecraftNamespace = true;
+      this.logger.info(`Help response received: ${mcResponse.length} bytes`);
+
+      if (!mcResponse || mcResponse.length === 0) {
         this.logger.warning('Warning: Empty response from help command');
         // Try alternative help format
         const altResponse = await this.sendCommand('?');
@@ -145,7 +175,7 @@ export class CommandAutocomplete {
           throw new Error('Unable to fetch command list from server');
         }
       } else {
-        this.parseHelpResponse(response);
+        this.parseHelpResponse(mcResponse);
       }
 
     } catch (error) {
@@ -160,7 +190,7 @@ export class CommandAutocomplete {
    * Parse help response to extract commands
    */
   private parseHelpResponse(response: string): void {
-    const modified = response.replace(/\//g, "\n/"); // Replace slashes with newlines to isolate commands
+    const modified = splitConcatenatedHelpLines(response);
     const lines = modified.split('\n');
     this.logger.info(`Processing ${lines.length} lines from help response`);
 
@@ -259,6 +289,44 @@ export class CommandAutocomplete {
   }
 
   /**
+   * Merge the two help sources for `commandPath`'s syntax into one
+   * `HelpLinesResult`. `mcResponse` (from `minecraft:help <commandPath>`,
+   * only present when `supportsMinecraftNamespace`) wins unless it's empty
+   * or the generic `[<args>]` placeholder Bukkit emits for non-Brigadier
+   * commands, in which case `helpResponse` (from `help <commandPath>`) is
+   * used instead — via `extractBukkitUsageLines` if it's a Bukkit help page,
+   * or re-split as a concatenated Brigadier blob otherwise (see
+   * `looksLikeBukkitHelpPage`). See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+   */
+  private mergeHelpSources(helpResponse: string, mcResponse: string | null, commandPath: string): HelpLinesResult {
+    // mcResponse is always a flat Brigadier blob - never a Bukkit help page.
+    const mc = mcResponse !== null
+      ? parseHelpLines(splitConcatenatedHelpLines(mcResponse), commandPath)
+      : { variants: new Map<string, Parameter[]>(), direct: null };
+
+    let result: HelpLinesResult;
+    if (mc.direct !== null && !isGenericArgsPlaceholder(mc.direct)) {
+      result = { variants: new Map(), direct: mc.direct };
+    } else if (mc.variants.size > 0) {
+      result = { variants: mc.variants, direct: null };
+    } else if (looksLikeBukkitHelpPage(helpResponse)) {
+      result = parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath);
+    } else {
+      // Like `mcResponse`, vanilla's `help <path>` responses for commands
+      // with multiple variants (team, gamerule, debug, ...) pack each
+      // `/path ...` onto one line with no separators - re-split the same way.
+      result = parseHelpLines(splitConcatenatedHelpLines(helpResponse), commandPath);
+    }
+
+    // The generic `[<args>]` placeholder (from either source) means "no
+    // further arguments", not a real <args> token.
+    if (result.direct !== null && isGenericArgsPlaceholder(result.direct)) {
+      result = { variants: result.variants, direct: [] };
+    }
+    return result;
+  }
+
+  /**
    * Load details for a command or subcommand
    */
   private async loadCommandDetails(parent: CommandNode | Parameter, parameters: Parameter[]): Promise<void> {
@@ -272,72 +340,23 @@ export class CommandAutocomplete {
 
     try {
       const helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
+      const mcResponse = this.supportsMinecraftNamespace
+        ? await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`)
+        : null;
 
-      // Check if we got a valid response
-      if (!helpResponse || helpResponse.length === 0) {
+      // Check if we got a valid response from at least one source
+      if (!helpResponse && !mcResponse) {
         this.logger.warning(`Empty help response for: ${commandPath}`);
         return;
       }
 
       this.logger.info(`Loading details for command: ${commandPath}`);
-      const lines = helpResponse.split('\n');
 
-      // Track variants of this command (different syntax lines)
-      const variants: Map<string, Parameter[]> = new Map();
-      let hasDirectParameters = false;
-
-      for (const line of lines) {
-        const stripped = stripColors(line).trim();
-        if (!stripped || stripped.startsWith('---')) { continue; }
-
-        // Match command pattern - allow hyphens and underscores in names
-        // Also handle potential spaces or different formats
-        const cmdPatterns = [
-          /^\/([a-zA-Z0-9_\:-]+)(?:\s+(.+))?$/,  // Standard format: /command args
-          /^([a-zA-Z0-9_-]+)(?:\s+(.+))?$/,     // Without slash: command args
-          /^\/([a-zA-Z0-9_\:-]+):?\s*(.*)$/       // With optional colon: /command: args
-        ];
-
-        let match = null;
-        for (const pattern of cmdPatterns) {
-          match = stripped.match(pattern);
-          if (match) { break; }
-        }
-
-        if (match) {
-          const matchedCommand = match[1];
-
-          // Normalize command names for comparison (case-insensitive, trim)
-          const normalizedMatch = matchedCommand.toLowerCase().trim();
-          const normalizedPath = commandPath.toLowerCase().trim();
-
-          if (normalizedMatch === normalizedPath) {
-            const afterCommand = match[2] || '';
-
-            if (afterCommand) {
-              // Tokenize everything after the command
-              const tokens = tokenizeParameterString(afterCommand);
-
-              const classified = classifyParameterTokens(tokens);
-              if (classified?.kind === 'variant') {
-                // First token is a literal/subcommand - this is a subcommand variant
-                variants.set(classified.name, classified.parameters);
-              } else if (classified?.kind === 'direct') {
-                // First token is an argument - these are direct parameters.
-                // IMPORTANT: parse ALL tokens as parameters for this command,
-                // clearing and rebuilding to ensure we get ALL of them
-                hasDirectParameters = true;
-                parameters.length = 0;
-                parameters.push(...classified.parameters);
-              }
-            }
-          }
-        }
-      }
-
-      // Build final parameter structure only if we haven't already set direct parameters
-      if (!hasDirectParameters) {
-        parameters.length = 0; // Clear existing parameters
+      const { variants, direct } = this.mergeHelpSources(helpResponse, mcResponse, commandPath);
+      parameters.length = 0;
+      if (direct !== null) {
+        parameters.push(...direct);
+      } else {
         parameters.push(...buildParameterStructureFromVariants(variants));
       }
 
@@ -382,58 +401,35 @@ export class CommandAutocomplete {
     const fullPath = `${parentPath} ${subcommand.name}`;
 
     try {
-      // Get help for this specific subcommand path
-      const helpResponse = await this.sendCommand(`help ${fullPath}`);
+      const helpResponse = await this.fetchPaginatedCommand(`help ${fullPath}`);
+      const mcResponse = this.supportsMinecraftNamespace
+        ? await this.fetchPaginatedCommand(`minecraft:help ${fullPath}`)
+        : null;
 
-      // Check for valid response
-      if (!helpResponse || helpResponse.length === 0) {
+      // Check for a valid response from at least one source
+      if (!helpResponse && !mcResponse) {
         subcommand.isComplete = true;
         return;
       }
 
-      const lines = helpResponse.split('\n');
+      const { variants, direct } = this.mergeHelpSources(helpResponse, mcResponse, fullPath);
+
+      if (variants.size === 0 && direct === null) {
+        // Neither source described `fullPath` directly (e.g. it's an enum
+        // value like a gamerule name, not a queryable command path) - keep
+        // whatever members were already known from the parent's syntax line.
+        subcommand.isComplete = true;
+        return;
+      }
 
       // Clear existing members to avoid duplicates
       if (!subcommand.members) {
         subcommand.members = [];
       }
-
-      // Track variants of this subcommand (different syntax lines)
-      const variants: Map<string, Parameter[]> = new Map();
-      let hasDirectParameters = false;
-
-      // Parse ALL lines to collect ALL variants (not just the first one!)
-      for (const line of lines) {
-        const stripped = stripColors(line).trim();
-        if (!stripped || stripped.startsWith('---')) { continue; }
-
-        // Look for lines that match this specific subcommand path
-        const pattern = new RegExp(`^/${fullPath.replace(' ', '\\s+')}\\s+(.+)$`);
-        const match = stripped.match(pattern);
-
-        if (match) {
-          const afterSubcommand = match[1];
-          const tokens = tokenizeParameterString(afterSubcommand);
-
-          const classified = classifyParameterTokens(tokens);
-          if (classified?.kind === 'variant') {
-            // First token is a literal - this is a nested subcommand variant.
-            // Store it and CONTINUE to find more variants!
-            variants.set(classified.name, classified.parameters);
-          } else if (classified?.kind === 'direct') {
-            // First token is an argument - these are direct parameters.
-            // Clear and rebuild members, then we can break after finding them
-            hasDirectParameters = true;
-            subcommand.members.length = 0;
-            subcommand.members.push(...classified.parameters);
-            break;
-          }
-        }
-      }
-
-      // Build final parameter structure
-      if (!hasDirectParameters) {
-        subcommand.members.length = 0; // Clear existing members
+      subcommand.members.length = 0;
+      if (direct !== null) {
+        subcommand.members.push(...direct);
+      } else {
         subcommand.members.push(...buildParameterStructureFromVariants(variants));
       }
 

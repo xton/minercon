@@ -288,6 +288,150 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
 }
 
 /**
+ * Result of parsing every `<commandPath> ...` syntax line out of a help
+ * response: either a set of named subcommand variants (first token a
+ * literal), or a single direct parameter list (first token an argument or
+ * choice-list — the last such line wins), or both empty if nothing matched.
+ */
+export interface HelpLinesResult {
+  variants: Map<string, Parameter[]>;
+  direct: Parameter[] | null;
+}
+
+/**
+ * True iff `helpText` looks like a Bukkit `/help <command>` page - a
+ * "§e--------- §fHelp: /<cmd> ----...§e" banner line, typically followed by
+ * Description:/Usage:/Aliases: lines - rather than a flat Brigadier blob
+ * (`minecraft:help`, or vanilla's `help <path>`) that packs multiple
+ * `/cmd ...` entries with no separators.
+ *
+ * This distinguishes which normalizer to apply: concatenated Brigadier blobs
+ * never contain a `---` banner line and are safe to re-split on `/`
+ * (`splitConcatenatedHelpLines`), but Bukkit's hand-written Usage strings are
+ * inconsistent across commands/plugins and occasionally use `/` inside
+ * argument brackets (e.g. `[foo/bar]`) - re-splitting those would corrupt
+ * them, so Bukkit pages must go through `extractBukkitUsageLines` instead,
+ * which extracts the Usage line(s) verbatim.
+ */
+export function looksLikeBukkitHelpPage(helpText: string): boolean {
+  return helpText.split('\n').some(line => stripColors(line).trim().startsWith('---'));
+}
+
+/**
+ * Re-split a help response that packs multiple `/cmd ...` entries onto one
+ * line with no separators (e.g. a `minecraft:help` blob, or vanilla's `help
+ * <path>` for a multi-variant command like `gamerule`/`team`/`debug`) into
+ * one entry per line, ready for `parseHelpResponse`/`parseHelpLines`.
+ *
+ * Header/separator (`---...`) and blank lines are dropped first, so a
+ * `§e--------- §fHelp: /<cmd> §e----...` banner line - which itself contains
+ * a `/` - doesn't get re-split into a bogus `/<cmd> ----...` entry.
+ */
+export function splitConcatenatedHelpLines(text: string): string {
+  return text.split('\n')
+    .filter(line => {
+      const stripped = stripColors(line).trim();
+      return stripped && !stripped.startsWith('---');
+    })
+    .join('\n')
+    .replace(/\//g, '\n/');
+}
+
+/**
+ * Parse every line of `text` that describes `commandPath`'s syntax (an
+ * optional leading `/`, then `commandPath` with internal spaces matching
+ * runs of whitespace, then the argument tokens), collecting subcommand
+ * variants and/or a direct parameter list. Lines for other commands, alias
+ * redirects (`-> target`), and lines with no arguments at all are ignored.
+ *
+ * `text` is matched line-by-line (split on `\n`) — callers whose source may
+ * pack multiple commands' syntax onto one line without separators (e.g. a
+ * `minecraft:help` blob, where consecutive commands are simply concatenated)
+ * must first replace `/` with `\n/` to re-split it into one command per line.
+ */
+export function parseHelpLines(text: string, commandPath: string): HelpLinesResult {
+  const escaped = commandPath
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/ /g, '\\s+');
+  const pattern = new RegExp(`^/?${escaped}(?::)?\\s*(.*)$`, 'i');
+
+  const variants: Map<string, Parameter[]> = new Map();
+  let direct: Parameter[] | null = null;
+
+  for (const rawLine of text.split('\n')) {
+    const stripped = stripColors(rawLine).trim();
+    if (!stripped || stripped.startsWith('---')) { continue; }
+
+    const match = stripped.match(pattern);
+    if (!match) { continue; }
+
+    const afterCommand = match[1] || '';
+    if (!afterCommand || afterCommand.startsWith('->')) { continue; }
+
+    const tokens = tokenizeParameterString(afterCommand);
+    const classified = classifyParameterTokens(tokens);
+    if (classified?.kind === 'variant') {
+      variants.set(classified.name, classified.parameters);
+    } else if (classified?.kind === 'direct') {
+      direct = classified.parameters;
+    }
+  }
+
+  return { variants, direct };
+}
+
+/**
+ * True iff `parameters` is exactly the generic `[<args>]` placeholder Bukkit
+ * emits for `minecraft:help <cmd>` on commands that aren't Brigadier-backed
+ * (e.g. `version`, `reload`, `plugins`) — i.e. no real argument info.
+ */
+export function isGenericArgsPlaceholder(parameters: Parameter[]): boolean {
+  return parameters.length === 1
+    && parameters[0].type === ParameterType.ARGUMENT
+    && parameters[0].optional === true
+    && parameters[0].name === 'args';
+}
+
+/**
+ * True iff `response` is the Brigadier "unknown namespace" syntax error
+ * returned for `minecraft:help` on servers where the `minecraft:` command
+ * namespace prefix isn't registered (vanilla/fabric) — distinct from the
+ * normal "Unknown command or insufficient permissions" not-found message.
+ */
+export function isUnsupportedNamespaceError(response: string): boolean {
+  return /^Unknown or incomplete command/i.test(stripColors(response).trim());
+}
+
+/**
+ * Extract the `Usage: ...` line(s) from a Bukkit-style `/help <command>`
+ * response (e.g. "Description: ...\nUsage: /version [plugin name]\nAliases:
+ * ..."), normalized so each reads as `<commandPath> ...` for `parseHelpLines`.
+ * Returns `[]` if there's no Usage line, or if its content is just the bare
+ * command name with nothing after it — the generic response Bukkit gives for
+ * Brigadier-backed (vanilla) commands ("Description: A Mojang provided
+ * command.\nUsage: <name>"), which carries no argument info.
+ */
+export function extractBukkitUsageLines(helpText: string, commandPath: string): string[] {
+  const lines = stripColors(helpText).split('\n').map(line => line.trim());
+  const usageIndex = lines.findIndex(line => /^Usage:\s*/i.test(line));
+  if (usageIndex === -1) {
+    return [];
+  }
+
+  const result: string[] = [lines[usageIndex].replace(/^Usage:\s*/i, '')];
+  for (let i = usageIndex + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || /^[A-Za-z][A-Za-z ]*:/.test(line) || line.startsWith('---')) {
+      break;
+    }
+    result.push(line);
+  }
+
+  const normalizedPath = commandPath.toLowerCase();
+  return result.filter(line => line.replace(/^\//, '').toLowerCase() !== normalizedPath);
+}
+
+/**
  * Build the parameter structure representing a set of collected variants:
  * a single SUBCOMMAND if there's only one, or a CHOICE_LIST wrapping a
  * SUBCOMMAND for each variant (in encounter order) otherwise.
