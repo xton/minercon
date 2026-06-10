@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [vanilla, paper, paper+plugin, spigot, fabric]
+        variant: [vanilla, paper, paper+plugin, spigot, spigot+plugin, fabric, fabric+mod]
     timeout-minutes: 20
 
     steps:
@@ -54,28 +54,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Set up Java (for plugin build)
-        if: matrix.variant == 'paper+plugin'
+      - name: Set up Java (for plugin/mod build)
+        if: matrix.variant == 'paper+plugin' || matrix.variant == 'spigot+plugin' || matrix.variant == 'fabric+mod'
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Cache Gradle wrapper
-        if: matrix.variant == 'paper+plugin'
+      - name: Cache Gradle wrapper (plugin)
+        if: matrix.variant == 'paper+plugin' || matrix.variant == 'spigot+plugin'
         uses: actions/cache@v4
         with:
           path: plugin/.gradle/wrapper
           key: gradle-wrapper-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Build plugin
-        if: matrix.variant == 'paper+plugin'
+        if: matrix.variant == 'paper+plugin' || matrix.variant == 'spigot+plugin'
         run: cd plugin && ./gradlew build
         env:
           GRADLE_OPTS: -Dorg.gradle.daemon=false
 
+      - name: Cache Gradle wrapper (fabric-mod)
+        if: matrix.variant == 'fabric+mod'
+        uses: actions/cache@v4
+        with:
+          path: fabric-mod/.gradle/wrapper
+          key: gradle-wrapper-fabric-${{ hashFiles('fabric-mod/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build fabric mod
+        if: matrix.variant == 'fabric+mod'
+        run: cd fabric-mod && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
       - name: Log in to GHCR (for pre-built Spigot image)
-        if: matrix.variant == 'spigot'
+        if: matrix.variant == 'spigot' || matrix.variant == 'spigot+plugin'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -183,6 +196,6 @@ jobs:
         run: npm run compile
 
       - name: Run plugin mode tests
-        run: npx mocha --ui tdd --timeout 360000 out/test/functional/pluginMode.test.js
+        run: npx mocha --ui tdd --timeout 360000 out/test/functional/pluginMode.test.js out/test/functional/autocompleteSession.test.js
         env:
           SPIGOT_IMAGE: ${{ env.SPIGOT_IMAGE }}

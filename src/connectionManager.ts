@@ -21,6 +21,12 @@ export interface ConnectionManagerHost {
   onReconnected(): void;
 }
 
+/** Builds the `RconController` used for a (re)connection attempt — overridable in tests so `attemptReconnect()` doesn't open a real socket. */
+export type ControllerFactory = (host: string, port: number, password: string, logger: Logger) => RconController;
+
+const defaultControllerFactory: ControllerFactory = (host, port, password, logger) =>
+  new RconController(host, port, password, logger);
+
 export class ConnectionManager {
   private _controller: RconController;
   private _isConnected: boolean = true;
@@ -37,6 +43,7 @@ export class ConnectionManager {
     private readonly logger: Logger,
     controller: RconController,
     private readonly host: ConnectionManagerHost,
+    private readonly controllerFactory: ControllerFactory = defaultControllerFactory,
   ) {
     this._controller = controller;
   }
@@ -134,7 +141,7 @@ export class ConnectionManager {
       }
 
       // Create new controller
-      this._controller = new RconController(this.serverHost, this.serverPort, this.password, this.logger);
+      this._controller = this.controllerFactory(this.serverHost, this.serverPort, this.password, this.logger);
       await this._controller.connect();
 
       this._isConnected = true;

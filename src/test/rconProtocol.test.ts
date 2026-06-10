@@ -16,8 +16,8 @@
 import * as assert from 'assert';
 import { Logger } from '../logger';
 import { RconProtocol } from '../rconProtocol';
-import { FakeSocket, RconFixture } from './support/fakeSocket';
-import { RconPacketType, encodeRconPacket } from './support/rconWireFormat';
+import { FakeSocket, RconFixture, RconFrame } from './support/fakeSocket';
+import { RconPacketType, encodeRconPacket, splitIntoChunks } from './support/rconWireFormat';
 import { RCON_CONVERSATION_SCRIPT } from './fixtures/rcon/script';
 import * as synthetic from './fixtures/rcon/synthetic';
 import * as xton from './fixtures/rcon/xton';
@@ -89,5 +89,135 @@ suite('rconProtocol: connection dropped mid-request', () => {
 
     await assert.rejects(protocol.send('list'), /Connection closed/, 'an in-flight command should be rejected, not left hanging, when the connection drops');
     assert.strictEqual(protocol.isConnected(), false, 'should report disconnected once the socket has closed');
+  });
+});
+
+suite('rconProtocol: adversarial / malformed packets', () => {
+  /** A normal auth handshake (request id 1) — shared setup for tests below that get past auth and exercise the post-auth packet handling. */
+  const authFrames = (password: string): RconFrame[] => [
+    { direction: 'sent', data: encodeRconPacket(1, RconPacketType.AUTH, password) },
+    { direction: 'received', data: Buffer.concat([
+      encodeRconPacket(1, RconPacketType.RESPONSE, ''),
+      encodeRconPacket(1, RconPacketType.AUTH_RESPONSE, ''),
+    ]) },
+  ];
+
+  test('connect() rejects with "Authentication failed" when the server reports a bad password (id -1)', async () => {
+    const password = 'wrong-password';
+
+    // Real servers respond to a failed auth with a single SERVERDATA_AUTH_RESPONSE
+    // packet whose id is -1 (instead of echoing the request id).
+    const socket = new FakeSocket([
+      { direction: 'sent', data: encodeRconPacket(1, RconPacketType.AUTH, password) },
+      { direction: 'received', data: encodeRconPacket(-1, RconPacketType.AUTH_RESPONSE, '') },
+    ]);
+    const protocol = new RconProtocol('fixture-host', 25575, password, silentLogger(), () => socket);
+
+    await assert.rejects(protocol.connect(), /Authentication failed/);
+    assert.strictEqual(protocol.isConnected(), false);
+
+    socket.assertSatisfied();
+  });
+
+  test('a packet with an implausibly small declared size is logged and skipped without disrupting the packets around it', async () => {
+    const password = 'fixture-password';
+    const errors: string[] = [];
+    const logger: Logger = { info: () => {}, warning: () => {}, error: (msg) => errors.push(msg) };
+
+    // Declares a 1-byte packet (size + 4 = 5 bytes total) — too small for
+    // parsePacket's 14-byte minimum, so handleData's catch block fires.
+    const garbage = Buffer.alloc(5);
+    garbage.writeInt32LE(1, 0);
+
+    const socket = new FakeSocket([
+      ...authFrames(password),
+      { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
+      // The garbage packet is immediately followed, in the same chunk, by the
+      // real response — handleData must recover and parse it correctly.
+      { direction: 'received', data: Buffer.concat([garbage, encodeRconPacket(2, RconPacketType.RESPONSE, 'ok')]) },
+      { direction: 'sent', data: encodeRconPacket(3, RconPacketType.COMMAND, '') },
+      { direction: 'received', data: encodeRconPacket(3, RconPacketType.RESPONSE, '') },
+    ]);
+    const protocol = new RconProtocol('fixture-host', 25575, password, logger, () => socket);
+
+    await protocol.connect();
+    const response = await protocol.send('list');
+    assert.strictEqual(response, 'ok', 'the real response is still parsed correctly after the malformed packet');
+    assert.ok(errors.some(e => e.includes('Packet too small')), 'the malformed packet is logged as an error');
+
+    socket.assertSatisfied();
+    await protocol.disconnect();
+  });
+
+  test('an unsolicited response packet with an unknown request ID is logged and ignored', async () => {
+    const password = 'fixture-password';
+    const warnings: string[] = [];
+    const logger: Logger = { info: () => {}, warning: (msg) => warnings.push(msg), error: () => {} };
+
+    const socket = new FakeSocket([
+      ...authFrames(password),
+      { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
+      // A stray packet for a request ID nothing is waiting on (e.g. a
+      // duplicate/late response), arriving in the same chunk as the real one.
+      { direction: 'received', data: Buffer.concat([
+        encodeRconPacket(999, RconPacketType.RESPONSE, 'unexpected'),
+        encodeRconPacket(2, RconPacketType.RESPONSE, 'ok'),
+      ]) },
+      { direction: 'sent', data: encodeRconPacket(3, RconPacketType.COMMAND, '') },
+      { direction: 'received', data: encodeRconPacket(3, RconPacketType.RESPONSE, '') },
+    ]);
+    const protocol = new RconProtocol('fixture-host', 25575, password, logger, () => socket);
+
+    await protocol.connect();
+    const response = await protocol.send('list');
+    assert.strictEqual(response, 'ok', 'the real response is still delivered despite the stray packet');
+    assert.ok(warnings.some(w => w.includes('999')), 'the stray packet is logged with its unknown request ID');
+
+    socket.assertSatisfied();
+    await protocol.disconnect();
+  });
+
+  test('an incomplete packet header followed by connection close still rejects the in-flight command with "Connection closed"', async () => {
+    const password = 'fixture-password';
+
+    // Declares a packet far larger than ever arrives, then the server hangs up.
+    const incompleteHeader = Buffer.alloc(4);
+    incompleteHeader.writeInt32LE(9999, 0);
+
+    const socket = new FakeSocket([
+      ...authFrames(password),
+      { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
+      { direction: 'received', data: incompleteHeader },
+      { direction: 'close' },
+    ]);
+    const protocol = new RconProtocol('fixture-host', 25575, password, silentLogger(), () => socket);
+
+    await protocol.connect();
+    await assert.rejects(protocol.send('list'), /Connection closed/);
+    assert.strictEqual(protocol.isConnected(), false);
+  });
+
+  test('a response packet split into single-byte chunks across many data events is reassembled correctly', async () => {
+    const password = 'fixture-password';
+    const responseBody = 'reassembled one byte at a time';
+
+    const responsePacket = encodeRconPacket(2, RconPacketType.RESPONSE, responseBody);
+    const byteFrames: RconFrame[] = splitIntoChunks(responsePacket, 1).map(data => ({ direction: 'received', data }));
+
+    const socket = new FakeSocket([
+      ...authFrames(password),
+      { direction: 'sent', data: encodeRconPacket(2, RconPacketType.COMMAND, 'list') },
+      ...byteFrames,
+      { direction: 'sent', data: encodeRconPacket(3, RconPacketType.COMMAND, '') },
+      { direction: 'received', data: encodeRconPacket(3, RconPacketType.RESPONSE, '') },
+    ]);
+    const protocol = new RconProtocol('fixture-host', 25575, password, silentLogger(), () => socket);
+
+    await protocol.connect();
+    const response = await protocol.send('list');
+    assert.strictEqual(response, responseBody);
+
+    socket.assertSatisfied();
+    await protocol.disconnect();
   });
 });

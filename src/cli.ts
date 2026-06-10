@@ -10,29 +10,12 @@ import { parseArgs } from 'util';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { Logger } from './logger';
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword } from './cliConfig';
 
 // ── Config file ──────────────────────────────────────────────────────────────
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'minecraft-rcon');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
-
-interface Config {
-  host?: string;
-  port?: number;
-}
-
-function readConfig(): Config {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) as Config;
-  } catch {
-    return {};
-  }
-}
-
-function writeConfig(cfg: Config): void {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
-}
 
 // ── Logger ───────────────────────────────────────────────────────────────────
 
@@ -140,10 +123,10 @@ async function main(): Promise<void> {
   }
 
   const logger = createCliLogger((values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE']);
-  const savedConfig = readConfig();
+  const savedConfig = readConfig(CONFIG_FILE);
 
   // Resolve host
-  let host = positionals[0] ?? savedConfig.host;
+  let host = resolveHost(positionals[0], savedConfig);
   if (!host) {
     host = await promptLine('RCON host (e.g. 127.0.0.1): ');
   }
@@ -154,30 +137,34 @@ async function main(): Promise<void> {
 
   // Resolve port
   let port: number;
-  if (positionals[1]) {
-    port = parseInt(positionals[1], 10);
-  } else if (savedConfig.port) {
-    port = savedConfig.port;
+  const portResolution = resolvePort(positionals[1], savedConfig);
+  if (portResolution && 'error' in portResolution) {
+    process.stderr.write(`Error: ${portResolution.error}\n`);
+    process.exit(1);
+  } else if (portResolution) {
+    port = portResolution.port;
   } else {
     const raw = await promptLine('RCON port [25575]: ');
-    port = raw ? parseInt(raw, 10) : 25575;
-  }
-  if (isNaN(port) || port < 1 || port > 65535) {
-    process.stderr.write(`Error: invalid port: ${port}\n`);
-    process.exit(1);
+    if (!raw) {
+      port = 25575;
+    } else {
+      const parsed = parsePort(raw);
+      if (parsed === null) {
+        process.stderr.write(`Error: invalid port: ${raw}\n`);
+        process.exit(1);
+      }
+      port = parsed;
+    }
   }
 
   // Resolve password — never saved to disk
-  let password: string | undefined = values.password as string | undefined;
-  if (!password) {
-    password = process.env['MCRCON_PASSWORD'];
-  }
+  let password = resolvePassword(values.password as string | undefined, process.env['MCRCON_PASSWORD']);
   if (!password) {
     password = await promptPassword(`RCON password for ${host}:${port}: `);
   }
 
   if (values.save) {
-    writeConfig({ host, port });
+    writeConfig(CONFIG_FILE, { host, port });
     process.stderr.write(`\x1b[36mINFO\x1b[0m Saved ${host}:${port} to ${CONFIG_FILE}\n`);
   }
 

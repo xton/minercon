@@ -1,32 +1,17 @@
 // src/test/cli.test.ts
 //
-// Tests for the CLI's pure, non-interactive logic: config file read/write.
-// Argv parsing and connection setup require process state (stdin TTY,
-// process.argv) that is awkward to control in the vscode-test runner — those
-// paths are covered by the manual smoke-test described in the plan.
+// Tests for the CLI's pure, non-interactive logic: config file read/write
+// and host/port/password resolution precedence. These all live in
+// cliConfig.ts specifically so they can be imported and unit-tested without
+// triggering cli.ts's top-level main() call (which needs a real TTY/argv).
+// Argv parsing and interactive prompting/connection setup are covered by the
+// manual smoke-test described in the plan.
 
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-
-// We test the config helpers by re-implementing them inline using the same
-// logic as cli.ts — this avoids importing cli.ts (which would run main()).
-// If the config helpers are ever extracted to a shared module, point these
-// tests at that module instead.
-
-function readConfig(configFile: string): { host?: string; port?: number } {
-    try {
-        return JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    } catch {
-        return {};
-    }
-}
-
-function writeConfig(configFile: string, cfg: { host?: string; port?: number }): void {
-    fs.mkdirSync(path.dirname(configFile), { recursive: true });
-    fs.writeFileSync(configFile, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
-}
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword } from '../cliConfig';
 
 suite('CLI config', () => {
     let tmpDir: string;
@@ -76,5 +61,75 @@ suite('CLI config', () => {
         fs.writeFileSync(configFile, '{ not valid json }', 'utf8');
         const cfg = readConfig(configFile);
         assert.deepStrictEqual(cfg, {});
+    });
+});
+
+suite('CLI parsePort', () => {
+    test('accepts ports within the valid range', () => {
+        assert.strictEqual(parsePort('1'), 1);
+        assert.strictEqual(parsePort('25575'), 25575);
+        assert.strictEqual(parsePort('65535'), 65535);
+    });
+
+    test('rejects 0, negative, and out-of-range ports', () => {
+        assert.strictEqual(parsePort('0'), null);
+        assert.strictEqual(parsePort('-1'), null);
+        assert.strictEqual(parsePort('65536'), null);
+    });
+
+    test('rejects non-numeric input', () => {
+        assert.strictEqual(parsePort('not-a-port'), null);
+        assert.strictEqual(parsePort(''), null);
+    });
+});
+
+suite('CLI resolveHost', () => {
+    test('prefers a positional host over the saved config', () => {
+        assert.strictEqual(resolveHost('10.0.0.1', { host: '10.0.0.2' }), '10.0.0.1');
+    });
+
+    test('falls back to the saved config when no positional host is given', () => {
+        assert.strictEqual(resolveHost(undefined, { host: '10.0.0.2' }), '10.0.0.2');
+    });
+
+    test('returns undefined when neither a positional host nor a saved one is available', () => {
+        assert.strictEqual(resolveHost(undefined, {}), undefined);
+    });
+});
+
+suite('CLI resolvePort', () => {
+    test('uses a valid positional port over the saved config', () => {
+        assert.deepStrictEqual(resolvePort('25576', { port: 25575 }), { port: 25576 });
+    });
+
+    test('returns an error for an invalid positional port', () => {
+        assert.deepStrictEqual(resolvePort('not-a-port', { port: 25575 }), { error: 'invalid port: not-a-port' });
+        assert.deepStrictEqual(resolvePort('70000', {}), { error: 'invalid port: 70000' });
+    });
+
+    test('falls back to the saved config when no positional port is given', () => {
+        assert.deepStrictEqual(resolvePort(undefined, { port: 25575 }), { port: 25575 });
+    });
+
+    test('returns undefined (prompt needed) when neither is available', () => {
+        assert.strictEqual(resolvePort(undefined, {}), undefined);
+    });
+});
+
+suite('CLI resolvePassword', () => {
+    test('prefers the --password flag over the env var', () => {
+        assert.strictEqual(resolvePassword('flag-pw', 'env-pw'), 'flag-pw');
+    });
+
+    test('falls back to the env var when no flag is given', () => {
+        assert.strictEqual(resolvePassword(undefined, 'env-pw'), 'env-pw');
+    });
+
+    test('returns undefined (prompt needed) when neither is available', () => {
+        assert.strictEqual(resolvePassword(undefined, undefined), undefined);
+    });
+
+    test('treats an empty-string flag as not provided', () => {
+        assert.strictEqual(resolvePassword('', 'env-pw'), 'env-pw');
     });
 });
