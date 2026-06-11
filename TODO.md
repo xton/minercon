@@ -286,8 +286,31 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   otherwise re-derive for the new line. `now`/`Date.now()` removed entirely
   from `completionEngine.ts`'s `Event`/`Mode`/reducer signatures and from
   `rconSession.ts`'s three dispatch sites. 287 tests passing.
-- [ ] `/history` built-in command (if not already present) and a Ctrl+R-style
-  reverse history search
+- [x] `/history` built-in command (if not already present) and a Ctrl+R-style
+  reverse history search (2026-06-11). Done: new `/history` command lists
+  `lineEditor.historyEntries` (numbered, oldest-first, like bash's `history`).
+  Ctrl+R opens a "(reverse-i-search)" popup reusing `SuggestionDisplay` to show
+  matching history entries (deduped, most-recently-used first); typing narrows
+  the list, Ctrl+R/Up cycles to older matches, Down cycles to newer, Enter
+  loads the selected entry into the line for further editing (does not
+  auto-execute), Escape/Ctrl+G/Ctrl+C cancels and restores the in-progress
+  line. New pure module `historySearch.ts` (`searchHistory`,
+  `startHistorySearch`, `setHistorySearchQuery`, `cycleHistorySearch`) with
+  its own test suite. While searching, `RconSession` bypasses `LineEditor`
+  entirely and writes the search line directly, with `cursorColumn()` aware of
+  search mode so `SuggestionDisplay`'s clear/redraw stays in sync.
+
+  Bonus: command history now persists to disk. New `HistoryStore`
+  (`historyStore.ts`), server-scoped JSON in `cacheDir` like
+  `commandTreeCache.ts` (capped at 100 entries), loaded once at session start
+  via `lineEditor.loadHistory()` and rewritten after each command via
+  `pushHistory`. `lineEditor.ts` gained `historyEntries`/`loadHistory()`.
+  Welcome banner and `/help` mention Ctrl+R; `/help` lists `/history`.
+  New test files `historySearch.test.ts` and `historyStore.test.ts`, plus
+  additions to `lineEditor.test.ts` and `rconSession.test.ts` (popup opens
+  with recent history, typing narrows it, Enter loads without executing,
+  Escape restores the line, persistence across sessions). `tsc`/`eslint`
+  clean, 315 tests passing.
 
 ## How to record a live RCON fixture
 

@@ -471,6 +471,16 @@ export class LineEditor {
 
   // ── history ──
 
+  /** Command history, oldest-first — e.g. for Ctrl+R search or persisting to disk. */
+  get historyEntries(): readonly string[] {
+    return this.history;
+  }
+
+  /** Seeds history (oldest-first) from persisted entries, e.g. loaded from disk at session start. Replaces any existing in-memory history. */
+  loadHistory(entries: readonly string[]): void {
+    this.history = entries.slice(-100);
+  }
+
   pushHistory(command: string): void {
     if (this.history.length === 0 || this.history[this.history.length - 1] !== command) {
       this.history.push(command);

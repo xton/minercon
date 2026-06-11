@@ -315,4 +315,134 @@ suite('RconSession', () => {
 
         assert.ok(h.controller.disconnectCalls > 0);
     });
+
+    test('/history prints previously run commands without sending an RCON command', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say one');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say one'));
+
+        type(h, 'say two');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say two'));
+
+        h.writes.length = 0;
+        h.controller.sendCalls.length = 0;
+
+        type(h, '/history');
+        h.session.handleInput('\r');
+
+        await waitUntil(() => h.output().includes('say two'));
+        assert.ok(h.output().includes('say one'), 'lists earlier commands too');
+        const rconCommands = h.controller.sendCalls.filter(c => !c.startsWith('tabcomplete'));
+        assert.deepStrictEqual(rconCommands, [], 'the built-in command is handled locally, not sent to the server');
+    });
+
+    test('/history reports when there is nothing yet', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, '/history');
+        h.session.handleInput('\r');
+
+        await waitUntil(() => h.output().includes('no history yet'));
+    });
+
+    test('Ctrl+R opens a search popup showing recent history, newest first', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say one');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say one'));
+
+        type(h, 'say two');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say two'));
+
+        h.writes.length = 0;
+        h.session.handleInput('\x12'); // Ctrl+R
+
+        await waitUntil(() => h.output().includes('reverse-i-search'));
+        const out = h.output();
+        assert.ok(out.includes('say two'), 'shows the most recent command');
+        assert.ok(out.includes('say one'), 'shows earlier commands too');
+    });
+
+    test('Ctrl+R then typing narrows the match list to the query', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say hello');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say hello'));
+
+        type(h, 'gamemode creative');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('gamemode creative'));
+
+        h.session.handleInput('\x12'); // Ctrl+R
+        h.writes.length = 0;
+        type(h, 'gamemode');
+
+        await waitUntil(() => h.output().includes('gamemode creative'));
+        assert.ok(!h.output().includes('say hello'), 'no longer shows the non-matching entry');
+    });
+
+    test('Ctrl+R then Enter loads the selected match into the line without executing it', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say hello');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say hello'));
+
+        h.session.handleInput('\x12'); // Ctrl+R
+        await waitUntil(() => h.output().includes('reverse-i-search'));
+        h.controller.sendCalls.length = 0;
+        h.writes.length = 0;
+
+        h.session.handleInput('\r'); // Enter: accept the match
+
+        assert.ok(h.output().includes('say hello'), 'loads the matched command back onto the line');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.deepStrictEqual(h.controller.sendCalls.filter(c => !c.startsWith('tabcomplete')), [], 'Enter loads the line for editing, it does not run the command');
+    });
+
+    test('Ctrl+R then Escape restores the line that was being typed', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say hello');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say hello'));
+
+        type(h, 'partial input');
+        h.session.handleInput('\x12'); // Ctrl+R
+        await waitUntil(() => h.output().includes('reverse-i-search'));
+        h.writes.length = 0;
+
+        h.session.handleInput('\x1b'); // Escape: cancel
+
+        assert.ok(h.output().includes('partial input'), 'restores the line that was being typed');
+    });
+
+    test('command history persists to disk and is loaded by a later session for the same server', async () => {
+        const h1 = createHarness();
+        await openInPluginMode(h1);
+
+        type(h1, 'say persisted');
+        h1.session.handleInput('\r');
+        await waitUntil(() => h1.controller.sendCalls.includes('say persisted'));
+        h1.session.close();
+
+        const h2 = createHarness();
+        await openInPluginMode(h2);
+
+        h2.session.handleInput('\x12'); // Ctrl+R
+        await waitUntil(() => h2.output().includes('reverse-i-search'));
+        assert.ok(h2.output().includes('say persisted'), 'second session loaded history saved by the first');
+    });
 });

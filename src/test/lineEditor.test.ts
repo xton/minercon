@@ -414,6 +414,35 @@ suite('LineEditor: history navigation', () => {
         editor.navigateHistory('up');
         assert.strictEqual(editor.line, 'second'); // starts over from the most recent entry
     });
+
+    test('historyEntries exposes the recorded history, oldest-first', () => {
+        const { editor } = setup();
+        editor.pushHistory('first');
+        editor.pushHistory('second');
+
+        assert.deepStrictEqual(editor.historyEntries, ['first', 'second']);
+    });
+
+    test('loadHistory seeds history for navigation, replacing any existing entries', () => {
+        const { editor } = setup();
+        editor.pushHistory('stale');
+
+        editor.loadHistory(['old1', 'old2', 'old3']);
+
+        assert.deepStrictEqual(editor.historyEntries, ['old1', 'old2', 'old3']);
+        editor.navigateHistory('up');
+        assert.strictEqual(editor.line, 'old3');
+    });
+
+    test('loadHistory caps loaded entries at 100, keeping the most recent', () => {
+        const { editor } = setup();
+        const entries = Array.from({ length: 105 }, (_, i) => `cmd${i}`);
+
+        editor.loadHistory(entries);
+
+        assert.strictEqual(editor.historyEntries.length, 100);
+        assert.deepStrictEqual(editor.historyEntries, entries.slice(-100));
+    });
 });
 
 suite('LineEditor: whole-line operations', () => {

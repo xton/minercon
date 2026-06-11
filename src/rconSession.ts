@@ -20,6 +20,8 @@ import { LineEditor } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
 import { ConnectionManager } from './connectionManager';
 import { Logger, errorMessage } from './logger';
+import { HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historySearch';
+import { HistoryStore } from './historyStore';
 import * as ansi from './ansi';
 
 export interface RconSessionHost {
@@ -50,6 +52,10 @@ export class RconSession {
   }
 
   private lastCommandOutputLines: number = 0;
+
+  private historyStore: HistoryStore;
+  private historySearch: HistorySearchState | null = null;
+  private readonly historySearchLabel = '(reverse-i-search): ';
 
   constructor(
     controller: RconController,
@@ -90,6 +96,11 @@ export class RconSession {
         // the prompt. When that exceeds the terminal width, the line has
         // wrapped onto a later row, so reduce it mod the column count to get
         // the cursor's actual column on that row.
+        const terminalWidth = this.sessionHost.dimensions()?.columns;
+        if (this.historySearch) {
+          const column = this.historySearchLabel.length + this.historySearch.query.length;
+          return terminalWidth ? column % terminalWidth : column;
+        }
         const promptText = this.connectionManager.isReconnecting
           ? ansi.yellow('[reconnecting]') + ' > '
           : this.connectionManager.isConnected
@@ -97,7 +108,6 @@ export class RconSession {
           : ansi.red('[disconnected]') + ' > ';
         const promptWidth = promptText.replace(/\x1b\[[0-9;]*m/g, '').length;
         const column = promptWidth + this.lineEditor.cursor;
-        const terminalWidth = this.sessionHost.dimensions()?.columns;
         return terminalWidth ? column % terminalWidth : column;
       },
     });
@@ -119,6 +129,9 @@ export class RconSession {
         return false;
       },
     });
+
+    this.historyStore = new HistoryStore(sessionHost.cacheDir, host, port, logger);
+    this.lineEditor.loadHistory(this.historyStore.load());
   }
 
   open(): void {
@@ -132,7 +145,7 @@ export class RconSession {
     this.sessionHost.write(ansi.dim('Useful shortcuts:') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Tab: Autocomplete commands') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Ctrl+L: Clear screen  |  Ctrl+C: Cancel input') + '\r\n');
-    this.sessionHost.write('  ' + ansi.dim('Up/Down: Command history  |  Esc: Clear line') + '\r\n\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Up/Down: Command history  |  Ctrl+R: Search history  |  Esc: Clear line') + '\r\n\r\n');
   }
 
   private async detectAndInitialize(): Promise<void> {
@@ -241,6 +254,7 @@ export class RconSession {
       { sequences: ['\x18'],                              handler: () => this.handleCut() },
       { sequences: ['\x16', '\x19'],                      handler: () => this.handlePaste() },
       { sequences: ['\x0c'],                              handler: () => this.handleClearScreen() },
+      { sequences: ['\x12'],                              handler: () => this.startHistorySearch() },
       { sequences: ['\x1b[A', '\x10'],                    handler: () => this.handleHistoryOrSuggestionArrow('up') },
       { sequences: ['\x1b[B', '\x0e'],                    handler: () => this.handleHistoryOrSuggestionArrow('down') },
       { sequences: ['\x1b[5~'],                           handler: () => this.handlePagePrevious() },
@@ -283,6 +297,11 @@ export class RconSession {
 
   handleInput(data: string): void {
     if (this.isExecutingCommand) {
+      return;
+    }
+
+    if (this.historySearch) {
+      this.handleHistorySearchInput(data);
       return;
     }
 
@@ -364,6 +383,79 @@ export class RconSession {
       this.lineEditor.redraw();
     }
     this.lineEditor.navigateHistory(direction);
+  }
+
+  // ── Ctrl+R: reverse history search ──
+  //
+  // While active, keystrokes edit the search query (not the line) and the
+  // matching history entries are shown in the same popup tab-completion uses
+  // (SuggestionDisplay), most-recently-used first. handleInput routes
+  // everything here instead of through keyHandlers until the search ends.
+
+  private startHistorySearch(): void {
+    if (this.suggestionDisplay.isShowing) {
+      this.dispatchToEngine({ kind: 'escape' });
+    }
+    this.historySearch = startHistorySearch(this.lineEditor.historyEntries, this.lineEditor.line);
+    this.renderHistorySearch();
+  }
+
+  private handleHistorySearchInput(data: string): void {
+    switch (data) {
+      case '\x12':                 // Ctrl+R again: cycle to the next-older match
+      case '\x1b[A': case '\x10':  // Up
+        this.cycleHistorySearch(1);
+        return;
+      case '\x1b[B': case '\x0e':  // Down: cycle to the next-newer match
+        this.cycleHistorySearch(-1);
+        return;
+      case '\x1b': case '\x07': case '\x03':  // Escape / Ctrl+G / Ctrl+C: cancel
+        this.cancelHistorySearch();
+        return;
+      case '\r': case '\n':        // Enter: load the match for further editing
+        this.acceptHistorySearch();
+        return;
+      case '\x7f': case '\b':      // Backspace: shrink the query
+        this.setHistorySearchQuery(this.historySearch!.query.slice(0, -1));
+        return;
+      default:
+        if (data.charCodeAt(0) >= 32) {
+          this.setHistorySearchQuery(this.historySearch!.query + data);
+        }
+        return;
+    }
+  }
+
+  private setHistorySearchQuery(query: string): void {
+    this.historySearch = setHistorySearchQuery(this.lineEditor.historyEntries, this.historySearch!, query);
+    this.renderHistorySearch();
+  }
+
+  private cycleHistorySearch(delta: number): void {
+    this.historySearch = cycleHistorySearch(this.historySearch!, delta);
+    this.renderHistorySearch();
+  }
+
+  private acceptHistorySearch(): void {
+    const search = this.historySearch!;
+    const selected = search.items[search.selectedIndex] ?? search.originalLine;
+    this.suggestionDisplay.hide();
+    this.historySearch = null;
+    this.lineEditor.replaceLine(selected);
+  }
+
+  private cancelHistorySearch(): void {
+    const search = this.historySearch!;
+    this.suggestionDisplay.hide();
+    this.historySearch = null;
+    this.lineEditor.replaceLine(search.originalLine);
+  }
+
+  private renderHistorySearch(): void {
+    const search = this.historySearch!;
+    this.sessionHost.write('\r\x1b[K');
+    this.sessionHost.write(ansi.cyan(this.historySearchLabel) + search.query);
+    this.suggestionDisplay.render(search.items, search.selectedIndex, null, '');
   }
 
   private handlePagePrevious(): void {
@@ -502,8 +594,11 @@ export class RconSession {
           }
           this.showPrompt();
         }
+      } else if (command === '/history') {
+        this.showHistory();
       } else {
         this.lineEditor.pushHistory(command);
+        this.historyStore.save(this.lineEditor.historyEntries);
         this.executeCommand(command);
       }
     } else {
@@ -511,10 +606,25 @@ export class RconSession {
     }
   }
 
+  private showHistory(): void {
+    const entries = this.lineEditor.historyEntries;
+    if (entries.length === 0) {
+      this.sessionHost.write(ansi.gray('(no history yet)') + '\r\n');
+    } else {
+      const width = String(entries.length).length;
+      entries.forEach((entry, index) => {
+        const number = String(index + 1).padStart(width, ' ');
+        this.sessionHost.write(ansi.gray(number) + '  ' + entry + '\r\n');
+      });
+    }
+    this.showPrompt();
+  }
+
   private showHelp(): void {
     this.sessionHost.write(ansi.boldCyan('Built-in Commands:') + '\r\n');
     this.sessionHost.write('  ' + ansi.yellow('/help') + ' - Show this help message\r\n');
     this.sessionHost.write('  ' + ansi.yellow('/clear') + ' - Clear the terminal screen\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/history') + ' - Show command history\r\n');
     this.sessionHost.write('  ' + ansi.yellow('/reconnect') + ' - Reconnect to the server\r\n');
     this.sessionHost.write('  ' + ansi.yellow('/disconnect') + ' - Disconnect from the server\r\n');
     this.sessionHost.write('  ' + ansi.yellow('/reload-commands') + ' - Force reload command database from server\r\n');
@@ -524,6 +634,7 @@ export class RconSession {
     this.sessionHost.write(ansi.boldCyan('Keyboard Shortcuts:') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Tab - Autocomplete commands and cycle suggestions') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Up/Down or Ctrl+P/Ctrl+N - Navigate command history') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+R - Reverse search command history') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Ctrl+A/Ctrl+E - Start/end of line  |  Ctrl+B/Ctrl+F - Move by character') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Alt+B/Alt+F - Move by word  |  Ctrl+T - Transpose characters') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Ctrl+K - Kill to end of line  |  Ctrl+U - Kill to start of line') + '\r\n');
