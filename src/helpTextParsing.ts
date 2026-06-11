@@ -304,12 +304,14 @@ export interface AliasRedirect {
 /**
  * Parse a single (already `stripColors`'d and trimmed) help line as a
  * vanilla `minecraft:help` alias redirect of the form `/<alias> -> <target>`
- * (e.g. `/tp -> teleport`, `/minecraft:xp -> experience`). The alias side may
- * carry a `minecraft:` namespace prefix; the target side never does. Returns
- * `null` if `line` doesn't match this shape.
+ * (e.g. `/tp -> teleport`, `/minecraft:xp -> experience`). Either side may
+ * carry a namespace prefix (e.g. `minecraft:`); namespace prefixes are
+ * preserved verbatim on both sides - per "ingest everything", a namespaced
+ * alias like `minecraft:tp` is its own root command, not folded into `tp`.
+ * Returns `null` if `line` doesn't match this shape.
  */
 export function parseAliasRedirect(line: string): AliasRedirect | null {
-  const match = line.match(/^\/(?:minecraft:)?([a-zA-Z0-9_-]+)\s*->\s*([a-zA-Z0-9_-]+)$/);
+  const match = line.match(/^\/([a-zA-Z0-9_:-]+)\s*->\s*([a-zA-Z0-9_:-]+)$/);
   if (!match) {
     return null;
   }

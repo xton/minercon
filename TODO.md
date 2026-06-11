@@ -333,6 +333,47 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   boolean`; when set, `detectAndInitialize` in `rconSession.ts` skips the
   `tabcomplete` probe entirely, writes a "plugin probe disabled" notice, and
   goes straight to `initializeCommands()` (help-crawl). 329 tests passing.
+
+  Follow-up: three issues found while manually exercising `--no-plugin`
+  (2026-06-11) - this is the real experience for every server *without* the
+  RconTabComplete plugin, not just a dev path, so all three were treated as
+  production bugs:
+
+  1. **Namespace parsing**: `minecraft:help` lines for namespaced commands
+     (`minecraft:advancement`, `bukkit:version`, ...) were mis-parsed - `:`
+     was treated as end-of-word, so `/minecraft:advancement (grant|revoke)`
+     was read as command `minecraft`. Per "ingest everything" (do not strip or
+     dedupe namespace prefixes), every namespaced variant - and every
+     namespace that contributes the same command (`help`/`bukkit:help`/
+     `minecraft:help`) - is now its own first-class `rootCommands` entry.
+     Fixed by including `:` in `parseHelpResponse`'s pattern 1/3 char classes
+     (`commandAutocomplete.ts`) and by `parseAliasRedirect` (now in
+     `helpTextParsing.ts`) preserving namespace prefixes on both the alias and
+     target sides of `/<alias> -> <target>` redirects.
+  2. **Performance**: with namespaced commands now ingested too, the no-plugin
+     crawl was fetching near-identical `help <cmd>`/`minecraft:help <cmd>`
+     syntax twice (once for `foo`, once for `minecraft:foo`/`bukkit:foo`).
+     Fixed by loading namespaced root commands first
+     (`commands.sort((a,b) => Number(b.includes(':')) - Number(a.includes(':')))`
+     in `initialize()`), then having `loadCommandDetails` call new
+     `findNamespacedSibling(commandPath)` - if a `*:foo` sibling is already
+     `isComplete`, its `.parameters` are copied directly and the `help foo`/
+     `minecraft:help foo` round trips are skipped entirely.
+  3. **Progress bar / log interleaving**: the CLI logger's `INFO ...` lines
+     (no leading `\r`/clear) were getting appended onto the in-progress
+     `\r\x1b[K`-redrawn progress bar before its next redraw, garbling the
+     output. Fixed with a new `src/terminalOutput.ts`
+     (`createTerminalWriter`/`createCliLogger`, used by `cli.ts`): the writer
+     tracks the terminal's current (redrawable) line, and a log line clears
+     it, prints on its own line, then redraws it underneath - a scrolling log
+     "pane" below the fixed progress bar.
+
+  New/updated tests: `helpTextParsing.test.ts` (`parseAliasRedirect` preserves
+  namespace prefixes), a new "namespaced commands (ingest everything)" suite
+  in `commandAutocomplete.test.ts` (4 tests: distinct root entries, multiple
+  namespaces contributing `help`, alias redirects preserve prefixes, sibling
+  reuse skips re-fetching), and a new "terminal output coordination"/
+  "createCliLogger" suite in `cli.test.ts`. 338 tests passing.
 - [x] Module-overview developer doc with a Mermaid dependency diagram
   (2026-06-11). Done: new `docs/ARCHITECTURE.md` — layered tour of all ~20
   `src/` modules (RCON connection, command knowledge, completion engine,

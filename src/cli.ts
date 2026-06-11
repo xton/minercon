@@ -2,15 +2,14 @@
 // src/cli.ts — standalone CLI entry point for the Minercon terminal.
 // Compiles to out/cli.js; the build script copies it to out/minercon.
 
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { parseArgs } from 'util';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
-import { Logger } from './logger';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize } from './cliConfig';
+import { createTerminalWriter, createCliLogger } from './terminalOutput';
 import * as ansi from './ansi';
 
 // ── Config file ──────────────────────────────────────────────────────────────
@@ -25,30 +24,6 @@ function setRawMode(mode: boolean): void {
   if (process.stdin.isTTY) {
     (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(mode);
   }
-}
-
-// ── Logger ───────────────────────────────────────────────────────────────────
-
-function createCliLogger(logFile?: string): Logger {
-  let stream: fs.WriteStream | undefined;
-  if (logFile) {
-    stream = fs.createWriteStream(logFile, { flags: 'a' });
-  }
-
-  function write(level: string, color: string, msg: string): void {
-    const line = `${ansi.style(color, level)} ${msg}\n`;
-    if (stream) {
-      stream.write(`${level} ${msg}\n`);
-    } else {
-      process.stderr.write(line);
-    }
-  }
-
-  return {
-    error:   (msg) => write('ERROR', ansi.RED, msg),
-    warning: (msg) => write('WARN',  ansi.YELLOW, msg),
-    info:    (msg) => write('INFO',  ansi.CYAN, msg),
-  };
 }
 
 // ── Masked password prompt ────────────────────────────────────────────────────
@@ -134,7 +109,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const logger = createCliLogger((values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE']);
+  const terminal = createTerminalWriter((text) => process.stdout.write(text));
+  const logger = createCliLogger(terminal, (values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE']);
   const savedConfig = readConfig(CONFIG_FILE);
 
   // Resolve host
@@ -208,7 +184,7 @@ async function main(): Promise<void> {
   const cacheDir = CONFIG_DIR;
 
   const sessionHost: RconSessionHost = {
-    write: (text) => process.stdout.write(text),
+    write: (text) => terminal.write(text),
     close: (code) => {
       teardown();
       process.exit(code);

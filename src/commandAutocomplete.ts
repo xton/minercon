@@ -86,8 +86,13 @@ export class CommandAutocomplete {
       onProgress?.(10, 'Fetching root commands...');
       await this.fetchRootCommands(pendingAliases);
 
-      // Load details for each command
-      const commands = Array.from(this.rootCommands.keys());
+      // Load details for each command. Namespaced commands (`minecraft:foo`,
+      // `bukkit:foo`, ...) are loaded first, so that their bare counterparts
+      // (`foo`) can reuse the already-fetched details instead of issuing a
+      // second, near-identical pair of `help`/`minecraft:help` round trips
+      // (see loadCommandDetails).
+      const commands = Array.from(this.rootCommands.keys())
+        .sort((a, b) => Number(b.includes(':')) - Number(a.includes(':')));
       this.logger.info(`Loading details for ${commands.length} commands...`);
 
       for (let i = 0; i < commands.length; i++) {
@@ -223,15 +228,18 @@ export class CommandAutocomplete {
         continue;
       }
 
-      // Try multiple patterns to match commands
-      // Pattern 1: /command (with or without hyphens/underscores)
+      // Try multiple patterns to match commands. Namespace prefixes
+      // (`minecraft:`, `bukkit:`, ...) are part of the command name - per
+      // "ingest everything", `minecraft:advancement` is its own root command,
+      // not just `minecraft`, so `:` is included in every char class below.
+      // Pattern 1: /command (with or without namespace/hyphens/underscores)
       // Pattern 2: command: (with or without hyphens/underscores)
       // Pattern 3: - command or * command
       // Pattern 4: just the command name at start of line
       const patterns = [
-        /^\/([a-zA-Z0-9_-]+)/,           // /command or /command-with-hyphens
+        /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
         /^([a-zA-Z0-9_\:-]+):\s/,            // command: or command-with-hyphens:
-        /^[-*]\s*([a-zA-Z0-9_-]+)/,      // - command or * command
+        /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
         /^([a-zA-Z0-9_\:-]+)\s+[-<\[\(]/   // command followed by args
       ];
 
@@ -307,6 +315,24 @@ export class CommandAutocomplete {
   }
 
   /**
+   * Find an already-loaded root command that's a namespaced form of the bare
+   * `commandPath` (e.g. "minecraft:version" or "bukkit:version" for
+   * "version"), if any. Returns the first match in `rootCommands`'
+   * iteration order, or `undefined` if `commandPath` itself is namespaced or
+   * no such sibling exists yet.
+   */
+  private findNamespacedSibling(commandPath: string): CommandNode | undefined {
+    if (commandPath.includes(':')) { return undefined; }
+
+    for (const [name, node] of this.rootCommands) {
+      if (node.isComplete && name.endsWith(`:${commandPath}`)) {
+        return node;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Merge the two help sources for `commandPath`'s syntax into one
    * `HelpLinesResult`. `mcResponse` (from `minecraft:help <commandPath>`,
    * only present when `supportsMinecraftNamespace`) wins unless it's empty
@@ -354,6 +380,23 @@ export class CommandAutocomplete {
       commandPath = parent.name;
     } else if ('literal' in parent && parent.literal) {
       commandPath = parent.literal;
+    }
+
+    // A bare command (e.g. "version") and its namespaced counterparts (e.g.
+    // "bukkit:version", "minecraft:version") describe the same underlying
+    // command and have identical `help`/`minecraft:help` output - fetching
+    // both is wasteful. Namespaced commands are loaded first (see
+    // initialize()), so if one is already complete, reuse its parameters
+    // instead of repeating the round trips.
+    const sibling = this.findNamespacedSibling(commandPath);
+    if (sibling) {
+      parameters.length = 0;
+      parameters.push(...sibling.parameters);
+      if ('isComplete' in parent) {
+        parent.isComplete = true;
+      }
+      this.logger.info(`Reusing ${sibling.name}'s details for ${commandPath}`);
+      return;
     }
 
     try {

@@ -270,8 +270,8 @@ suite('parseAliasRedirect', () => {
         assert.deepStrictEqual(parseAliasRedirect('/tp -> teleport'), { alias: 'tp', target: 'teleport' });
     });
 
-    test('strips a "minecraft:" namespace prefix from the alias side', () => {
-        assert.deepStrictEqual(parseAliasRedirect('/minecraft:xp -> experience'), { alias: 'xp', target: 'experience' });
+    test('preserves a "minecraft:" namespace prefix on the alias side ("ingest everything")', () => {
+        assert.deepStrictEqual(parseAliasRedirect('/minecraft:xp -> experience'), { alias: 'minecraft:xp', target: 'experience' });
     });
 
     test('returns null for an ordinary syntax line', () => {

@@ -358,4 +358,90 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
       assert.strictEqual(nodes.get('wp'), nodes.get('warp'));
     });
   });
+
+  suite('namespaced commands ("ingest everything")', () => {
+    // Real `minecraft:help` dumps include both a bare command and one or
+    // more namespaced duplicates (e.g. "/version [<plugin>]" and
+    // "/bukkit:version [<plugin>]"), plus alias redirects that themselves
+    // come in both forms ("/tell -> msg" and "/minecraft:tell -> msg"). Per
+    // "do not strip namespace prefixes or ignore namespaced commands", every
+    // one of these becomes its own first-class root command.
+    const responses = new Map<string, string>([
+      ['minecraft:help', [
+        '/advancement (grant|revoke)',
+        '/minecraft:advancement (grant|revoke)',
+        '/msg <targets> <message>',
+        '/minecraft:msg <targets> <message>',
+        '/tell -> msg',
+        '/minecraft:tell -> msg',
+        '/help [<args>]',
+        '/bukkit:help [<args>]',
+        '/minecraft:help [<command>]',
+      ].join('')],
+
+      // Namespaced commands are loaded first - their minecraft:help <path>
+      // responses carry full syntax, so "help <path>" is never even checked.
+      ['minecraft:help minecraft:advancement', '/minecraft:advancement (grant|revoke)'],
+      ['minecraft:help minecraft:msg', '/minecraft:msg <targets> <message>'],
+    ]);
+
+    let calls: string[];
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      calls = [];
+      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
+      await autocomplete.initialize();
+      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('namespaced commands become their own root entries, distinct from their bare counterparts', () => {
+      assert.ok(nodes.has('advancement'));
+      assert.ok(nodes.has('minecraft:advancement'));
+      assert.notStrictEqual(nodes.get('advancement'), nodes.get('minecraft:advancement'));
+
+      assert.ok(nodes.has('msg'));
+      assert.ok(nodes.has('minecraft:msg'));
+      assert.notStrictEqual(nodes.get('msg'), nodes.get('minecraft:msg'));
+    });
+
+    test('multiple namespaces contributing the same command (help/bukkit:help) are all ingested', () => {
+      assert.ok(nodes.has('help'));
+      assert.ok(nodes.has('bukkit:help'));
+      assert.ok(nodes.has('minecraft:help'));
+    });
+
+    test('alias redirects preserve namespace prefixes ("minecraft:tell" and "tell" both alias "msg")', () => {
+      assert.strictEqual(nodes.get('tell'), nodes.get('msg'));
+      assert.strictEqual(nodes.get('minecraft:tell'), nodes.get('msg'));
+    });
+
+    test('bare commands reuse their namespaced sibling\'s parameters without re-fetching', () => {
+      const advancement = nodes.get('advancement')!.parameters;
+      const minecraftAdvancement = nodes.get('minecraft:advancement')!.parameters;
+      assert.deepStrictEqual(advancement, minecraftAdvancement);
+      assert.deepStrictEqual(advancement, [
+        {
+          type: ParameterType.CHOICE_LIST,
+          optional: false,
+          position: 0,
+          choices: [
+            { type: ParameterType.LITERAL, literal: 'grant', optional: false, position: 0 },
+            { type: ParameterType.LITERAL, literal: 'revoke', optional: false, position: 1 },
+          ],
+        },
+      ]);
+
+      assert.deepStrictEqual(nodes.get('msg')!.parameters, nodes.get('minecraft:msg')!.parameters);
+      assert.deepStrictEqual(nodes.get('msg')!.parameters, [
+        { type: ParameterType.ARGUMENT, name: 'targets', optional: false, position: 0 },
+        { type: ParameterType.ARGUMENT, name: 'message', optional: false, position: 1 },
+      ]);
+
+      assert.ok(!calls.includes('help advancement'), '"advancement" should not be fetched - reused from "minecraft:advancement"');
+      assert.ok(!calls.includes('minecraft:help advancement'), '"advancement" should not be fetched - reused from "minecraft:advancement"');
+      assert.ok(!calls.includes('help msg'), '"msg" should not be fetched - reused from "minecraft:msg"');
+      assert.ok(!calls.includes('minecraft:help msg'), '"msg" should not be fetched - reused from "minecraft:msg"');
+    });
+  });
 });

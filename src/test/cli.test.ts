@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, parseHistorySize, resolveHistorySize } from '../cliConfig';
+import { createTerminalWriter, createCliLogger } from '../terminalOutput';
 
 suite('CLI config', () => {
     let tmpDir: string;
@@ -172,5 +173,77 @@ suite('CLI resolveHistorySize', () => {
 
     test('returns an error for an invalid value', () => {
         assert.deepStrictEqual(resolveHistorySize('not-a-number', undefined, {}), { error: 'invalid history size: not-a-number' });
+    });
+});
+
+suite('terminal output coordination', () => {
+    let written: string[];
+    let terminal: ReturnType<typeof createTerminalWriter>;
+
+    setup(() => {
+        written = [];
+        terminal = createTerminalWriter((text) => written.push(text));
+    });
+
+    test('a log line is written as-is when there is no in-progress redraw', () => {
+        terminal.writeLogLine('INFO hello\n');
+        assert.deepStrictEqual(written, ['INFO hello\n']);
+    });
+
+    test('a log line clears and redraws an in-progress status line (progress bar) beneath it', () => {
+        // Simulates rconSession's progress bar: '\r\x1b[K' followed by the bar text, with no trailing newline.
+        terminal.write('\r\x1b[K');
+        terminal.write('[####] 50%');
+
+        terminal.writeLogLine('INFO loading minecraft:advancement\n');
+
+        assert.deepStrictEqual(written, [
+            '\r\x1b[K',
+            '[####] 50%',
+            '\r\x1b[KINFO loading minecraft:advancement\n\x1b[K[####] 50%',
+        ]);
+    });
+
+    test('a completed line (ending in \\n) is not redrawn by a later log line', () => {
+        terminal.write('Connected to host:port\r\n\r\n');
+
+        terminal.writeLogLine('INFO ready\n');
+
+        assert.deepStrictEqual(written, [
+            'Connected to host:port\r\n\r\n',
+            'INFO ready\n',
+        ]);
+    });
+});
+
+suite('createCliLogger', () => {
+    test('writes colored, level-prefixed lines through the terminal writer by default', () => {
+        const written: string[] = [];
+        const terminal = createTerminalWriter((text) => written.push(text));
+        const logger = createCliLogger(terminal);
+
+        logger.info('hello');
+
+        assert.strictEqual(written.length, 1);
+        assert.match(written[0], /INFO/);
+        assert.match(written[0], /hello\n$/);
+    });
+
+    test('writes plain lines to a log file instead, when given', async () => {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-cli-logfile-test-'));
+        const logFile = path.join(tmpDir, 'cli.log');
+        try {
+            const written: string[] = [];
+            const terminal = createTerminalWriter((text) => written.push(text));
+            const logger = createCliLogger(terminal, logFile);
+
+            logger.warning('careful');
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            assert.deepStrictEqual(written, []);
+            assert.strictEqual(fs.readFileSync(logFile, 'utf8'), 'WARN careful\n');
+        } finally {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        }
     });
 });
