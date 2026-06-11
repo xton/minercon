@@ -156,10 +156,12 @@ rough edges left over from earlier refactors.
   parameters` and `// NO MORE subcommands Map!` from `CommandNode`
   (`commandAutocomplete.ts`), and the `// Now includes SUBCOMMAND` /
   `// NEW: ...` comments on `ParameterType`/`Parameter` (`helpTextParsing.ts`)
-- [ ] Duplicated reconnect-state-reset (`reconnectAttempts = 0; reconnectDelay =
+- [x] Duplicated reconnect-state-reset (`reconnectAttempts = 0; reconnectDelay =
   2000;` plus clearing `reconnectTimeout`) repeated across
   `reportConnectionLost()`, `manualReconnect()`, and both the success and
-  max-attempts paths of `attemptReconnect()` in `connectionManager.ts`
+  max-attempts paths of `attemptReconnect()` — extracted into a private
+  `resetReconnectState()` helper, called from all four
+  (`connectionManager.ts`)
 - [ ] Misc smells: the lone `var` in `commandAutocomplete.ts`'s
   `fetchPaginatedCommand` (~line 121), an unused `catch (error)` binding in
   `loadSubcommandDetails` (~line 455), and the 4x-repeated
@@ -188,6 +190,14 @@ were extracted into a shared `loadSubcommandsIn(path, parameters)` helper in
 `helpTextParsing.ts` now imports `stripColors` from `ansi.ts` for its own
 parsing, `commandAutocomplete.ts`/`rconSession.ts` import the color helpers
 from `ansi.ts` directly, and their unit tests moved to a new `ansi.test.ts`.
+`tsc`/`eslint` clean, 263 tests passing.*
+
+---
+*Last updated: 2026-06-10 — §8's item 8 is done: the duplicated
+reconnect-state-reset (`reconnectAttempts = 0; reconnectDelay = 2000;` plus
+clearing/nulling `reconnectTimeout`) in `reportConnectionLost()`,
+`manualReconnect()`, and both branches of `attemptReconnect()` was extracted
+into a private `resetReconnectState()` helper in `connectionManager.ts`.
 `tsc`/`eslint` clean, 263 tests passing.*
 
 ## How to record a live RCON fixture

@@ -61,6 +61,17 @@ export class ConnectionManager {
     return this._isReconnecting;
   }
 
+  /** Resets the reconnect-attempt counter, backoff delay, and any pending reconnect timer back to their initial state. */
+  private resetReconnectState(): void {
+    this.reconnectAttempts = 0;
+    this.reconnectDelay = 2000;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+  }
+
   /**
    * Records that an in-flight command discovered the connection is gone, and
    * schedules an auto-reconnect attempt shortly after. The "Connection
@@ -69,12 +80,7 @@ export class ConnectionManager {
    */
   reportConnectionLost(): void {
     this._isConnected = false;
-    this.reconnectAttempts = 0;
-    this.reconnectDelay = 2000;
-
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-    }
+    this.resetReconnectState();
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
@@ -111,8 +117,7 @@ export class ConnectionManager {
       return;
     }
 
-    this.reconnectAttempts = 0;
-    this.reconnectDelay = 2000;
+    this.resetReconnectState();
     await this.attemptReconnect();
   }
 
@@ -147,14 +152,7 @@ export class ConnectionManager {
 
       this._isConnected = true;
       this._isReconnecting = false;
-      this.reconnectAttempts = 0;
-      this.reconnectDelay = 2000;
-
-      // Clear any pending timeout
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = null;
-      }
+      this.resetReconnectState();
 
       this.host.write(ansi.boldGreen('✓ Reconnected successfully!') + '\r\n\r\n');
 
@@ -183,14 +181,7 @@ export class ConnectionManager {
         // Max attempts reached
         this.host.write(ansi.boldRed('✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.') + '\r\n');
         this.host.write('Type ' + ansi.yellow('/reconnect') + ' to try again.\r\n\r\n');
-        this.reconnectAttempts = 0;
-        this.reconnectDelay = 2000;
-
-        // Clear timeout
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-          this.reconnectTimeout = null;
-        }
+        this.resetReconnectState();
 
         this.host.showPrompt();
       }
