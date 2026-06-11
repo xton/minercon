@@ -122,8 +122,12 @@ rough edges left over from earlier refactors.
 - [ ] `commandAliases`/`rawHelp` round-tripped through `CommandTreeCache` but
   `commandAliases.set()` is never called (always empty) and `rawHelp` is never
   read outside the cache round-trip/tests (`commandAutocomplete.ts`)
-- [ ] Duplicated subcommand-recursion blocks in `loadCommandDetails` (~line 371)
-  and `loadSubcommandDetails` (~line 439) in `commandAutocomplete.ts`
+- [x] Duplicated subcommand-recursion blocks in `loadCommandDetails` and
+  `loadSubcommandDetails` — both walked a `Parameter[]` looking for
+  not-yet-complete `SUBCOMMAND`s (direct, or nested inside `CHOICE_LIST`
+  choices) and recursed into `loadSubcommandDetails`; extracted into a shared
+  `loadSubcommandsIn(path, parameters)` helper, called from both
+  (`commandAutocomplete.ts`)
 - [x] Scattered raw ANSI SGR escape codes (`\x1b[NNm`) — extracted to a new
   `src/ansi.ts` module: named constants (`RESET`, `DIM`, `REVERSE`/`REVERSE_OFF`,
   `HIDDEN`, `RED`/`GREEN`/`YELLOW`/`CYAN`/`GRAY`/`BRIGHT_YELLOW`,
@@ -164,6 +168,12 @@ module replaced all 121 raw `\x1b[NNm` SGR escapes across `rconSession.ts`,
 `suggestionDisplay.ts`, `lineEditor.ts`, `connectionManager.ts`, and `cli.ts`
 with named constants and color-wrap helpers. `tsc`/`eslint` clean, 263 tests
 passing.*
+
+---
+*Last updated: 2026-06-10 — §8's item 4 is done: the duplicated
+subcommand-recursion blocks in `loadCommandDetails` and `loadSubcommandDetails`
+were extracted into a shared `loadSubcommandsIn(path, parameters)` helper in
+`commandAutocomplete.ts`. `tsc`/`eslint` clean, 263 tests passing.*
 
 ## How to record a live RCON fixture
 

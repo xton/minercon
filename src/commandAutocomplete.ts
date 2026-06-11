@@ -367,19 +367,7 @@ export class CommandAutocomplete {
       }
 
       // Recursively load details for all subcommands
-      for (const param of parameters) {
-        if (param.type === ParameterType.CHOICE_LIST && param.choices) {
-          // For choice lists, recurse into each subcommand choice
-          for (const choice of param.choices) {
-            if (choice.type === ParameterType.SUBCOMMAND && !choice.isComplete) {
-              await this.loadSubcommandDetails(commandPath, choice);
-            }
-          }
-        } else if (param.type === ParameterType.SUBCOMMAND && !param.isComplete) {
-          // Direct subcommand parameter
-          await this.loadSubcommandDetails(commandPath, param);
-        }
-      }
+      await this.loadSubcommandsIn(commandPath, parameters);
 
     } catch (error) {
       this.logger.error(`Error loading details for ${commandPath}: ${error}`);
@@ -436,24 +424,33 @@ export class CommandAutocomplete {
 
       // Recursively load any nested subcommands
       if (subcommand.members) {
-        for (const member of subcommand.members) {
-          if (member.type === ParameterType.CHOICE_LIST && member.choices) {
-            // For choice lists, recurse into each subcommand choice
-            for (const choice of member.choices) {
-              if (choice.type === ParameterType.SUBCOMMAND && !choice.isComplete) {
-                await this.loadSubcommandDetails(fullPath, choice);
-              }
-            }
-          } else if (member.type === ParameterType.SUBCOMMAND && !member.isComplete) {
-            // Direct subcommand parameter
-            await this.loadSubcommandDetails(fullPath, member);
-          }
-        }
+        await this.loadSubcommandsIn(fullPath, subcommand.members);
       }
 
     } catch (error) {
       // Subcommand might not have its own help, that's okay
       subcommand.isComplete = true;
+    }
+  }
+
+  /**
+   * Recursively loads details for any not-yet-complete SUBCOMMAND parameters
+   * in `parameters` — both direct ones and those nested inside CHOICE_LIST
+   * choices — fetching each via `loadSubcommandDetails(path, ...)`.
+   */
+  private async loadSubcommandsIn(path: string, parameters: Parameter[]): Promise<void> {
+    for (const param of parameters) {
+      if (param.type === ParameterType.CHOICE_LIST && param.choices) {
+        // For choice lists, recurse into each subcommand choice
+        for (const choice of param.choices) {
+          if (choice.type === ParameterType.SUBCOMMAND && !choice.isComplete) {
+            await this.loadSubcommandDetails(path, choice);
+          }
+        }
+      } else if (param.type === ParameterType.SUBCOMMAND && !param.isComplete) {
+        // Direct subcommand parameter
+        await this.loadSubcommandDetails(path, param);
+      }
     }
   }
 
