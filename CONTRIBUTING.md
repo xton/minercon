@@ -81,46 +81,51 @@ minercon/
 
 ## Architecture Overview
 
+The interactive session lives in `RconSession` (`src/rconSession.ts`), which
+is host-agnostic — `RconTerminal` (VS Code) and `cli.ts` (standalone CLI) are
+both thin adapters over it. For a full module-by-module tour and a dependency
+diagram, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ### RCON Protocol Layer
-The custom `RconProtocol` class handles:
-- Socket communication
+The `RconProtocol`/`RconController` classes (`rconProtocol.ts`/`rconClient.ts`)
+handle:
+- Socket communication, connect/auth/reconnect
 - Packet encoding/decoding
 - Fragmentation handling
 - Response accumulation
 
-### Terminal Interface
-The `RconTerminal` class provides:
-- Pseudoterminal implementation
-- Command history
-- Autocomplete UI
-- ANSI color support
+### Session Orchestration
+The `RconSession` class (`rconSession.ts`) provides:
+- Key dispatch and built-in `/` commands
+- Command history (`/history`, Ctrl+R search)
+- Autocomplete orchestration via the completion engine
+- Reconnect handling
 
 ### Command Autocomplete
-The `CommandAutocomplete` class manages:
-- Command discovery via help
-- Parameter parsing
-- Suggestion generation
-- Cache management
+The `CommandAutocomplete` class (`commandAutocomplete.ts`) manages:
+- Command discovery via `/help` crawling (`helpTextParsing.ts`)
+- Suggestion generation (`commandSuggestions.ts`)
+- Cache management (`commandTreeCache.ts`)
 
 ## Common Development Tasks
 
 ### Adding a New Built-in Command
-Edit `rconTerminal.ts` in the `handleEnter()` method:
+Edit `rconSession.ts` in the `handleEnter()` method:
 ```typescript
 } else if (command === '/your-command') {
     this.handleYourCommand();
 }
 ```
+Don't forget to add it to the `/help` listing too.
 
 ### Modifying Autocomplete Behavior
-See `commandAutocomplete.ts`:
-- `parseHelpResponse()` - How help output is parsed
+See `helpTextParsing.ts` and `commandSuggestions.ts`:
+- `parseHelpLines()` / `parseCommandHelp()` - How help output is parsed
 - `getSuggestions()` - How suggestions are generated
 
 ### Changing Terminal Rendering
-Edit `rconTerminal.ts`:
-- `showSuggestionList()` - Suggestion display
-- `showArgumentsInList()` - Argument hints
+Edit `suggestionDisplay.ts`:
+- `SuggestionDisplay.render()` - Suggestion list and argument-hint display
 
 ## Debugging Tips
 

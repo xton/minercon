@@ -333,6 +333,17 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   boolean`; when set, `detectAndInitialize` in `rconSession.ts` skips the
   `tabcomplete` probe entirely, writes a "plugin probe disabled" notice, and
   goes straight to `initializeCommands()` (help-crawl). 329 tests passing.
+- [x] Module-overview developer doc with a Mermaid dependency diagram
+  (2026-06-11). Done: new `docs/ARCHITECTURE.md` — layered tour of all ~20
+  `src/` modules (RCON connection, command knowledge, completion engine,
+  terminal UI, orchestration, host adapters, shared utilities), a `graph TD`
+  Mermaid diagram of module dependencies (dashed edges for the type-only
+  `commandSuggestions`/`commandTreeCache` ↔ `commandAutocomplete` cluster),
+  and a "Where to start reading" section tracing common flows (keypress,
+  reconnect, no-plugin Tab, Ctrl+R). `CONTRIBUTING.md`'s stale "Architecture
+  Overview" section updated to match current module names
+  (`RconSession`/`rconSession.ts` instead of the pre-mega-module-split
+  `RconTerminal`) and now points to the new doc.
 
 ## How to record a live RCON fixture
 
