@@ -73,16 +73,23 @@ export class LocalCompletionsBackend implements CompletionsBackend {
 
   async fetchUsage(line: string): Promise<string> {
     const result = this.autocomplete.getSuggestions(line);
-    const commandName = (line.match(/^(\/?\w+)/) || [])[1] || '';
+    // Everything up to the first space, including any "namespace:" prefix -
+    // \S rather than \w so "minecraft:clear" isn't truncated to "minecraft".
+    const commandName = (line.match(/^\/?(\S+)/) || [])[1] || '';
 
     if (commandName !== this.cachedCommand) {
       this.cachedCommand = commandName;
       this.cachedHelp = null;
     }
 
-    if (result.argumentHelp) {
+    if (result.argumentHelp !== undefined) {
+      // Match the shape of the server's `cmdusage` response (e.g. "clear
+      // [<targets>] [<item>]") - formatArgumentHint derives the command
+      // prefix from this leading commandPath, so it must be present even
+      // when there's no argument help (e.g. "reload").
+      const usage = result.argumentHelp ? `${result.commandPath} ${result.argumentHelp}` : result.commandPath!;
       if (this.cachedHelp === null) {
-        this.cachedHelp = result.argumentHelp;
+        this.cachedHelp = usage;
       }
       return this.cachedHelp;
     }

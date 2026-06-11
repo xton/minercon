@@ -55,22 +55,39 @@ suite('commandSuggestions: getSuggestions', () => {
         const commands = tree(node('gamemode', [arg('mode'), arg('target', true)]));
         const result = getSuggestions(commands, true, '/gamemode ');
         assert.strictEqual(result.argumentHelp, '<mode> [<target>]');
+        assert.strictEqual(result.commandPath, 'gamemode');
         assert.deepStrictEqual(result.suggestions, []); // ARGUMENT positions never suggest values
     });
 
-    test('typed argument values are skipped over to reach the next position', () => {
+    test('typed argument values are skipped over to reach the next position, and are not part of commandPath', () => {
         const commands = tree(node('gamemode', [arg('mode'), arg('target', true)]));
         const result = getSuggestions(commands, true, '/gamemode survival ');
         assert.strictEqual(result.argumentHelp, '[<target>]');
+        assert.strictEqual(result.commandPath, 'gamemode');
         assert.deepStrictEqual(result.suggestions, []);
     });
 
-    test('matching literal tokens are navigated past sequentially', () => {
+    test('matching literal tokens are navigated past sequentially, and become part of commandPath', () => {
         const commands = tree(node('mvp', [literal('modify'), arg('property'), arg('value')]));
 
         const afterLiteral = getSuggestions(commands, true, '/mvp modify ');
         assert.strictEqual(afterLiteral.argumentHelp, '<property> <value>');
+        assert.strictEqual(afterLiteral.commandPath, 'mvp modify');
         assert.deepStrictEqual(afterLiteral.suggestions, []);
+    });
+
+    test('a namespaced command name is preserved verbatim in commandPath', () => {
+        const commands = tree(node('minecraft:clear', [arg('targets', true), arg('item', true)]));
+        const result = getSuggestions(commands, true, '/minecraft:clear ');
+        assert.strictEqual(result.argumentHelp, '[<targets>] [<item>]');
+        assert.strictEqual(result.commandPath, 'minecraft:clear');
+    });
+
+    test('a command with no parameters has an empty argumentHelp but a non-empty commandPath', () => {
+        const commands = tree(node('reload', []));
+        const result = getSuggestions(commands, true, '/reload ');
+        assert.strictEqual(result.argumentHelp, '');
+        assert.strictEqual(result.commandPath, 'reload');
     });
 
     test('partially-typed literal tokens are suggested by prefix', () => {

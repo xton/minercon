@@ -11,6 +11,16 @@ import { CommandNode } from './commandAutocomplete';
 export interface SuggestionResult {
   suggestions: string[];
   argumentHelp?: string;
+  /**
+   * The command path consumed so far - the root command name plus any
+   * literal/subcommand tokens navigated past (e.g. "mvp config" for
+   * `/mvp config <property> <value>`), but NOT argument values the user has
+   * typed (e.g. a player name). Paired with `argumentHelp`, this reconstructs
+   * a usage line in the same shape as the server's `cmdusage` response (e.g.
+   * "clear [<targets>] [<item>]"), which `formatArgumentHint` expects.
+   * Present iff `argumentHelp` is.
+   */
+  commandPath?: string;
 }
 
 /**
@@ -52,6 +62,10 @@ export function getSuggestions(
   let currentParameters = rootNode.parameters;
   let paramIndex = 1; // Start after the command name
 
+  // The command path consumed so far (root command + any literal/subcommand
+  // tokens navigated past) - see SuggestionResult.commandPath.
+  const pathParts = [commandName];
+
   // Navigate through completed parts (not including what we're currently typing)
   const partsToNavigate = hasTrailingSpace ? parts.length : parts.length - 1;
 
@@ -91,7 +105,9 @@ export function getSuggestions(
     }
 
     paramIndex++;
-    if (!navigated) {
+    if (navigated) {
+      pathParts.push(currentPart);
+    } else {
       // It's an argument value, skip to next position
       currentParameters = currentParameters.slice(1);
     }
@@ -99,6 +115,7 @@ export function getSuggestions(
 
   // Build argument help from current position
   const argumentHelp = buildArgumentHelp(currentParameters);
+  const commandPath = pathParts.join(' ');
 
   // Generate suggestions based on current position
   let suggestions: string[] = [];
@@ -112,7 +129,7 @@ export function getSuggestions(
     suggestions = generateSuggestionsForCurrentPart(currentParameters, currentPart);
   }
 
-  return { suggestions, argumentHelp };
+  return { suggestions, argumentHelp, commandPath };
 }
 
 /**

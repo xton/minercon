@@ -374,6 +374,27 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   namespaces contributing `help`, alias redirects preserve prefixes, sibling
   reuse skips re-fetching), and a new "terminal output coordination"/
   "createCliLogger" suite in `cli.test.ts`. 338 tests passing.
+
+  Follow-up (2026-06-11): the argument-hint line was missing its command name
+  in `--no-plugin` mode (e.g. `/ [<targets>] [<item>]` instead of `/clear
+  [<targets>] [<item>]`, for `/clear`, `/minecraft:clear`, and every other
+  command). Cause: `LocalCompletionsBackend.fetchUsage`
+  (`completionsBackend.ts`) returned just `argumentHelp` (e.g. "[<targets>]
+  [<item>]"), whereas the server's `cmdusage` (plugin mode) echoes the full
+  `<command> <args...>` line - `formatArgumentHint` derives the `/command`
+  prefix from that leading text, so without it the prefix collapsed to bare
+  `/`. Fixed by having `getSuggestions` (`commandSuggestions.ts`) track and
+  return the consumed command path (root command name plus any
+  literal/subcommand tokens navigated past, e.g. "mvp modify" - excluding
+  argument *values* like a typed player name) as a new `commandPath` field,
+  and `fetchUsage` now returns `` `${commandPath} ${argumentHelp}`.trim() ``
+  (or just `commandPath` for zero-argument commands like `reload`). Also fixed
+  the `commandName` cache-key regex (`\w+` → `\S+`) so namespaced commands
+  don't collide on their `minecraft:`/`bukkit:` prefix. New tests:
+  `commandSuggestions.test.ts` (`commandPath` for plain/namespaced/subcommand/
+  zero-arg commands) and new `completionsBackend.test.ts` (6 tests covering
+  the bug, namespace preservation, zero-arg commands, cache stickiness, and
+  cache reset on command change). 346 tests passing.
 - [x] Module-overview developer doc with a Mermaid dependency diagram
   (2026-06-11). Done: new `docs/ARCHITECTURE.md` — layered tour of all ~20
   `src/` modules (RCON connection, command knowledge, completion engine,
