@@ -6,7 +6,7 @@
 // mega-module split — see lineEditor.ts / suggestionDisplay.ts for the sibling
 // extractions and their rationale.
 //
-// `RconTerminal` keeps `detectAndInitialize`/`initializeCommands` (they're
+// `RconSession` keeps `detectAndInitialize`/`initializeCommands` (they're
 // about the autocomplete command-tree and `pluginMode`, a different concern
 // that happens to run at similar times) but reads connection status and reaches
 // the live controller through this class, and is notified via `onReconnected`
@@ -14,6 +14,7 @@
 
 import { RconController } from './rconClient';
 import { Logger, errorMessage } from './logger';
+import * as ansi from './ansi';
 
 export interface ConnectionManagerHost {
   write(text: string): void;
@@ -99,13 +100,13 @@ export class ConnectionManager {
 
     this._isConnected = false;
     this._isReconnecting = false;
-    this.host.write('Connection closed. Type \x1b[33m/reconnect\x1b[0m to reconnect.\r\n\r\n');
+    this.host.write('Connection closed. Type ' + ansi.yellow('/reconnect') + ' to reconnect.\r\n\r\n');
     this.host.showPrompt();
   }
 
   async manualReconnect(): Promise<void> {
     if (this._isReconnecting) {
-      this.host.write('\x1b[33mAlready reconnecting...\x1b[0m\r\n\r\n');
+      this.host.write(ansi.yellow('Already reconnecting...') + '\r\n\r\n');
       this.host.showPrompt();
       return;
     }
@@ -121,7 +122,7 @@ export class ConnectionManager {
     }
 
     if (this._isConnected) {
-      this.host.write('\x1b[32mAlready connected.\x1b[0m\r\n\r\n');
+      this.host.write(ansi.green('Already connected.') + '\r\n\r\n');
       this.host.showPrompt();
       return;
     }
@@ -130,7 +131,7 @@ export class ConnectionManager {
     this.reconnectAttempts++;
 
     const attemptText = this.reconnectAttempts > 1 ? ` (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})` : '';
-    this.host.write('\x1b[33mReconnecting to ' + this.serverHost + ':' + this.serverPort + attemptText + '...\x1b[0m\r\n');
+    this.host.write(ansi.yellow('Reconnecting to ' + this.serverHost + ':' + this.serverPort + attemptText + '...') + '\r\n');
 
     try {
       // Disconnect existing controller
@@ -155,7 +156,7 @@ export class ConnectionManager {
         this.reconnectTimeout = null;
       }
 
-      this.host.write('\x1b[1;32m✓ Reconnected successfully!\x1b[0m\r\n\r\n');
+      this.host.write(ansi.boldGreen('✓ Reconnected successfully!') + '\r\n\r\n');
 
       // Reload commands after reconnection
       this.host.onReconnected();
@@ -163,8 +164,8 @@ export class ConnectionManager {
       this._isReconnecting = false;
 
       if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.host.write('\x1b[31m✗ Connection failed: ' + errorMessage(err) + '\x1b[0m\r\n');
-        this.host.write('\x1b[33mRetrying in ' + (this.reconnectDelay / 1000) + ' seconds...\x1b[0m\r\n');
+        this.host.write(ansi.red('✗ Connection failed: ' + errorMessage(err)) + '\r\n');
+        this.host.write(ansi.yellow('Retrying in ' + (this.reconnectDelay / 1000) + ' seconds...') + '\r\n');
 
         // Clear any existing timeout
         if (this.reconnectTimeout) {
@@ -180,8 +181,8 @@ export class ConnectionManager {
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 32000);
       } else {
         // Max attempts reached
-        this.host.write('\x1b[1;31m✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.\x1b[0m\r\n');
-        this.host.write('Type \x1b[33m/reconnect\x1b[0m to try again.\r\n\r\n');
+        this.host.write(ansi.boldRed('✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.') + '\r\n');
+        this.host.write('Type ' + ansi.yellow('/reconnect') + ' to try again.\r\n\r\n');
         this.reconnectAttempts = 0;
         this.reconnectDelay = 2000;
 
@@ -196,7 +197,7 @@ export class ConnectionManager {
     }
   }
 
-  /** Tears down any pending reconnect timer and disconnects the controller — used by `RconTerminal.close()`. */
+  /** Tears down any pending reconnect timer and disconnects the controller — used by `RconSession.close()`. */
   dispose(): void {
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);

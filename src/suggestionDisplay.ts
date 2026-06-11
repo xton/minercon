@@ -6,13 +6,14 @@
 // split — see lineEditor.ts for the sibling extraction and its rationale.
 //
 // This class has no notion of the completionEngine or of dispatching events —
-// RconTerminal remains the single place that talks to the engine (it's the
+// RconSession remains the single place that talks to the engine (it's the
 // one piece deliberately kept pure/central). Callers that need to know
 // *whether* an action makes sense (page forward/back) ask the read-only
 // `...Index()` queries, which return `number | null` — `null` meaning
 // "nothing to do" — and decide for themselves whether to dispatch.
 
 import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
+import * as ansi from './ansi';
 
 export interface SuggestionDisplayHost {
   write(text: string): void;
@@ -145,13 +146,11 @@ export class SuggestionDisplay {
       completedText = currentLine.substring(0, lastSpaceIndex + 1);
     }
 
-    const concealedText = '\x1b[8m'; // Concealed/hidden text
-    const resetColor = '\x1b[0m';
-    const prefix = completedText ? concealedText + completedText + resetColor : '';
+    const prefix = completedText ? ansi.hidden(completedText) : '';
 
     // Show indicator if there are items above the visible window
     if (this.visibleStart > 0) {
-      lines.push(prefix + '\x1b[90m  ▲ (' + this.visibleStart + ' more above)\x1b[0m');
+      lines.push(prefix + ansi.gray('  ▲ (' + this.visibleStart + ' more above)'));
     }
 
     // Show visible suggestions in vertical list
@@ -164,23 +163,25 @@ export class SuggestionDisplay {
       // Show selection indicator and item
       if (i === this.suggestionIndex) {
         // Yellow for selected item with arrow indicator
-        lines.push(prefix + '\x1b[93m→ ' + this.currentSuggestions[i] + '\x1b[0m');
+        lines.push(prefix + ansi.brightYellow('→ ' + this.currentSuggestions[i]));
       } else {
         // Gray for other items with space for alignment
-        lines.push(prefix + '\x1b[90m  ' + this.currentSuggestions[i] + '\x1b[0m');
+        lines.push(prefix + ansi.gray('  ' + this.currentSuggestions[i]));
       }
     }
 
     // Show indicator if there are items below the visible window
     if (visibleEnd < this.currentSuggestions.length) {
       const remaining = this.currentSuggestions.length - visibleEnd;
-      lines.push(prefix + '\x1b[90m  ▼ (' + remaining + ' more below)\x1b[0m');
+      lines.push(prefix + ansi.gray('  ▼ (' + remaining + ' more below)'));
     }
 
     // Show current position and page indicator at bottom
     lines.push(
-      prefix + '\x1b[90m  [' + (this.suggestionIndex + 1) + '/' + this.currentSuggestions.length + '] ' +
-      'Page ' + this.currentPage + '/' + this.totalPages + '\x1b[0m'
+      prefix + ansi.gray(
+        '  [' + (this.suggestionIndex + 1) + '/' + this.currentSuggestions.length + '] ' +
+        'Page ' + this.currentPage + '/' + this.totalPages
+      )
     );
 
     return lines;
@@ -204,16 +205,12 @@ export class SuggestionDisplay {
    * already-computed structure.
    */
   private buildArgumentHintLines(display: ArgumentHintDisplay): string[] {
-    const resetColor = '\x1b[0m';
-    const grayColor = '\x1b[90m';
-    const boldWhite = '\x1b[1;97m';
-
-    let usageLine = '  ' + grayColor + display.commandPrefixText + resetColor;
+    let usageLine = '  ' + ansi.gray(display.commandPrefixText);
     for (let i = 0; i < display.tokens.length; i++) {
       usageLine += ' ';
       usageLine += (i === display.currentArgIndex)
-        ? boldWhite + display.tokens[i] + resetColor
-        : grayColor + display.tokens[i] + resetColor;
+        ? ansi.boldBrightWhite(display.tokens[i])
+        : ansi.gray(display.tokens[i]);
     }
 
     return [usageLine];

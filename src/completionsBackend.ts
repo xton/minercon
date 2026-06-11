@@ -8,7 +8,7 @@
 //
 // Driving both modes through the same backend interface (and therefore the
 // same engine, the same dispatch plumbing, and the same rendering) is what
-// lets RconTerminal be entirely mode-blind — "which backend" is decided once,
+// lets RconSession be entirely mode-blind — "which backend" is decided once,
 // not branched on at every call site.
 
 import { RconController } from './rconClient';

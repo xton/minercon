@@ -104,6 +104,67 @@ total), plus all 32 functional tests across vanilla/paper/spigot/fabric, pass.
 `tsc`/`eslint` clean. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for the full
 empirical writeup.*
 
+## 8. Fresh code-review pass (2026-06-10)
+
+A follow-up pass over `src/*.ts` looking for code smells, confusing names, and
+rough edges left over from earlier refactors.
+
+- [x] Stale "RconTerminal is the orchestrator/shell" doc comments — `RconTerminal`
+  was split into `RconSession` (host-agnostic core) and a thin VS Code adapter,
+  but several comments still described `RconTerminal` as the live orchestrator.
+  Updated to say `RconSession` in: `connectionManager.ts` (header, and the
+  `dispose()` doc comment — "used by `RconSession.close()`"), `completionEngine.ts`,
+  `completionsBackend.ts`, `suggestionDisplay.ts`, `logger.ts` (class list), and
+  `rconClient.ts` (`RconSession.executeCommand` reference). Left the genuinely
+  historical "Pulled out of RconTerminal as part of the mega-module split" notes
+  in `connectionManager.ts`/`suggestionDisplay.ts` as-is — those describe history
+  accurately
+- [ ] `commandAliases`/`rawHelp` round-tripped through `CommandTreeCache` but
+  `commandAliases.set()` is never called (always empty) and `rawHelp` is never
+  read outside the cache round-trip/tests (`commandAutocomplete.ts`)
+- [ ] Duplicated subcommand-recursion blocks in `loadCommandDetails` (~line 371)
+  and `loadSubcommandDetails` (~line 439) in `commandAutocomplete.ts`
+- [x] Scattered raw ANSI SGR escape codes (`\x1b[NNm`) — extracted to a new
+  `src/ansi.ts` module: named constants (`RESET`, `DIM`, `REVERSE`/`REVERSE_OFF`,
+  `HIDDEN`, `RED`/`GREEN`/`YELLOW`/`CYAN`/`GRAY`/`BRIGHT_YELLOW`,
+  `BOLD_RED`/`BOLD_GREEN`/`BOLD_CYAN`/`BOLD_BRIGHT_WHITE`) plus a `style()` helper
+  and per-color wrap functions (`yellow()`, `red()`, `dim()`, ...). Applied across
+  every `\x1b[NNm` occurrence in `rconSession.ts`, `suggestionDisplay.ts`,
+  `lineEditor.ts`, `connectionManager.ts`, and `cli.ts` (121 occurrences total).
+  Deliberately left untouched: `helpTextParsing.ts`'s separate Minecraft
+  `§`-color-code-to-ANSI translation table (item below), the terminal-input
+  key-binding escape sequences in `rconSession.ts`'s `buildKeyHandlers` (e.g.
+  `\x1b[A`, `\x1b[1;5C` — these identify *incoming* key presses, not output
+  styling), and cursor-movement/erase codes (`\x1b[2K`, `\x1b[K`, `\x1b[NA`,
+  `\x1b[NC`, `\x1b[2J\x1b[H`) which are a different category from SGR styling
+- [ ] `helpTextParsing.ts` mixes the Minecraft `§`-color-code-to-ANSI translation
+  table (`formatMinecraftColors`/`stripColors`, used by `rconSession.ts` for
+  command output) with Bukkit/Brigadier help-page parsing
+  (`looksLikeBukkitHelpPage`, `extractBukkitUsageLines`,
+  `splitConcatenatedHelpLines`, `parseHelpLines`, ...) — candidate for a split
+- [x] Stale "migration note" comments — removed `// Now includes subcommands as
+  parameters` and `// NO MORE subcommands Map!` from `CommandNode`
+  (`commandAutocomplete.ts`), and the `// Now includes SUBCOMMAND` /
+  `// NEW: ...` comments on `ParameterType`/`Parameter` (`helpTextParsing.ts`)
+- [ ] Duplicated reconnect-state-reset (`reconnectAttempts = 0; reconnectDelay =
+  2000;` plus clearing `reconnectTimeout`) repeated across
+  `reportConnectionLost()`, `manualReconnect()`, and both the success and
+  max-attempts paths of `attemptReconnect()` in `connectionManager.ts`
+- [ ] Misc smells: the lone `var` in `commandAutocomplete.ts`'s
+  `fetchPaginatedCommand` (~line 121), an unused `catch (error)` binding in
+  `loadSubcommandDetails` (~line 455), and the 4x-repeated
+  `(process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void })`
+  cast in `cli.ts`
+
+---
+*Last updated: 2026-06-10 — §8's items 3, 5, and 7 (renamed here to match this
+list's order) are done: stale `RconTerminal`-as-orchestrator comments now say
+`RconSession`, stale migration-note comments are gone, and a new `src/ansi.ts`
+module replaced all 121 raw `\x1b[NNm` SGR escapes across `rconSession.ts`,
+`suggestionDisplay.ts`, `lineEditor.ts`, `connectionManager.ts`, and `cli.ts`
+with named constants and color-wrap helpers. `tsc`/`eslint` clean, 263 tests
+passing.*
+
 ## How to record a live RCON fixture
 
 ```

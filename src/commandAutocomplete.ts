@@ -20,8 +20,7 @@ import { getSuggestions, SuggestionResult } from './commandSuggestions';
 
 export interface CommandNode {
   name: string;
-  parameters: Parameter[];         // Now includes subcommands as parameters
-  // NO MORE subcommands Map!
+  parameters: Parameter[];         // includes subcommands as parameters
   rawHelp?: string;
   isComplete: boolean;
 }

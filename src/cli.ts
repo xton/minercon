@@ -11,6 +11,7 @@ import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { Logger } from './logger';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword } from './cliConfig';
+import * as ansi from './ansi';
 
 // ── Config file ──────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ function createCliLogger(logFile?: string): Logger {
   }
 
   function write(level: string, color: string, msg: string): void {
-    const line = `${color}${level}\x1b[0m ${msg}\n`;
+    const line = `${ansi.style(color, level)} ${msg}\n`;
     if (stream) {
       stream.write(`${level} ${msg}\n`);
     } else {
@@ -35,9 +36,9 @@ function createCliLogger(logFile?: string): Logger {
   }
 
   return {
-    error:   (msg) => write('ERROR', '\x1b[31m', msg),
-    warning: (msg) => write('WARN',  '\x1b[33m', msg),
-    info:    (msg) => write('INFO',  '\x1b[36m', msg),
+    error:   (msg) => write('ERROR', ansi.RED, msg),
+    warning: (msg) => write('WARN',  ansi.YELLOW, msg),
+    info:    (msg) => write('INFO',  ansi.CYAN, msg),
   };
 }
 
@@ -165,18 +166,18 @@ async function main(): Promise<void> {
 
   if (values.save) {
     writeConfig(CONFIG_FILE, { host, port });
-    process.stderr.write(`\x1b[36mINFO\x1b[0m Saved ${host}:${port} to ${CONFIG_FILE}\n`);
+    process.stderr.write(`${ansi.cyan('INFO')} Saved ${host}:${port} to ${CONFIG_FILE}\n`);
   }
 
   // ── Establish connection ──────────────────────────────────────────────────
 
   const controller = new RconController(host, port, password, logger);
-  process.stderr.write(`\x1b[36mINFO\x1b[0m Connecting to ${host}:${port}...\n`);
+  process.stderr.write(`${ansi.cyan('INFO')} Connecting to ${host}:${port}...\n`);
 
   try {
     await controller.connect();
   } catch (err) {
-    process.stderr.write(`\x1b[31mERROR\x1b[0m Failed to connect: ${err}\n`);
+    process.stderr.write(`${ansi.red('ERROR')} Failed to connect: ${err}\n`);
     process.exit(1);
   }
 
@@ -243,6 +244,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  process.stderr.write(`\x1b[31mERROR\x1b[0m ${err}\n`);
+  process.stderr.write(`${ansi.red('ERROR')} ${err}\n`);
   process.exit(1);
 });

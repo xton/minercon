@@ -4,7 +4,7 @@
 //
 // This module knows nothing about VS Code, sockets, or wall-clock time — it's
 // a reducer: (Machine, Event) -> { machine: Machine, effects: Effect[] }. The
-// shell (RconTerminal) feeds it terminal events plus its own clock, and
+// shell (RconSession) feeds it terminal events plus its own clock, and
 // executes the Effects it returns (RCON sends, ANSI writes, applying text to
 // the line). That makes every async race and timing rule in here something
 // you can drive with a scripted event sequence in a test, rather than

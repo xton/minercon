@@ -13,6 +13,8 @@
 // through the small `LineEditorHost` interface below, so it stays testable
 // and reusable independent of `vscode.Pseudoterminal` plumbing.
 
+import * as ansi from './ansi';
+
 export interface LineEditorHost {
   /** Write raw text/ANSI escape sequences to the terminal. */
   write(text: string): void;
@@ -424,7 +426,7 @@ export class LineEditor {
       if (start > 0) {
         this.host.write(this.currentLine.slice(0, start));
       }
-      this.host.write('\x1b[7m' + this.currentLine.slice(start, end) + '\x1b[27m');
+      this.host.write(ansi.REVERSE + this.currentLine.slice(start, end) + ansi.REVERSE_OFF);
       if (end < this.currentLine.length) {
         this.host.write(this.currentLine.slice(end));
       }

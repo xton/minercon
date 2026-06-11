@@ -21,6 +21,7 @@ import { LineEditor } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
 import { ConnectionManager } from './connectionManager';
 import { Logger, errorMessage } from './logger';
+import * as ansi from './ansi';
 
 export interface RconSessionHost {
   write(text: string): void;
@@ -88,10 +89,10 @@ export class RconSession {
         // Visual width of the prompt (ANSI codes stripped) plus cursor position
         // within the typed text — gives the terminal column the cursor sits on.
         const promptText = this.connectionManager.isReconnecting
-          ? '\x1b[33m[reconnecting]\x1b[0m > '
+          ? ansi.yellow('[reconnecting]') + ' > '
           : this.connectionManager.isConnected
-          ? '\x1b[32m>\x1b[0m '
-          : '\x1b[31m[disconnected]\x1b[0m > ';
+          ? ansi.green('>') + ' '
+          : ansi.red('[disconnected]') + ' > ';
         const promptWidth = promptText.replace(/\x1b\[[0-9;]*m/g, '').length;
         return promptWidth + this.lineEditor.cursor;
       },
@@ -100,9 +101,9 @@ export class RconSession {
     this.lineEditor = new LineEditor({
       write: (text) => sessionHost.write(text),
       promptText: () => {
-        if (this.connectionManager.isReconnecting) { return '\x1b[33m[reconnecting]\x1b[0m > '; }
-        if (!this.connectionManager.isConnected) { return '\x1b[31m[disconnected]\x1b[0m > '; }
-        return '\x1b[32m>\x1b[0m ';
+        if (this.connectionManager.isReconnecting) { return ansi.yellow('[reconnecting]') + ' > '; }
+        if (!this.connectionManager.isConnected) { return ansi.red('[disconnected]') + ' > '; }
+        return ansi.green('>') + ' ';
       },
       onLineChanged: (line) => this.dispatchToEngine({ kind: 'lineChanged', line }),
       beforeLineCleared: () => this.suggestionDisplay.clear(),
@@ -122,12 +123,12 @@ export class RconSession {
   }
 
   private writeWelcomeBanner(): void {
-    this.sessionHost.write('\x1b[1;36mMinercon Terminal\x1b[0m\r\n');
-    this.sessionHost.write('Connected to \x1b[33m' + this.serverHost + ':' + this.serverPort + '\x1b[0m\r\n\r\n');
-    this.sessionHost.write('\x1b[2mUseful shortcuts:\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mTab: Autocomplete commands\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+L: Clear screen  |  Ctrl+C: Cancel input\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mUp/Down: Command history  |  Esc: Clear line\x1b[0m\r\n\r\n');
+    this.sessionHost.write(ansi.boldCyan('Minercon Terminal') + '\r\n');
+    this.sessionHost.write('Connected to ' + ansi.yellow(this.serverHost + ':' + this.serverPort) + '\r\n\r\n');
+    this.sessionHost.write(ansi.dim('Useful shortcuts:') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Tab: Autocomplete commands') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+L: Clear screen  |  Ctrl+C: Cancel input') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Up/Down: Command history  |  Esc: Clear line') + '\r\n\r\n');
   }
 
   private async detectAndInitialize(): Promise<void> {
@@ -136,7 +137,7 @@ export class RconSession {
       if (response && response.includes('Returns tab completions for a partial command string')) {
         this.pluginMode = true;
         this.autocomplete.isReady = true;
-        this.sessionHost.write('\r\n\x1b[32m✓ Server tab-complete plugin detected — using server-side completions\x1b[0m\r\n\r\n');
+        this.sessionHost.write('\r\n' + ansi.green('✓ Server tab-complete plugin detected — using server-side completions') + '\r\n\r\n');
         this.showPrompt();
         return;
       }
@@ -154,14 +155,14 @@ export class RconSession {
       const reason = forceRefresh ? 'Forcing refresh...' :
                      !cacheInfo.exists ? 'No cache found...' :
                      'Cache outdated...';
-      this.sessionHost.write('\r\n\x1b[33mLoading server commands (' + reason + ')\x1b[0m\r\n');
+      this.sessionHost.write('\r\n' + ansi.yellow('Loading server commands (' + reason + ')') + '\r\n');
     }
 
     try {
       await this.autocomplete.initialize((progress, message) => {
         if (willLoadFromCache) {
           if (progress >= 100) {
-            this.sessionHost.write('\r\n\x1b[32m✓ Commands loaded from cache!\x1b[0m\r\n\r\n');
+            this.sessionHost.write('\r\n' + ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
             this.showPrompt();
           }
           return;
@@ -173,11 +174,11 @@ export class RconSession {
         const filled = Math.round((progress / 100) * barWidth);
         const empty = barWidth - filled;
 
-        let progressBar = '\x1b[33m[';
+        let progressBar = '[';
         progressBar += '█'.repeat(filled);
         progressBar += '░'.repeat(empty);
         progressBar += '] ';
-        progressBar += Math.round(progress) + '%\x1b[0m';
+        progressBar += Math.round(progress) + '%';
 
         let phase = '';
         if (message.includes('Fetching')) {
@@ -188,17 +189,17 @@ export class RconSession {
           phase = ' Complete!';
         }
 
-        this.sessionHost.write(progressBar + '\x1b[90m' + phase + '\x1b[0m');
+        this.sessionHost.write(ansi.yellow(progressBar) + ansi.gray(phase));
 
         if (progress >= 100) {
           this.sessionHost.write('\r\n');
-          this.sessionHost.write('\x1b[32m✓ Commands loaded and cached!\x1b[0m\r\n\r\n');
+          this.sessionHost.write(ansi.green('✓ Commands loaded and cached!') + '\r\n\r\n');
           this.showPrompt();
         }
       }, forceRefresh);
     } catch (error) {
-      this.sessionHost.write('\r\n\x1b[31m✗ Failed to load commands: ' + error + '\x1b[0m\r\n');
-      this.sessionHost.write('\x1b[33mAutocomplete will be limited.\x1b[0m\r\n\r\n');
+      this.sessionHost.write('\r\n' + ansi.red('✗ Failed to load commands: ' + error) + '\r\n');
+      this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
       this.showPrompt();
     }
   }
@@ -213,11 +214,11 @@ export class RconSession {
     }
 
     if (this.connectionManager.isReconnecting) {
-      this.sessionHost.write('\x1b[33m[reconnecting]\x1b[0m > ');
+      this.sessionHost.write(ansi.yellow('[reconnecting]') + ' > ');
     } else if (!this.connectionManager.isConnected) {
-      this.sessionHost.write('\x1b[31m[disconnected]\x1b[0m > ');
+      this.sessionHost.write(ansi.red('[disconnected]') + ' > ');
     } else {
-      this.sessionHost.write('\x1b[32m>\x1b[0m ');
+      this.sessionHost.write(ansi.green('>') + ' ');
     }
   }
 
@@ -468,32 +469,32 @@ export class RconSession {
         this.showHelp();
       } else if (command === '/reload-commands' || command === '/refresh-commands') {
         if (this.pluginMode) {
-          this.sessionHost.write('\x1b[33mUsing server-side tab completion — no command cache to reload.\x1b[0m\r\n\r\n');
+          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no command cache to reload.') + '\r\n\r\n');
           this.showPrompt();
         } else {
           this.initializeCommands(true);
         }
       } else if (command === '/clear-cache') {
         if (this.pluginMode) {
-          this.sessionHost.write('\x1b[33mUsing server-side tab completion — no cache.\x1b[0m\r\n\r\n');
+          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no cache.') + '\r\n\r\n');
           this.showPrompt();
         } else {
           this.autocomplete.clearCache();
-          this.sessionHost.write('\x1b[33mCommand cache cleared.\x1b[0m\r\n\r\n');
+          this.sessionHost.write(ansi.yellow('Command cache cleared.') + '\r\n\r\n');
           this.showPrompt();
         }
       } else if (command === '/cache-info') {
         if (this.pluginMode) {
-          this.sessionHost.write('\x1b[33mUsing server-side tab completion — no cache.\x1b[0m\r\n\r\n');
+          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no cache.') + '\r\n\r\n');
           this.showPrompt();
         } else {
           const info = this.autocomplete.getCacheInfo();
           if (info.exists) {
-            this.sessionHost.write('\x1b[36mCache Status:\x1b[0m\r\n');
+            this.sessionHost.write(ansi.cyan('Cache Status:') + '\r\n');
             this.sessionHost.write('  Age: ' + info.age + '\r\n');
             this.sessionHost.write('  Last updated: ' + info.lastUpdated?.toLocaleString() + '\r\n\r\n');
           } else {
-            this.sessionHost.write('\x1b[33mNo cache found.\x1b[0m\r\n\r\n');
+            this.sessionHost.write(ansi.yellow('No cache found.') + '\r\n\r\n');
           }
           this.showPrompt();
         }
@@ -507,37 +508,37 @@ export class RconSession {
   }
 
   private showHelp(): void {
-    this.sessionHost.write('\x1b[1;36mBuilt-in Commands:\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[33m/help\x1b[0m - Show this help message\r\n');
-    this.sessionHost.write('  \x1b[33m/clear\x1b[0m - Clear the terminal screen\r\n');
-    this.sessionHost.write('  \x1b[33m/reconnect\x1b[0m - Reconnect to the server\r\n');
-    this.sessionHost.write('  \x1b[33m/disconnect\x1b[0m - Disconnect from the server\r\n');
-    this.sessionHost.write('  \x1b[33m/reload-commands\x1b[0m - Force reload command database from server\r\n');
-    this.sessionHost.write('  \x1b[33m/clear-cache\x1b[0m - Clear cached command database\r\n');
-    this.sessionHost.write('  \x1b[33m/cache-info\x1b[0m - Show command cache information\r\n');
+    this.sessionHost.write(ansi.boldCyan('Built-in Commands:') + '\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/help') + ' - Show this help message\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/clear') + ' - Clear the terminal screen\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/reconnect') + ' - Reconnect to the server\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/disconnect') + ' - Disconnect from the server\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/reload-commands') + ' - Force reload command database from server\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/clear-cache') + ' - Clear cached command database\r\n');
+    this.sessionHost.write('  ' + ansi.yellow('/cache-info') + ' - Show command cache information\r\n');
     this.sessionHost.write('\r\n');
-    this.sessionHost.write('\x1b[1;36mKeyboard Shortcuts:\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mTab - Autocomplete commands and cycle suggestions\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mUp/Down or Ctrl+P/Ctrl+N - Navigate command history\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+A/Ctrl+E - Start/end of line  |  Ctrl+B/Ctrl+F - Move by character\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mAlt+B/Alt+F - Move by word  |  Ctrl+T - Transpose characters\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+K - Kill to end of line  |  Ctrl+U - Kill to start of line\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+W/Alt+Backspace - Delete word back  |  Alt+D - Delete word forward\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+Y - Yank  |  Ctrl+L - Clear screen  |  Esc - Clear current line\x1b[0m\r\n');
-    this.sessionHost.write('  \x1b[2mCtrl+C - Cancel input  |  Ctrl+D - Disconnect\x1b[0m\r\n');
+    this.sessionHost.write(ansi.boldCyan('Keyboard Shortcuts:') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Tab - Autocomplete commands and cycle suggestions') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Up/Down or Ctrl+P/Ctrl+N - Navigate command history') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+A/Ctrl+E - Start/end of line  |  Ctrl+B/Ctrl+F - Move by character') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Alt+B/Alt+F - Move by word  |  Ctrl+T - Transpose characters') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+K - Kill to end of line  |  Ctrl+U - Kill to start of line') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+W/Alt+Backspace - Delete word back  |  Alt+D - Delete word forward') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+Y - Yank  |  Ctrl+L - Clear screen  |  Esc - Clear current line') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Ctrl+C - Cancel input  |  Ctrl+D - Disconnect') + '\r\n');
     this.sessionHost.write('\r\n');
     this.showPrompt();
   }
 
   private async executeCommand(command: string): Promise<void> {
     if (this.connectionManager.isReconnecting) {
-      this.sessionHost.write('\x1b[33mReconnecting... Please wait.\x1b[0m\r\n\r\n');
+      this.sessionHost.write(ansi.yellow('Reconnecting... Please wait.') + '\r\n\r\n');
       this.showPrompt();
       return;
     }
 
     if (!this.connectionManager.isConnected) {
-      this.sessionHost.write('\x1b[31mNot connected. Type \x1b[33m/reconnect\x1b[0m to reconnect.\x1b[0m\r\n\r\n');
+      this.sessionHost.write(ansi.red('Not connected. Type ' + ansi.yellow('/reconnect') + ' to reconnect.') + '\r\n\r\n');
       this.showPrompt();
       return;
     }
@@ -557,7 +558,7 @@ export class RconSession {
           this.sessionHost.write(`${line}\r\n`);
         });
       } else {
-        this.sessionHost.write('\x1b[2m(no response)\x1b[0m\r\n');
+        this.sessionHost.write(ansi.dim('(no response)') + '\r\n');
         outputLineCount = 1;
       }
 
@@ -566,7 +567,7 @@ export class RconSession {
 
     } catch (err) {
       const message = errorMessage(err);
-      this.sessionHost.write(`\x1b[31mError: ${message}\x1b[0m\r\n`);
+      this.sessionHost.write(ansi.red(`Error: ${message}`) + '\r\n');
       outputLineCount = 1;
 
       const errorMsg = message.toLowerCase();
@@ -578,7 +579,7 @@ export class RconSession {
           errorMsg.includes('socket') ||
           errorMsg.includes('timeout')) {
 
-        this.sessionHost.write('\x1b[33m⚠  Connection lost. Auto-reconnecting...\x1b[0m\r\n');
+        this.sessionHost.write(ansi.yellow('⚠  Connection lost. Auto-reconnecting...') + '\r\n');
         outputLineCount++;
 
         this.connectionManager.reportConnectionLost();

@@ -11,7 +11,7 @@ export class RconController {
 
   // Serializes every `send` through this controller — completions/usage
   // fetches and actual command execution all funnel through here (see
-  // RconCompletionsBackend, CommandAutocomplete, RconTerminal.executeCommand).
+  // RconCompletionsBackend, CommandAutocomplete, RconSession.executeCommand).
   // Without this, e.g. hitting Enter on "/mvp list" while its argument-hint
   // "cmdusage mvp list" round trip is still in flight fires two concurrent
   // RCON exchanges over the same socket — which the server doesn't tolerate

@@ -31,12 +31,12 @@ const COLOR_MAP: { [key: string]: string } = {
   '§k': '\x1b[5m',     // Obfuscated (blinking)
 };
 
-// Parameter types - Now includes SUBCOMMAND
+// Parameter types
 export enum ParameterType {
   ARGUMENT = 'argument',          // <n>
   LITERAL = 'literal',            // literal text
   CHOICE_LIST = 'choice_list',    // (option1|option2)
-  SUBCOMMAND = 'subcommand'        // NEW: subcommand with its own members
+  SUBCOMMAND = 'subcommand'        // subcommand with its own members
 }
 
 export interface Parameter {
@@ -46,9 +46,9 @@ export interface Parameter {
   optional: boolean;
   choices?: Parameter[];           // For choice lists
   position: number;                // Order in parameter list
-  members?: Parameter[];           // NEW: For subcommand's parameters
-  isComplete?: boolean;            // NEW: For subcommands - whether we've fetched all its members
-  rawHelp?: string;                // NEW: For subcommands - the raw help text
+  members?: Parameter[];           // For subcommand's parameters
+  isComplete?: boolean;            // For subcommands - whether we've fetched all its members
+  rawHelp?: string;                // For subcommands - the raw help text
 }
 
 /**
