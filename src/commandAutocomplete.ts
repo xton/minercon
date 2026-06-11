@@ -7,11 +7,13 @@ import {
   Parameter,
   HelpLinesResult,
   parseHelpLines,
+  parseAliasRedirect,
   splitConcatenatedHelpLines,
   looksLikeBukkitHelpPage,
   isGenericArgsPlaceholder,
   isUnsupportedNamespaceError,
   extractBukkitUsageLines,
+  extractBukkitAliases,
   buildParameterStructureFromVariants,
 } from './helpTextParsing';
 import { CommandTreeCache } from './commandTreeCache';
@@ -20,13 +22,11 @@ import { getSuggestions, SuggestionResult } from './commandSuggestions';
 export interface CommandNode {
   name: string;
   parameters: Parameter[];         // includes subcommands as parameters
-  rawHelp?: string;
   isComplete: boolean;
 }
 
 export class CommandAutocomplete {
   private rootCommands: Map<string, CommandNode> = new Map();
-  private commandAliases: Map<string, string> = new Map();
   private isLoading: boolean = false;
   private loadingProgress: number = 0;
   private totalCommands: number = 0;
@@ -70,17 +70,21 @@ export class CommandAutocomplete {
       if (!forceRefresh) {
         const loaded = this.cache.load();
         if (loaded) {
-          this.rootCommands = loaded.rootCommands;
-          this.commandAliases = loaded.commandAliases;
+          this.rootCommands = loaded;
           onProgress?.(100, 'Commands loaded from cache');
           this.isReady = true;
           return;
         }
       }
 
+      // Aliases discovered while crawling (`<alias> -> <target>` redirect
+      // lines, Bukkit `Aliases:` lines) - resolved into rootCommands once
+      // their targets have been fully loaded, below.
+      const pendingAliases = new Map<string, string>();
+
       // Fetch commands from server
       onProgress?.(10, 'Fetching root commands...');
-      await this.fetchRootCommands();
+      await this.fetchRootCommands(pendingAliases);
 
       // Load details for each command
       const commands = Array.from(this.rootCommands.keys());
@@ -92,15 +96,24 @@ export class CommandAutocomplete {
 
         const node = this.rootCommands.get(commands[i])!;
         try {
-          await this.loadCommandDetails(node, node.parameters);
+          await this.loadCommandDetails(node, node.parameters, pendingAliases);
         } catch (error) {
           this.logger.warning(`Warning: Failed to load details for ${commands[i]}: ${error}`);
           // Continue with other commands even if one fails
         }
       }
 
+      // Expand aliases into rootCommands now that their targets are fully
+      // loaded, sharing the target's node so alias entries stay in sync.
+      for (const [alias, target] of pendingAliases) {
+        const targetNode = this.rootCommands.get(target);
+        if (targetNode && !this.rootCommands.has(alias)) {
+          this.rootCommands.set(alias, targetNode);
+        }
+      }
+
       // Save to cache
-      this.cache.save(this.rootCommands, this.commandAliases);
+      this.cache.save(this.rootCommands);
       onProgress?.(100, 'Commands loaded and cached');
       this.isReady = true;
 
@@ -138,7 +151,7 @@ export class CommandAutocomplete {
   /**
    * Fetch root commands from server
    */
-  private async fetchRootCommands(): Promise<void> {
+  private async fetchRootCommands(pendingAliases: Map<string, string>): Promise<void> {
     try {
       this.logger.info('Fetching root commands with /help...');
       const mcResponse = await this.sendCommand('minecraft:help');
@@ -155,7 +168,7 @@ export class CommandAutocomplete {
         if (!response || response.length === 0) {
           throw new Error('Unable to fetch command list from server');
         }
-        this.parseHelpResponse(response);
+        this.parseHelpResponse(response, pendingAliases);
         return;
       }
 
@@ -168,12 +181,12 @@ export class CommandAutocomplete {
         const altResponse = await this.sendCommand('?');
         if (altResponse && altResponse.length > 0) {
           this.logger.info('Using alternative help command (?)');
-          this.parseHelpResponse(altResponse);
+          this.parseHelpResponse(altResponse, pendingAliases);
         } else {
           throw new Error('Unable to fetch command list from server');
         }
       } else {
-        this.parseHelpResponse(mcResponse);
+        this.parseHelpResponse(mcResponse, pendingAliases);
       }
 
     } catch (error) {
@@ -187,7 +200,7 @@ export class CommandAutocomplete {
   /**
    * Parse help response to extract commands
    */
-  private parseHelpResponse(response: string): void {
+  private parseHelpResponse(response: string, pendingAliases: Map<string, string>): void {
     const modified = splitConcatenatedHelpLines(response);
     const lines = modified.split('\n');
     this.logger.info(`Processing ${lines.length} lines from help response`);
@@ -198,6 +211,15 @@ export class CommandAutocomplete {
 
       // Skip empty lines and headers
       if (!stripped || stripped.startsWith('---') || stripped.startsWith('===')) {
+        continue;
+      }
+
+      // Alias redirect lines (`/tp -> teleport`) describe an alias, not a
+      // root command in their own right - record the mapping and move on
+      // rather than creating a wasteful incomplete rootCommands entry.
+      const redirect = parseAliasRedirect(stripped);
+      if (redirect) {
+        pendingAliases.set(redirect.alias, redirect.target);
         continue;
       }
 
@@ -228,7 +250,6 @@ export class CommandAutocomplete {
           this.rootCommands.set(commandName, {
             name: commandName,
             parameters: [],
-            rawHelp: line,
             isComplete: false
           });
           commandCount++;
@@ -277,7 +298,6 @@ export class CommandAutocomplete {
         this.rootCommands.set(cmd, {
           name: cmd,
           parameters: [],
-          rawHelp: `/${cmd}`,
           isComplete: false
         });
       }
@@ -327,7 +347,7 @@ export class CommandAutocomplete {
   /**
    * Load details for a command or subcommand
    */
-  private async loadCommandDetails(parent: CommandNode | Parameter, parameters: Parameter[]): Promise<void> {
+  private async loadCommandDetails(parent: CommandNode | Parameter, parameters: Parameter[], pendingAliases: Map<string, string>): Promise<void> {
     // Build the command path
     let commandPath = '';
     if ('name' in parent && parent.name) {
@@ -349,6 +369,13 @@ export class CommandAutocomplete {
       }
 
       this.logger.info(`Loading details for command: ${commandPath}`);
+
+      // Bukkit `/help <command>` pages list aliases on their own
+      // `Aliases: a, b, c` line - returns [] for Brigadier blobs, which
+      // have no such line.
+      for (const alias of extractBukkitAliases(helpResponse)) {
+        pendingAliases.set(alias, commandPath);
+      }
 
       const { variants, direct } = this.mergeHelpSources(helpResponse, mcResponse, commandPath);
       parameters.length = 0;

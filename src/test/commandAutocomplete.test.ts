@@ -276,6 +276,48 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
     test('plugins ends up with no parameters (bare command, no Usage args)', () => {
       assert.deepStrictEqual(nodes.get('plugins')!.parameters, []);
     });
+
+    test('Bukkit "Aliases:" lines are expanded into rootCommands, sharing the canonical node', () => {
+      assert.strictEqual(nodes.get('ver'), nodes.get('version'));
+      assert.strictEqual(nodes.get('about'), nodes.get('version'));
+      assert.strictEqual(nodes.get('rl'), nodes.get('reload'));
+      assert.strictEqual(nodes.get('pl'), nodes.get('plugins'));
+    });
+  });
+
+  suite('vanilla "minecraft:help" alias redirects ("/tp -> teleport")', () => {
+    // Real Paper 1.21.4 minecraft:help responses include redirect lines for
+    // vanilla command aliases (see src/test/fixtures/rcon/xton.ts), e.g.
+    // "/tp -> teleport". These describe an alias of "teleport", not a
+    // separate root command.
+    const responses = new Map<string, string>([
+      ['minecraft:help', [
+        '/teleport <targets>',
+        '/tp -> teleport',
+      ].join('')],
+      ['help teleport', GENERIC_VANILLA_HELP('teleport')],
+      ['minecraft:help teleport', '/teleport <targets>'],
+    ]);
+
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      const autocomplete = createAutocomplete(fakeSendCommand(responses, []));
+      await autocomplete.initialize();
+      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('"/tp -> teleport" does not create its own incomplete rootCommands entry', () => {
+      assert.ok(nodes.has('teleport'));
+      assert.ok(nodes.has('tp'));
+    });
+
+    test('"tp" shares teleport\'s fully-loaded node', () => {
+      assert.strictEqual(nodes.get('tp'), nodes.get('teleport'));
+      assert.deepStrictEqual(nodes.get('tp')!.parameters, [
+        { type: ParameterType.ARGUMENT, name: 'targets', optional: false, position: 0 },
+      ]);
+    });
   });
 
   suite('Bukkit "Usage:" line with a literal "/" inside brackets (e.g. "[home/away]")', () => {
@@ -310,6 +352,10 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
         { type: ParameterType.ARGUMENT, name: 'name', optional: false, position: 0 },
         { type: ParameterType.LITERAL, literal: 'home/away', optional: true, position: 1 },
       ]);
+    });
+
+    test('"Aliases: wp" is expanded into rootCommands, sharing the warp node', () => {
+      assert.strictEqual(nodes.get('wp'), nodes.get('warp'));
     });
   });
 });

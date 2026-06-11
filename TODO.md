@@ -119,9 +119,19 @@ rough edges left over from earlier refactors.
   historical "Pulled out of RconTerminal as part of the mega-module split" notes
   in `connectionManager.ts`/`suggestionDisplay.ts` as-is — those describe history
   accurately
-- [ ] `commandAliases`/`rawHelp` round-tripped through `CommandTreeCache` but
+- [x] `commandAliases`/`rawHelp` round-tripped through `CommandTreeCache` but
   `commandAliases.set()` is never called (always empty) and `rawHelp` is never
-  read outside the cache round-trip/tests (`commandAutocomplete.ts`)
+  read outside the cache round-trip/tests (`commandAutocomplete.ts`) — removed
+  `rawHelp` entirely (`Parameter`, `CommandNode`, `SerializedCommandNode`,
+  cache serialize/deserialize); replaced the dead `commandAliases` map with
+  alias *expansion*: new `parseAliasRedirect`/`extractBukkitAliases` helpers
+  (`helpTextParsing.ts`) recognize `<alias> -> <target>` redirect lines (real
+  vanilla `minecraft:help` aliases, e.g. `/tp -> teleport`) and Bukkit
+  `Aliases: a, b, c` lines, collected into a transient `pendingAliases` map
+  during the crawl and, once their targets are fully loaded, expanded directly
+  into `rootCommands` (alias name → the same `CommandNode` as its target) —
+  no separate alias map to thread through `getSuggestions` or persist.
+  `cacheVersion` bumped to `2.2.0` for the schema change
 - [x] Duplicated subcommand-recursion blocks in `loadCommandDetails` and
   `loadSubcommandDetails` — both walked a `Parameter[]` looking for
   not-yet-complete `SUBCOMMAND`s (direct, or nested inside `CHOICE_LIST`
@@ -167,6 +177,8 @@ rough edges left over from earlier refactors.
   `loadSubcommandDetails` (~line 455), and the 4x-repeated
   `(process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void })`
   cast in `cli.ts`
+- [ ] Dead `dimensions()` plumbing — `RconSession.open`'s `_dimensions`
+  parameter is accepted but never used (`rconSession.ts`)
 
 ---
 *Last updated: 2026-06-10 — §8's items 3, 5, and 7 (renamed here to match this
@@ -199,6 +211,20 @@ clearing/nulling `reconnectTimeout`) in `reportConnectionLost()`,
 `manualReconnect()`, and both branches of `attemptReconnect()` was extracted
 into a private `resetReconnectState()` helper in `connectionManager.ts`.
 `tsc`/`eslint` clean, 263 tests passing.*
+
+---
+*Last updated: 2026-06-10 — §8's item 2 is done: removed the dead `rawHelp`
+field everywhere (`Parameter`, `CommandNode`, `SerializedCommandNode`, cache
+serialize/deserialize) and replaced the always-empty `commandAliases` map with
+in-place alias expansion. New `parseAliasRedirect`/`extractBukkitAliases`
+helpers in `helpTextParsing.ts` recognize `<alias> -> <target>` redirect lines
+(confirmed present in real `minecraft:help` output, e.g. `/tp -> teleport`)
+and Bukkit `Aliases: a, b, c` lines; `commandAutocomplete.ts` collects these
+into a transient `pendingAliases` map during the crawl and, once targets are
+fully loaded, sets `rootCommands.set(alias, targetNode)` so alias names are
+just additional keys sharing the canonical command's node — `getSuggestions`
+and the cache format are unchanged. `cacheVersion` bumped to `2.2.0`.
+`tsc`/`eslint` clean, 275 tests passing.*
 
 ## How to record a live RCON fixture
 

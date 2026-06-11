@@ -14,7 +14,6 @@ import { CommandNode } from './commandAutocomplete';
 interface SerializedCommandNode {
   name: string;
   parameters: Parameter[];
-  rawHelp?: string;
   isComplete: boolean;
 }
 
@@ -23,18 +22,12 @@ interface CommandCache {
   serverIdentifier: string;
   lastUpdated: string;
   commands: { [key: string]: SerializedCommandNode };
-  aliases: { [key: string]: string };
-}
-
-export interface LoadedCommandTree {
-  rootCommands: Map<string, CommandNode>;
-  commandAliases: Map<string, string>;
 }
 
 export class CommandTreeCache {
   private cacheDir: string;
   private cacheFile: string;
-  private cacheVersion: string = '2.1.0'; // Bumped version for protocol changes
+  private cacheVersion: string = '2.2.0'; // Bumped: dropped rawHelp; aliases are now expanded into commands
   private serverIdentifier: string;
 
   constructor(
@@ -55,23 +48,18 @@ export class CommandTreeCache {
   /**
    * Save commands to cache
    */
-  save(rootCommands: Map<string, CommandNode>, commandAliases: Map<string, string>): void {
+  save(rootCommands: Map<string, CommandNode>): void {
     try {
       const cache: CommandCache = {
         version: this.cacheVersion,
         serverIdentifier: this.serverIdentifier,
         lastUpdated: new Date().toISOString(),
-        commands: {},
-        aliases: {}
+        commands: {}
       };
 
       // Convert Map to object for serialization
       rootCommands.forEach((node, name) => {
         cache.commands[name] = this.serializeNode(node);
-      });
-
-      commandAliases.forEach((target, alias) => {
-        cache.aliases[alias] = target;
       });
 
       fs.writeFileSync(this.cacheFile, JSON.stringify(cache, null, 2));
@@ -88,7 +76,6 @@ export class CommandTreeCache {
     return {
       name: node.name,
       parameters: node.parameters, // Parameters are already serializable
-      rawHelp: node.rawHelp,
       isComplete: node.isComplete
     };
   }
@@ -97,7 +84,7 @@ export class CommandTreeCache {
    * Load commands from cache. Returns null if there's no usable cache
    * (missing, version/server mismatch, or too old).
    */
-  load(): LoadedCommandTree | null {
+  load(): Map<string, CommandNode> | null {
     try {
       if (!fs.existsSync(this.cacheFile)) {
         return null;
@@ -126,13 +113,8 @@ export class CommandTreeCache {
         rootCommands.set(name, this.deserializeNode(serialized));
       });
 
-      const commandAliases = new Map<string, string>();
-      Object.entries(cache.aliases).forEach(([alias, target]) => {
-        commandAliases.set(alias, target);
-      });
-
       this.logger.info(`Commands loaded from cache (${rootCommands.size} commands)`);
-      return { rootCommands, commandAliases };
+      return rootCommands;
 
     } catch (error) {
       this.logger.error(`Error loading cache: ${error}`);
@@ -147,7 +129,6 @@ export class CommandTreeCache {
     return {
       name: serialized.name,
       parameters: serialized.parameters,
-      rawHelp: serialized.rawHelp,
       isComplete: serialized.isComplete
     };
   }

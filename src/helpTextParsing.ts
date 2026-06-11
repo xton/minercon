@@ -27,7 +27,6 @@ export interface Parameter {
   position: number;                // Order in parameter list
   members?: Parameter[];           // For subcommand's parameters
   isComplete?: boolean;            // For subcommands - whether we've fetched all its members
-  rawHelp?: string;                // For subcommands - the raw help text
 }
 
 /**
@@ -294,6 +293,30 @@ export function splitConcatenatedHelpLines(text: string): string {
 }
 
 /**
+ * An alias-to-target mapping extracted from a `<alias> -> <target>` redirect
+ * line, as returned by `parseAliasRedirect`.
+ */
+export interface AliasRedirect {
+  alias: string;
+  target: string;
+}
+
+/**
+ * Parse a single (already `stripColors`'d and trimmed) help line as a
+ * vanilla `minecraft:help` alias redirect of the form `/<alias> -> <target>`
+ * (e.g. `/tp -> teleport`, `/minecraft:xp -> experience`). The alias side may
+ * carry a `minecraft:` namespace prefix; the target side never does. Returns
+ * `null` if `line` doesn't match this shape.
+ */
+export function parseAliasRedirect(line: string): AliasRedirect | null {
+  const match = line.match(/^\/(?:minecraft:)?([a-zA-Z0-9_-]+)\s*->\s*([a-zA-Z0-9_-]+)$/);
+  if (!match) {
+    return null;
+  }
+  return { alias: match[1], target: match[2] };
+}
+
+/**
  * Parse every line of `text` that describes `commandPath`'s syntax (an
  * optional leading `/`, then `commandPath` with internal spaces matching
  * runs of whitespace, then the argument tokens), collecting subcommand
@@ -385,6 +408,24 @@ export function extractBukkitUsageLines(helpText: string, commandPath: string): 
 
   const normalizedPath = commandPath.toLowerCase();
   return result.filter(line => line.replace(/^\//, '').toLowerCase() !== normalizedPath);
+}
+
+/**
+ * Extract alias names from a Bukkit-style `/help <command>` response's
+ * `Aliases: a, b, c` line (e.g. "Description: ...\nUsage: ...\nAliases: ver,
+ * about"). Returns `[]` if there's no Aliases line.
+ */
+export function extractBukkitAliases(helpText: string): string[] {
+  const lines = stripColors(helpText).split('\n').map(line => line.trim());
+  const aliasesLine = lines.find(line => /^Aliases:\s*/i.test(line));
+  if (!aliasesLine) {
+    return [];
+  }
+
+  return aliasesLine.replace(/^Aliases:\s*/i, '')
+    .split(',')
+    .map(alias => alias.trim())
+    .filter(alias => alias.length > 0);
 }
 
 /**

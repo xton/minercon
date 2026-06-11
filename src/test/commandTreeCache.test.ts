@@ -16,14 +16,9 @@ function sampleCommands(): Map<string, CommandNode> {
         ['gamemode', {
             name: 'gamemode',
             parameters: [{ type: ParameterType.ARGUMENT, name: 'mode', optional: false, position: 0 }],
-            rawHelp: '/gamemode <mode>',
             isComplete: true,
         }],
     ]);
-}
-
-function sampleAliases(): Map<string, string> {
-    return new Map([['gm', 'gamemode']]);
 }
 
 // Reaches into the cache directory to mutate the persisted JSON directly,
@@ -54,22 +49,20 @@ suite('CommandTreeCache', () => {
         assert.strictEqual(cache.load(), null);
     });
 
-    test('save then load round-trips the command tree and aliases', () => {
+    test('save then load round-trips the command tree', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         const rootCommands = sampleCommands();
-        const commandAliases = sampleAliases();
 
-        cache.save(rootCommands, commandAliases);
+        cache.save(rootCommands);
         const loaded = cache.load();
 
         assert.ok(loaded);
-        assert.deepStrictEqual(Array.from(loaded!.rootCommands.entries()), Array.from(rootCommands.entries()));
-        assert.deepStrictEqual(Array.from(loaded!.commandAliases.entries()), Array.from(commandAliases.entries()));
+        assert.deepStrictEqual(Array.from(loaded!.entries()), Array.from(rootCommands.entries()));
     });
 
     test('rejects a cache written by a different protocol version', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
-        cache.save(sampleCommands(), sampleAliases());
+        cache.save(sampleCommands());
 
         rewriteCacheFile(storageDir, raw => { raw.version = '0.0.0'; });
 
@@ -78,7 +71,7 @@ suite('CommandTreeCache', () => {
 
     test('rejects a cache written for a different server identifier', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
-        cache.save(sampleCommands(), sampleAliases());
+        cache.save(sampleCommands());
 
         rewriteCacheFile(storageDir, raw => { raw.serverIdentifier = 'other-host:25575'; });
 
@@ -87,7 +80,7 @@ suite('CommandTreeCache', () => {
 
     test('rejects a cache older than the max age', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
-        cache.save(sampleCommands(), sampleAliases());
+        cache.save(sampleCommands());
 
         const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
         rewriteCacheFile(storageDir, raw => { raw.lastUpdated = eightDaysAgo; });
@@ -99,7 +92,7 @@ suite('CommandTreeCache', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
         assert.strictEqual(cache.getInfo().exists, false);
 
-        cache.save(sampleCommands(), sampleAliases());
+        cache.save(sampleCommands());
 
         const info = cache.getInfo();
         assert.strictEqual(info.exists, true);
@@ -108,7 +101,7 @@ suite('CommandTreeCache', () => {
 
     test('clear deletes the cache file so load and getInfo see it as gone', () => {
         const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
-        cache.save(sampleCommands(), sampleAliases());
+        cache.save(sampleCommands());
         assert.strictEqual(cache.getInfo().exists, true);
 
         cache.clear();

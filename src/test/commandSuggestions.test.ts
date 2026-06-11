@@ -16,7 +16,7 @@ function choiceList(...choices: Parameter[]): Parameter {
     return { type: ParameterType.CHOICE_LIST, choices, optional: false, position: 0 };
 }
 function node(name: string, parameters: Parameter[]): CommandNode {
-    return { name, parameters, rawHelp: `/${name}`, isComplete: true };
+    return { name, parameters, isComplete: true };
 }
 function tree(...nodes: CommandNode[]): Map<string, CommandNode> {
     return new Map(nodes.map(n => [n.name, n]));
