@@ -44,7 +44,7 @@ export class LineEditor {
   private historyIndex: number = -1;
   private tempLine: string = '';
 
-  constructor(private host: LineEditorHost) {}
+  constructor(private host: LineEditorHost, private readonly maxHistorySize: number = 100) {}
 
   get line(): string {
     return this.currentLine;
@@ -478,13 +478,13 @@ export class LineEditor {
 
   /** Seeds history (oldest-first) from persisted entries, e.g. loaded from disk at session start. Replaces any existing in-memory history. */
   loadHistory(entries: readonly string[]): void {
-    this.history = entries.slice(-100);
+    this.history = entries.slice(-this.maxHistorySize);
   }
 
   pushHistory(command: string): void {
     if (this.history.length === 0 || this.history[this.history.length - 1] !== command) {
       this.history.push(command);
-      if (this.history.length > 100) {
+      if (this.history.length > this.maxHistorySize) {
         this.history.shift();
       }
     }

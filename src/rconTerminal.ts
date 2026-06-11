@@ -36,6 +36,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
       },
       cacheDir: context.globalStorageUri.fsPath,
       dimensions: () => this.dims ? { columns: this.dims.columns, rows: this.dims.rows } : undefined,
+      historySize: vscode.workspace.getConfiguration('minercon').get<number>('historySize', 100),
     };
 
     this.session = new RconSession(controller, host, port, password, logger, sessionHost);

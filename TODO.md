@@ -317,6 +317,16 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   completions (`handleHistorySearchInput` in `rconSession.ts`). 316 tests
   passing.
 
+  Follow-up: history size (in-memory, persisted, and `/history`/Ctrl+R) is
+  now configurable instead of a hardcoded 100. `LineEditor` and `HistoryStore`
+  take a `maxHistorySize`/`maxEntries` constructor param (default 100);
+  `RconSessionHost` gained an optional `historySize` field threaded through to
+  both. VS Code: new `minercon.historySize` setting (`package.json`), read by
+  `RconTerminal`. CLI: new `--history-size <n>` flag / `MCRCON_HISTORY_SIZE`
+  env var / `historySize` field in `~/.config/minercon/config.json` (written
+  by `--save`), resolved via new `resolveHistorySize`/`parseHistorySize` in
+  `cliConfig.ts`. 328 tests passing.
+
 ## How to record a live RCON fixture
 
 ```

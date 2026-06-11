@@ -87,6 +87,12 @@
           "type": "number",
           "default": null,
           "description": "Default RCON port"
+        },
+        "minercon.historySize": {
+          "type": "number",
+          "default": 100,
+          "minimum": 1,
+          "description": "Number of commands to remember in history (in-memory and persisted to disk)"
         }
       }
     }

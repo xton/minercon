@@ -20,9 +20,9 @@ class FakeHost implements LineEditorHost {
     queueOutputArtifacts(): void { this.outputArtifactsPending = true; }
 }
 
-function setup(initial = ''): { editor: LineEditor; host: FakeHost } {
+function setup(initial = '', maxHistorySize?: number): { editor: LineEditor; host: FakeHost } {
     const host = new FakeHost();
-    const editor = new LineEditor(host);
+    const editor = maxHistorySize === undefined ? new LineEditor(host) : new LineEditor(host, maxHistorySize);
     if (initial) {
         editor.insertText(initial);
         host.writes.length = 0;
@@ -442,6 +442,19 @@ suite('LineEditor: history navigation', () => {
 
         assert.strictEqual(editor.historyEntries.length, 100);
         assert.deepStrictEqual(editor.historyEntries, entries.slice(-100));
+    });
+
+    test('a custom maxHistorySize caps pushHistory and loadHistory accordingly', () => {
+        const { editor } = setup('', 3);
+
+        editor.pushHistory('a');
+        editor.pushHistory('b');
+        editor.pushHistory('c');
+        editor.pushHistory('d');
+        assert.deepStrictEqual(editor.historyEntries, ['b', 'c', 'd']);
+
+        editor.loadHistory(['v', 'w', 'x', 'y', 'z']);
+        assert.deepStrictEqual(editor.historyEntries, ['x', 'y', 'z']);
     });
 });
 

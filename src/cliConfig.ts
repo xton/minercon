@@ -13,6 +13,7 @@ import * as path from 'path';
 export interface Config {
   host?: string;
   port?: number;
+  historySize?: number;
 }
 
 export function readConfig(configFile: string): Config {
@@ -64,4 +65,33 @@ export function resolvePort(positionalPort: string | undefined, savedConfig: Con
 /** Resolves the RCON password from the --password flag and MCRCON_PASSWORD env var, or undefined if the user must be prompted. */
 export function resolvePassword(flagPassword: string | undefined, envPassword: string | undefined): string | undefined {
   return flagPassword || envPassword || undefined;
+}
+
+/** Parses a history size string, returning null if it isn't a positive integer. */
+export function parseHistorySize(raw: string): number | null {
+  const size = parseInt(raw, 10);
+  if (isNaN(size) || size < 1 || String(size) !== raw.trim()) {
+    return null;
+  }
+  return size;
+}
+
+export type HistorySizeResolution = { historySize: number } | { error: string };
+
+/**
+ * Resolves the number of history entries to remember from the --history-size
+ * flag, MCRCON_HISTORY_SIZE env var, and saved config, in that order, falling
+ * back to 100 if none are set. Returns `{ error }` if a value was given but
+ * isn't a positive integer.
+ */
+export function resolveHistorySize(flagValue: string | undefined, envValue: string | undefined, savedConfig: Config): HistorySizeResolution {
+  const raw = flagValue || envValue;
+  if (raw !== undefined) {
+    const parsed = parseHistorySize(raw);
+    return parsed !== null ? { historySize: parsed } : { error: `invalid history size: ${raw}` };
+  }
+  if (savedConfig.historySize !== undefined) {
+    return { historySize: savedConfig.historySize };
+  }
+  return { historySize: 100 };
 }

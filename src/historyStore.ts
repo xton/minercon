@@ -16,13 +16,11 @@ interface HistoryFile {
 
 const CURRENT_VERSION = 1;
 
-/** Mirrors LineEditor's in-memory cap — no point persisting more than it'll ever hold. */
-const MAX_ENTRIES = 100;
-
 export class HistoryStore {
   private readonly file: string;
 
-  constructor(cacheDir: string, serverHost: string, serverPort: number, private logger: Logger) {
+  /** `maxEntries` mirrors LineEditor's in-memory cap — no point persisting more than it'll ever hold. */
+  constructor(cacheDir: string, serverHost: string, serverPort: number, private logger: Logger, private readonly maxEntries: number = 100) {
     this.file = path.join(cacheDir, `${serverHost}_${serverPort}_history.json`);
   }
 
@@ -32,7 +30,7 @@ export class HistoryStore {
       if (!fs.existsSync(this.file)) { return []; }
       const parsed = JSON.parse(fs.readFileSync(this.file, 'utf-8')) as HistoryFile;
       if (parsed.version !== CURRENT_VERSION || !Array.isArray(parsed.entries)) { return []; }
-      return parsed.entries.filter((e): e is string => typeof e === 'string').slice(-MAX_ENTRIES);
+      return parsed.entries.filter((e): e is string => typeof e === 'string').slice(-this.maxEntries);
     } catch (error) {
       this.logger.error(`Error loading command history: ${error}`);
       return [];
@@ -46,7 +44,7 @@ export class HistoryStore {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      const data: HistoryFile = { version: CURRENT_VERSION, entries: entries.slice(-MAX_ENTRIES) };
+      const data: HistoryFile = { version: CURRENT_VERSION, entries: entries.slice(-this.maxEntries) };
       fs.writeFileSync(this.file, JSON.stringify(data));
     } catch (error) {
       this.logger.error(`Error saving command history: ${error}`);

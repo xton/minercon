@@ -10,7 +10,7 @@ import { parseArgs } from 'util';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { Logger } from './logger';
-import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword } from './cliConfig';
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize } from './cliConfig';
 import * as ansi from './ansi';
 
 // ── Config file ──────────────────────────────────────────────────────────────
@@ -104,6 +104,7 @@ async function main(): Promise<void> {
       password: { type: 'string', short: 'p' },
       save:     { type: 'boolean', default: false },
       'log-file': { type: 'string' },
+      'history-size': { type: 'string' },
       help:     { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -116,13 +117,15 @@ async function main(): Promise<void> {
       '',
       'Options:',
       '  -p, --password <pw>   RCON password (also: MCRCON_PASSWORD env var)',
-      '  --save                Save host/port to ~/.config/minercon/config.json',
+      '  --save                Save host/port/history-size to ~/.config/minercon/config.json',
       '  --log-file <path>     Append log output to a file instead of stderr',
+      '  --history-size <n>    Number of commands to remember in history (default: 100)',
       '  -h, --help            Show this help',
       '',
       'Environment:',
       '  MCRCON_PASSWORD       RCON password (used if --password is not given)',
       '  MCRCON_LOG_FILE       Log file path (used if --log-file is not given)',
+      '  MCRCON_HISTORY_SIZE   History size (used if --history-size is not given)',
       '',
     ].join('\n'));
     process.exit(0);
@@ -169,9 +172,17 @@ async function main(): Promise<void> {
     password = await promptPassword(`RCON password for ${host}:${port}: `);
   }
 
+  // Resolve history size
+  const historySizeResolution = resolveHistorySize(values['history-size'] as string | undefined, process.env['MCRCON_HISTORY_SIZE'], savedConfig);
+  if ('error' in historySizeResolution) {
+    process.stderr.write(`Error: ${historySizeResolution.error}\n`);
+    process.exit(1);
+  }
+  const historySize = historySizeResolution.historySize;
+
   if (values.save) {
-    writeConfig(CONFIG_FILE, { host, port });
-    process.stderr.write(`${ansi.cyan('INFO')} Saved ${host}:${port} to ${CONFIG_FILE}\n`);
+    writeConfig(CONFIG_FILE, { host, port, historySize });
+    process.stderr.write(`${ansi.cyan('INFO')} Saved ${host}:${port} (history size ${historySize}) to ${CONFIG_FILE}\n`);
   }
 
   // ── Establish connection ──────────────────────────────────────────────────
@@ -208,6 +219,7 @@ async function main(): Promise<void> {
       process.stdout.columns && process.stdout.rows
         ? { columns: process.stdout.columns, rows: process.stdout.rows }
         : undefined,
+    historySize,
   };
 
   const session = new RconSession(controller, host, port, password, logger, sessionHost);

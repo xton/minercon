@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword } from '../cliConfig';
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, parseHistorySize, resolveHistorySize } from '../cliConfig';
 
 suite('CLI config', () => {
     let tmpDir: string;
@@ -131,5 +131,46 @@ suite('CLI resolvePassword', () => {
 
     test('treats an empty-string flag as not provided', () => {
         assert.strictEqual(resolvePassword('', 'env-pw'), 'env-pw');
+    });
+});
+
+suite('CLI parseHistorySize', () => {
+    test('accepts positive integers', () => {
+        assert.strictEqual(parseHistorySize('1'), 1);
+        assert.strictEqual(parseHistorySize('250'), 250);
+    });
+
+    test('rejects 0, negative, and non-numeric input', () => {
+        assert.strictEqual(parseHistorySize('0'), null);
+        assert.strictEqual(parseHistorySize('-5'), null);
+        assert.strictEqual(parseHistorySize('not-a-number'), null);
+        assert.strictEqual(parseHistorySize(''), null);
+    });
+
+    test('rejects non-integer input', () => {
+        assert.strictEqual(parseHistorySize('1.5'), null);
+        assert.strictEqual(parseHistorySize('100abc'), null);
+    });
+});
+
+suite('CLI resolveHistorySize', () => {
+    test('prefers the --history-size flag over the env var and saved config', () => {
+        assert.deepStrictEqual(resolveHistorySize('50', '75', { historySize: 200 }), { historySize: 50 });
+    });
+
+    test('falls back to the env var when no flag is given', () => {
+        assert.deepStrictEqual(resolveHistorySize(undefined, '75', { historySize: 200 }), { historySize: 75 });
+    });
+
+    test('falls back to the saved config when neither flag nor env var is given', () => {
+        assert.deepStrictEqual(resolveHistorySize(undefined, undefined, { historySize: 200 }), { historySize: 200 });
+    });
+
+    test('defaults to 100 when nothing is set', () => {
+        assert.deepStrictEqual(resolveHistorySize(undefined, undefined, {}), { historySize: 100 });
+    });
+
+    test('returns an error for an invalid value', () => {
+        assert.deepStrictEqual(resolveHistorySize('not-a-number', undefined, {}), { error: 'invalid history size: not-a-number' });
     });
 });

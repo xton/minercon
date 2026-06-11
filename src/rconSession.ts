@@ -30,6 +30,8 @@ export interface RconSessionHost {
   clipboard: { readText(): Promise<string>; writeText(text: string): Promise<void> };
   cacheDir: string;
   dimensions(): { columns: number; rows: number } | undefined;
+  /** Number of commands to remember in history (in-memory and persisted to disk). Defaults to 100. */
+  historySize?: number;
 }
 
 export class RconSession {
@@ -67,6 +69,8 @@ export class RconSession {
   ) {
     this.serverHost = host;
     this.serverPort = port;
+
+    const historySize = sessionHost.historySize ?? 100;
 
     this.connectionManager = new ConnectionManager(host, port, password, logger, controller, {
       write: (text) => sessionHost.write(text),
@@ -128,9 +132,9 @@ export class RconSession {
         }
         return false;
       },
-    });
+    }, historySize);
 
-    this.historyStore = new HistoryStore(sessionHost.cacheDir, host, port, logger);
+    this.historyStore = new HistoryStore(sessionHost.cacheDir, host, port, logger, historySize);
     this.lineEditor.loadHistory(this.historyStore.load());
   }
 

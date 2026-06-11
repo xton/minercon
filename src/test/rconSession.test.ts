@@ -100,7 +100,7 @@ suite('RconSession', () => {
         fs.rmSync(storageDir, { recursive: true, force: true });
     });
 
-    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined): Harness {
+    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined, historySize?: number): Harness {
         const controller = new FakeController(sendImpl);
         const writes: string[] = [];
         const closes: number[] = [];
@@ -115,6 +115,7 @@ suite('RconSession', () => {
             },
             cacheDir: storageDir,
             dimensions,
+            historySize,
         };
 
         const session = new RconSession(
@@ -476,5 +477,39 @@ suite('RconSession', () => {
         h2.session.handleInput('\x12'); // Ctrl+R
         await waitUntil(() => h2.output().includes('reverse-i-search'));
         assert.ok(h2.output().includes('say persisted'), 'second session loaded history saved by the first');
+    });
+
+    test('a custom historySize caps both /history and what gets persisted to disk', async () => {
+        const h1 = createHarness(defaultSend, () => undefined, 2);
+        await openInPluginMode(h1);
+
+        type(h1, 'say one');
+        h1.session.handleInput('\r');
+        await waitUntil(() => h1.controller.sendCalls.includes('say one'));
+
+        type(h1, 'say two');
+        h1.session.handleInput('\r');
+        await waitUntil(() => h1.controller.sendCalls.includes('say two'));
+
+        type(h1, 'say three');
+        h1.session.handleInput('\r');
+        await waitUntil(() => h1.controller.sendCalls.includes('say three'));
+
+        h1.writes.length = 0;
+        type(h1, '/history');
+        h1.session.handleInput('\r');
+        await waitUntil(() => h1.output().includes('say three'));
+        assert.ok(h1.output().includes('say two'), 'keeps the most recent entries');
+        assert.ok(!h1.output().includes('say one'), 'drops entries beyond the configured cap');
+        h1.session.close();
+
+        const h2 = createHarness(defaultSend, () => undefined, 2);
+        await openInPluginMode(h2);
+
+        h2.session.handleInput('\x12'); // Ctrl+R
+        await waitUntil(() => h2.output().includes('reverse-i-search'));
+        assert.ok(h2.output().includes('say three'), 'persisted history respects the configured cap');
+        assert.ok(h2.output().includes('say two'), 'persisted history respects the configured cap');
+        assert.ok(!h2.output().includes('say one'), 'persisted history respects the configured cap');
     });
 });

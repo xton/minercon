@@ -78,6 +78,23 @@ suite('HistoryStore', () => {
         assert.deepStrictEqual(loaded, entries.slice(-100));
     });
 
+    test('a custom maxEntries caps both save and load', () => {
+        const store = new HistoryStore(cacheDir, 'host', 25575, silentLogger(), 5);
+        const entries = Array.from({ length: 10 }, (_, i) => `command-${i}`);
+
+        store.save(entries);
+
+        assert.deepStrictEqual(store.load(), entries.slice(-5));
+    });
+
+    test('a smaller maxEntries on reload truncates previously saved history', () => {
+        const wide = new HistoryStore(cacheDir, 'host', 25575, silentLogger(), 10);
+        wide.save(Array.from({ length: 10 }, (_, i) => `command-${i}`));
+
+        const narrow = new HistoryStore(cacheDir, 'host', 25575, silentLogger(), 3);
+        assert.deepStrictEqual(narrow.load(), ['command-7', 'command-8', 'command-9']);
+    });
+
     test('save creates the cache directory if it does not exist', () => {
         const nestedDir = path.join(cacheDir, 'nested', 'cache');
         const store = new HistoryStore(nestedDir, 'host', 25575, silentLogger());
