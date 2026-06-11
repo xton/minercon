@@ -129,7 +129,7 @@ export class CommandAutocomplete {
   }
 
   async fetchPaginatedCommand(command: string): Promise<string> {
-    var output = await this.sendCommand(command);
+    let output = await this.sendCommand(command);
     const match = output.match(/Help:\s+.*?\((\d+)\/(\d+)\)/i);
     if (!match) {
       return output; // No pagination info, return original output
@@ -453,7 +453,7 @@ export class CommandAutocomplete {
         await this.loadSubcommandsIn(fullPath, subcommand.members);
       }
 
-    } catch (error) {
+    } catch {
       // Subcommand might not have its own help, that's okay
       subcommand.isComplete = true;
     }

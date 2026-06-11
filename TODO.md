@@ -172,11 +172,12 @@ rough edges left over from earlier refactors.
   max-attempts paths of `attemptReconnect()` — extracted into a private
   `resetReconnectState()` helper, called from all four
   (`connectionManager.ts`)
-- [ ] Misc smells: the lone `var` in `commandAutocomplete.ts`'s
-  `fetchPaginatedCommand` (~line 121), an unused `catch (error)` binding in
-  `loadSubcommandDetails` (~line 455), and the 4x-repeated
+- [x] Misc smells: the lone `var` in `commandAutocomplete.ts`'s
+  `fetchPaginatedCommand` → `let`; the unused `catch (error)` binding in
+  `loadSubcommandDetails` → `catch {`; and the 4x-repeated
   `(process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void })`
-  cast in `cli.ts`
+  cast in `cli.ts` extracted into a single `setRawMode(mode: boolean): void`
+  helper (checks `isTTY` internally), used at all 4 call sites
 - [x] Dead `dimensions()` plumbing — `RconSession.open`'s `_dimensions`
   parameter was accepted but never used (`rconSession.ts`). Investigated with
   a new xterm-headless test (`suggestionDisplay.screen.test.ts`): when the

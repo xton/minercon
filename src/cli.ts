@@ -18,6 +18,15 @@ import * as ansi from './ansi';
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'minercon');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
+// ── TTY helpers ──────────────────────────────────────────────────────────────
+
+/** Toggles raw mode on stdin, if it's a TTY (a no-op otherwise, e.g. when piped). */
+function setRawMode(mode: boolean): void {
+  if (process.stdin.isTTY) {
+    (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(mode);
+  }
+}
+
 // ── Logger ───────────────────────────────────────────────────────────────────
 
 function createCliLogger(logFile?: string): Logger {
@@ -49,9 +58,7 @@ function promptPassword(prompt: string): Promise<string> {
     process.stdout.write(prompt);
     const rl = readline.createInterface({ input: process.stdin, output: undefined });
     // Put stdin in non-echo mode for the duration of the prompt
-    if (process.stdin.isTTY) {
-      (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(true);
-    }
+    setRawMode(true);
     let password = '';
     process.stdin.resume();
     process.stdin.setEncoding('utf8');
@@ -61,9 +68,7 @@ function promptPassword(prompt: string): Promise<string> {
         if (ch === '\r' || ch === '\n') {
           process.stdin.removeListener('data', handler);
           rl.close();
-          if (process.stdin.isTTY) {
-            (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(false);
-          }
+          setRawMode(false);
           process.stdout.write('\n');
           resolve(password);
           return;
@@ -214,9 +219,7 @@ async function main(): Promise<void> {
   function teardown(): void {
     if (tornDown) { return; }
     tornDown = true;
-    if (process.stdin.isTTY) {
-      (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(false);
-    }
+    setRawMode(false);
     process.stdin.pause();
     session.close();
   }
@@ -225,9 +228,7 @@ async function main(): Promise<void> {
   process.on('SIGINT',  () => { teardown(); process.exit(0); });
   process.on('SIGTERM', () => { teardown(); process.exit(0); });
 
-  if (process.stdin.isTTY) {
-    (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(true);
-  }
+  setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
 
