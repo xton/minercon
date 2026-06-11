@@ -1,9 +1,8 @@
 import * as assert from 'assert';
+import { stripColors } from '../ansi';
 import {
     ParameterType,
     Parameter,
-    formatMinecraftColors,
-    stripColors,
     tokenizeParameterString,
     parseParameter,
     parseCommandHelp,
@@ -18,17 +17,6 @@ import {
 } from '../helpTextParsing';
 
 suite('helpTextParsing', () => {
-    test('formatMinecraftColors inserts ANSI codes and ends with reset', () => {
-        const out = formatMinecraftColors('Hello §cWorld');
-        assert.ok(out.includes('\x1b[91m'));
-        assert.ok(out.endsWith('\x1b[0m'));
-    });
-
-    test('stripColors removes color codes', () => {
-        const stripped = stripColors('§aHello §cWorld');
-        assert.strictEqual(stripped, 'Hello World');
-    });
-
     test('tokenizeParameterString handles nested tokens', () => {
         const input = '<arg1> [opt] (a|b) subcmd <nested>';
         const tokens = tokenizeParameterString(input);

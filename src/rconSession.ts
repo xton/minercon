@@ -11,7 +11,6 @@
 
 import { RconController } from './rconClient';
 import { CommandAutocomplete } from './commandAutocomplete';
-import { formatMinecraftColors } from './helpTextParsing';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step, applySuggestion,
@@ -550,7 +549,7 @@ export class RconSession {
       const response = await this.connectionManager.controller.send(command);
 
       if (response && response.trim()) {
-        const formatted = formatMinecraftColors(response);
+        const formatted = ansi.formatMinecraftColors(response);
         const lines = formatted.split('\n');
         outputLineCount = lines.length;
 

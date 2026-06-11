@@ -6,8 +6,10 @@
 // across rconSession.ts, suggestionDisplay.ts, lineEditor.ts,
 // connectionManager.ts, and cli.ts.
 //
-// This is unrelated to helpTextParsing.ts's Minecraft `§`-color-code table,
-// which translates a different (server-controlled) input alphabet to ANSI.
+// Also home to `formatMinecraftColors`/`stripColors`, which translate the
+// server-controlled Minecraft `§`-color-code alphabet to/from ANSI - a
+// distinct input alphabet from the literals above, but the same output
+// format, so it lives alongside them rather than in helpTextParsing.ts.
 
 export const RESET = '\x1b[0m';
 
@@ -46,3 +48,52 @@ export const boldCyan = (text: string): string => style(BOLD_CYAN, text);
 export const boldBrightWhite = (text: string): string => style(BOLD_BRIGHT_WHITE, text);
 export const reverse = (text: string): string => style(REVERSE, text);
 export const hidden = (text: string): string => style(HIDDEN, text);
+
+// Minecraft `§`-color codes to ANSI escape sequences
+const MINECRAFT_COLOR_MAP: { [key: string]: string } = {
+  '§0': '\x1b[30m',    // Black
+  '§1': '\x1b[34m',    // Dark Blue
+  '§2': '\x1b[32m',    // Dark Green
+  '§3': '\x1b[36m',    // Dark Aqua
+  '§4': '\x1b[31m',    // Dark Red
+  '§5': '\x1b[35m',    // Dark Purple
+  '§6': '\x1b[33m',    // Gold
+  '§7': '\x1b[37m',    // Gray
+  '§8': '\x1b[90m',    // Dark Gray
+  '§9': '\x1b[94m',    // Blue
+  '§a': '\x1b[92m',    // Green
+  '§b': '\x1b[96m',    // Aqua
+  '§c': '\x1b[91m',    // Red
+  '§d': '\x1b[95m',    // Light Purple
+  '§e': '\x1b[93m',    // Yellow
+  '§f': '\x1b[97m',    // White
+  '§r': RESET,         // Reset
+  '§l': '\x1b[1m',     // Bold
+  '§o': '\x1b[3m',     // Italic
+  '§n': '\x1b[4m',     // Underline
+  '§m': '\x1b[9m',     // Strikethrough
+  '§k': '\x1b[5m',     // Obfuscated (blinking)
+};
+
+/**
+ * Convert Minecraft `§`-color codes to ANSI escape sequences.
+ */
+export function formatMinecraftColors(text: string): string {
+  let result = text;
+  for (const [code, escapeCode] of Object.entries(MINECRAFT_COLOR_MAP)) {
+    result = result.replace(new RegExp(code.replace('§', '\\§'), 'g'), escapeCode);
+  }
+  if (!result.endsWith(RESET)) {
+    result += RESET;
+  }
+  return result;
+}
+
+/**
+ * Remove Minecraft `§`-color codes, e.g. before parsing.
+ */
+export function stripColors(text: string): string {
+  // Handle both § and Â§ encodings (UTF-8 issues)
+  return text.replace(/[§Â]§[0-9a-fklmnor]/g, '')
+    .replace(/§[0-9a-fklmnor]/g, '');
+}

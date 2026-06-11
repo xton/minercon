@@ -1,35 +1,14 @@
 // src/helpTextParsing.ts
 //
-// Pure parsing of Minecraft `/help` output into a `Parameter` tree, plus the
-// color-code helpers used to render it. No state, no IO — every export here
-// is a deterministic function of its arguments, which is what makes them
-// directly unit-testable without constructing a `CommandAutocomplete`.
+// Pure parsing of Minecraft `/help` output into a `Parameter` tree. No
+// state, no IO — every export here is a deterministic function of its
+// arguments, which is what makes them directly unit-testable without
+// constructing a `CommandAutocomplete`.
+//
+// `stripColors` (used throughout to normalize input before parsing) and the
+// `formatMinecraftColors`/ANSI rendering side live in ansi.ts.
 
-// Minecraft color codes to ANSI escape sequences
-const COLOR_MAP: { [key: string]: string } = {
-  '§0': '\x1b[30m',    // Black
-  '§1': '\x1b[34m',    // Dark Blue
-  '§2': '\x1b[32m',    // Dark Green
-  '§3': '\x1b[36m',    // Dark Aqua
-  '§4': '\x1b[31m',    // Dark Red
-  '§5': '\x1b[35m',    // Dark Purple
-  '§6': '\x1b[33m',    // Gold
-  '§7': '\x1b[37m',    // Gray
-  '§8': '\x1b[90m',    // Dark Gray
-  '§9': '\x1b[94m',    // Blue
-  '§a': '\x1b[92m',    // Green
-  '§b': '\x1b[96m',    // Aqua
-  '§c': '\x1b[91m',    // Red
-  '§d': '\x1b[95m',    // Light Purple
-  '§e': '\x1b[93m',    // Yellow
-  '§f': '\x1b[97m',    // White
-  '§r': '\x1b[0m',     // Reset
-  '§l': '\x1b[1m',     // Bold
-  '§o': '\x1b[3m',     // Italic
-  '§n': '\x1b[4m',     // Underline
-  '§m': '\x1b[9m',     // Strikethrough
-  '§k': '\x1b[5m',     // Obfuscated (blinking)
-};
+import { stripColors } from './ansi';
 
 // Parameter types
 export enum ParameterType {
@@ -49,29 +28,6 @@ export interface Parameter {
   members?: Parameter[];           // For subcommand's parameters
   isComplete?: boolean;            // For subcommands - whether we've fetched all its members
   rawHelp?: string;                // For subcommands - the raw help text
-}
-
-/**
- * Convert Minecraft color codes to ANSI escape sequences
- */
-export function formatMinecraftColors(text: string): string {
-  let result = text;
-  for (const [code, ansi] of Object.entries(COLOR_MAP)) {
-    result = result.replace(new RegExp(code.replace('§', '\\§'), 'g'), ansi);
-  }
-  if (!result.endsWith('\x1b[0m')) {
-    result += '\x1b[0m';
-  }
-  return result;
-}
-
-/**
- * Remove Minecraft color codes for parsing
- */
-export function stripColors(text: string): string {
-  // Handle both § and Â§ encodings (UTF-8 issues)
-  return text.replace(/[§Â]§[0-9a-fklmnor]/g, '')
-    .replace(/§[0-9a-fklmnor]/g, '');
 }
 
 /**

@@ -135,17 +135,23 @@ rough edges left over from earlier refactors.
   and per-color wrap functions (`yellow()`, `red()`, `dim()`, ...). Applied across
   every `\x1b[NNm` occurrence in `rconSession.ts`, `suggestionDisplay.ts`,
   `lineEditor.ts`, `connectionManager.ts`, and `cli.ts` (121 occurrences total).
-  Deliberately left untouched: `helpTextParsing.ts`'s separate Minecraft
-  `§`-color-code-to-ANSI translation table (item below), the terminal-input
-  key-binding escape sequences in `rconSession.ts`'s `buildKeyHandlers` (e.g.
+  Deliberately left untouched at the time: `helpTextParsing.ts`'s separate
+  Minecraft `§`-color-code-to-ANSI translation table (folded into `ansi.ts` by
+  item below), the terminal-input key-binding escape sequences in
+  `rconSession.ts`'s `buildKeyHandlers` (e.g.
   `\x1b[A`, `\x1b[1;5C` — these identify *incoming* key presses, not output
   styling), and cursor-movement/erase codes (`\x1b[2K`, `\x1b[K`, `\x1b[NA`,
   `\x1b[NC`, `\x1b[2J\x1b[H`) which are a different category from SGR styling
-- [ ] `helpTextParsing.ts` mixes the Minecraft `§`-color-code-to-ANSI translation
-  table (`formatMinecraftColors`/`stripColors`, used by `rconSession.ts` for
-  command output) with Bukkit/Brigadier help-page parsing
-  (`looksLikeBukkitHelpPage`, `extractBukkitUsageLines`,
-  `splitConcatenatedHelpLines`, `parseHelpLines`, ...) — candidate for a split
+- [x] `helpTextParsing.ts` mixed the Minecraft `§`-color-code-to-ANSI translation
+  table (`formatMinecraftColors`/`stripColors`) with Bukkit/Brigadier help-page
+  parsing (`looksLikeBukkitHelpPage`, `extractBukkitUsageLines`,
+  `splitConcatenatedHelpLines`, `parseHelpLines`, ...); moved
+  `formatMinecraftColors`/`stripColors`/the color-code table into `ansi.ts`
+  alongside the SGR constants/helpers from item 5 — `helpTextParsing.ts` now
+  imports `stripColors` from `ansi.ts` for its own parsing, and
+  `commandAutocomplete.ts`/`rconSession.ts` import the color helpers from
+  `ansi.ts` directly. Their unit tests moved to a new `ansi.test.ts`
+  (`commandAutocomplete.ts`, `rconSession.ts`, `helpTextParsing.ts`, `ansi.ts`)
 - [x] Stale "migration note" comments — removed `// Now includes subcommands as
   parameters` and `// NO MORE subcommands Map!` from `CommandNode`
   (`commandAutocomplete.ts`), and the `// Now includes SUBCOMMAND` /
@@ -174,6 +180,15 @@ passing.*
 subcommand-recursion blocks in `loadCommandDetails` and `loadSubcommandDetails`
 were extracted into a shared `loadSubcommandsIn(path, parameters)` helper in
 `commandAutocomplete.ts`. `tsc`/`eslint` clean, 263 tests passing.*
+
+---
+*Last updated: 2026-06-10 — §8's item 6 is done: `formatMinecraftColors`,
+`stripColors`, and the Minecraft `§`-color-code table moved out of
+`helpTextParsing.ts` into `ansi.ts` (alongside item 5's SGR constants/helpers);
+`helpTextParsing.ts` now imports `stripColors` from `ansi.ts` for its own
+parsing, `commandAutocomplete.ts`/`rconSession.ts` import the color helpers
+from `ansi.ts` directly, and their unit tests moved to a new `ansi.test.ts`.
+`tsc`/`eslint` clean, 263 tests passing.*
 
 ## How to record a live RCON fixture
 

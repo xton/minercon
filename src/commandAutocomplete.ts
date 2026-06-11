@@ -1,12 +1,11 @@
 // src/commandAutocomplete.ts
 import * as path from 'path';
 import { Logger } from './logger';
+import { stripColors } from './ansi';
 import {
   ParameterType,
   Parameter,
   HelpLinesResult,
-  formatMinecraftColors,
-  stripColors,
   parseHelpLines,
   splitConcatenatedHelpLines,
   looksLikeBukkitHelpPage,
