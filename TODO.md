@@ -312,6 +312,11 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   Escape restores the line, persistence across sessions). `tsc`/`eslint`
   clean, 315 tests passing.
 
+  Follow-up: Tab now cycles to the next-older match and Shift-Tab to the
+  next-newer match within the search popup, mirroring Tab-cycling in regular
+  completions (`handleHistorySearchInput` in `rconSession.ts`). 316 tests
+  passing.
+
 ## How to record a live RCON fixture
 
 ```

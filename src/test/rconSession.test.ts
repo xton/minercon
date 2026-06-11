@@ -391,6 +391,38 @@ suite('RconSession', () => {
         assert.ok(!h.output().includes('say hello'), 'no longer shows the non-matching entry');
     });
 
+    test('Tab and Shift-Tab cycle through history search matches like Ctrl+R/Up and Down', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, 'say one');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say one'));
+
+        type(h, 'say two');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.controller.sendCalls.includes('say two'));
+
+        h.session.handleInput('\x12'); // Ctrl+R: opens on the most recent entry, "say two"
+        await waitUntil(() => h.output().includes('reverse-i-search'));
+
+        h.session.handleInput('\t'); // Tab: cycle to the next-older match, "say one"
+        h.writes.length = 0;
+        h.session.handleInput('\r'); // accept
+
+        assert.ok(h.output().includes('say one'), 'Tab cycled to the older match before accepting');
+
+        h.session.handleInput('\x12'); // Ctrl+R again: opens back on "say two"
+        await waitUntil(() => h.output().includes('reverse-i-search'));
+
+        h.session.handleInput('\t');     // Tab: cycle to "say one"
+        h.session.handleInput('\x1b[Z'); // Shift-Tab: cycle back to "say two"
+        h.writes.length = 0;
+        h.session.handleInput('\r'); // accept
+
+        assert.ok(h.output().includes('say two'), 'Shift-Tab cycled back to the newer match before accepting');
+    });
+
     test('Ctrl+R then Enter loads the selected match into the line without executing it', async () => {
         const h = createHarness();
         await openInPluginMode(h);
