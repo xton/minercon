@@ -326,6 +326,13 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   env var / `historySize` field in `~/.config/minercon/config.json` (written
   by `--save`), resolved via new `resolveHistorySize`/`parseHistorySize` in
   `cliConfig.ts`. 328 tests passing.
+- [x] CLI flag to disable the server-side tab-complete plugin probe, for
+  manually testing the local (help-crawl) completion path (2026-06-11). Done:
+  new `--no-plugin` flag (not persisted to `~/.config/minercon/config.json` —
+  intentionally manual-testing-only). New `RconSessionHost.disablePlugin?:
+  boolean`; when set, `detectAndInitialize` in `rconSession.ts` skips the
+  `tabcomplete` probe entirely, writes a "plugin probe disabled" notice, and
+  goes straight to `initializeCommands()` (help-crawl). 329 tests passing.
 
 ## How to record a live RCON fixture
 

@@ -32,6 +32,8 @@ export interface RconSessionHost {
   dimensions(): { columns: number; rows: number } | undefined;
   /** Number of commands to remember in history (in-memory and persisted to disk). Defaults to 100. */
   historySize?: number;
+  /** Skips the server-side tab-complete plugin probe, forcing the help-crawl-based local completion path. For manual testing only. */
+  disablePlugin?: boolean;
 }
 
 export class RconSession {
@@ -153,6 +155,11 @@ export class RconSession {
   }
 
   private async detectAndInitialize(): Promise<void> {
+    if (this.sessionHost.disablePlugin) {
+      this.sessionHost.write('\r\n' + ansi.yellow('Server tab-complete plugin probe disabled — using local completions') + '\r\n\r\n');
+      await this.initializeCommands();
+      return;
+    }
     try {
       const response = await this.connectionManager.controller.send('tabcomplete');
       if (response && response.includes('Returns tab completions for a partial command string')) {

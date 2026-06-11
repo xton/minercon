@@ -100,7 +100,7 @@ suite('RconSession', () => {
         fs.rmSync(storageDir, { recursive: true, force: true });
     });
 
-    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined, historySize?: number): Harness {
+    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined, historySize?: number, disablePlugin?: boolean): Harness {
         const controller = new FakeController(sendImpl);
         const writes: string[] = [];
         const closes: number[] = [];
@@ -116,6 +116,7 @@ suite('RconSession', () => {
             cacheDir: storageDir,
             dimensions,
             historySize,
+            disablePlugin,
         };
 
         const session = new RconSession(
@@ -138,6 +139,16 @@ suite('RconSession', () => {
         assert.ok(out.includes('localhost:25575'), 'reports the connection target');
         assert.ok(h.controller.sendCalls.includes('tabcomplete'), 'probes for the server-side plugin');
         assert.ok(out.includes('\x1b[32m>\x1b[0m '), 'lands on the connected prompt');
+    });
+
+    test('disablePlugin skips the tab-complete plugin probe and goes straight to local completions', async () => {
+        const h = createHarness(defaultSend, () => undefined, undefined, true);
+        h.session.open();
+
+        await waitUntil(() => h.output().includes('Loading server commands'));
+
+        assert.ok(h.output().includes('plugin probe disabled'), 'reports that the probe was skipped');
+        assert.ok(!h.controller.sendCalls.includes('tabcomplete'), 'never probes for the server-side plugin');
     });
 
     test('typed characters assemble into a line, and Enter sends it as an RCON command', async () => {

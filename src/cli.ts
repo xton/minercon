@@ -105,6 +105,7 @@ async function main(): Promise<void> {
       save:     { type: 'boolean', default: false },
       'log-file': { type: 'string' },
       'history-size': { type: 'string' },
+      'no-plugin': { type: 'boolean', default: false },
       help:     { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -120,6 +121,8 @@ async function main(): Promise<void> {
       '  --save                Save host/port/history-size to ~/.config/minercon/config.json',
       '  --log-file <path>     Append log output to a file instead of stderr',
       '  --history-size <n>    Number of commands to remember in history (default: 100)',
+      '  --no-plugin           Skip the server-side tab-complete plugin probe (manual testing only;',
+      '                        not persisted to config)',
       '  -h, --help            Show this help',
       '',
       'Environment:',
@@ -220,6 +223,7 @@ async function main(): Promise<void> {
         ? { columns: process.stdout.columns, rows: process.stdout.rows }
         : undefined,
     historySize,
+    disablePlugin: values['no-plugin'] as boolean,
   };
 
   const session = new RconSession(controller, host, port, password, logger, sessionHost);
