@@ -178,7 +178,7 @@ suite('completionEngine: typing flow', () => {
     const fetchEffect = find(r.effects, 'fetchCompletions')!;
     assert.strictEqual(fetchEffect.query, 'gamemode -');
 
-    r = step(m, { kind: 'completionsResult', requestId: fetchEffect.requestId, items: ['survival', 'creative'], now: 1000 });
+    r = step(m, { kind: 'completionsResult', requestId: fetchEffect.requestId, items: ['survival', 'creative'] });
     m = r.machine;
     assert.strictEqual(m.phase.kind, 'open');
     if (m.phase.kind === 'open') {
@@ -202,7 +202,7 @@ suite('completionEngine: typing flow', () => {
     m = r.machine;
     const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
 
-    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [], now: 1000 });
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [] });
     m = r.machine;
     assert.strictEqual(m.phase.kind, 'closed');
     assert.deepStrictEqual(kinds(r.effects), ['hide']);
@@ -214,7 +214,7 @@ suite('completionEngine: typing flow', () => {
     m = r.machine;
     const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
 
-    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [], now: 1000 });
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [] });
     m = r.machine;
     assert.strictEqual(m.phase.kind, 'open');
     if (m.phase.kind === 'open') {
@@ -241,11 +241,11 @@ suite('completionEngine: typing flow', () => {
 
   test('Tab on a line with no completions and no prior list does nothing (no hint phase from Tab)', () => {
     let m = createMachine();
-    let r = step(m, { kind: 'tab', line: '/gamemode creative ', now: 1000 });
+    let r = step(m, { kind: 'tab', line: '/gamemode creative ' });
     m = r.machine;
     const fetchId = find(r.effects, 'fetchCompletions')!.requestId;
 
-    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [], now: 1000 });
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: [] });
     m = r.machine;
     assert.strictEqual(m.phase.kind, 'closed');
     assert.deepStrictEqual(kinds(r.effects), ['hide']);
@@ -260,7 +260,7 @@ suite('completionEngine: typing flow', () => {
     // Open it first, then close it
     m = step(m, { kind: 'lineChanged', line: '/gamemode' }).machine;
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival'], now: 1 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival'] }).machine;
     assert.strictEqual(m.phase.kind, 'open');
 
     r = step(m, { kind: 'lineChanged', line: '' });
@@ -275,7 +275,7 @@ suite('completionEngine: typing flow', () => {
     // trailing space would also trigger (covered separately).
     m = step(m, { kind: 'lineChanged', line: '/gamemode' }).machine;
     let fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'] }).machine;
 
     // user arrows down to "creative"
     m = step(m, { kind: 'arrow', direction: 'down' }).machine;
@@ -284,7 +284,7 @@ suite('completionEngine: typing flow', () => {
     // keeps typing — triggers a re-fetch
     m = step(m, { kind: 'lineChanged', line: '/gamemode c' }).machine;
     fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['creative'], now: 2 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['creative'] }).machine;
 
     // index 1 is now out of range for a 1-item list — falls back to 0
     assert.strictEqual(m.phase.kind === 'open' ? m.phase.selectedIndex : -1, 0);
@@ -309,7 +309,7 @@ suite('completionEngine: serialized fetching (no concurrent RCON sends)', () => 
     assert.deepStrictEqual(m.fetch.kind === 'busy' ? m.fetch.queued : null, { line: '/gamemode s', reason: 'typing' });
 
     // the original (now-stale) response arrives — discarded, and the queued line is fetched instead
-    r = step(m, { kind: 'completionsResult', requestId: firstFetchId, items: ['(should be discarded)'], now: 1 });
+    r = step(m, { kind: 'completionsResult', requestId: firstFetchId, items: ['(should be discarded)'] });
     m = r.machine;
     assert.strictEqual(kinds(r.effects).length, 1);
     const requeried = find(r.effects, 'fetchCompletions')!;
@@ -322,7 +322,7 @@ suite('completionEngine: serialized fetching (no concurrent RCON sends)', () => 
     m = step(m, { kind: 'lineChanged', line: '/gamemode' }).machine;
     const before = m;
 
-    const r = step(m, { kind: 'completionsResult', requestId: 99999, items: ['ignored'], now: 1 });
+    const r = step(m, { kind: 'completionsResult', requestId: 99999, items: ['ignored'] });
     assert.deepStrictEqual(r.effects, []);
     assert.deepStrictEqual(r.machine, before);
   });
@@ -333,7 +333,7 @@ function openWithItems(items: string[]): Machine {
   let m = createMachine();
   m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
   const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-  m = step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
+  m = step(m, { kind: 'completionsResult', requestId: fetchId, items }).machine;
 
   // The trailing space is a "natural pause point" — the engine now also
   // kicks off a background usage fetch right away. Resolve it (empty —
@@ -351,7 +351,7 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
     assert.strictEqual(m.fetch.kind, 'idle');
 
-    const r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    const r = step(m, { kind: 'tab', line: '/gamemode ' });
     // Usage for "/gamemode " was already fetched at the pause point when the
     // list opened (see openWithItems) — Tab reuses that too, so neither a
     // completions re-query nor a fresh usage fetch should appear here.
@@ -367,20 +367,20 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     m = step(m, { kind: 'arrow', direction: 'down' }).machine;   // select "creative" (index 1)
     assert.strictEqual(m.phase.kind === 'open' ? m.phase.selectedIndex : -1, 1);
 
-    const r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    const r = step(m, { kind: 'tab', line: '/gamemode ' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'creative');
     assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.selectedIndex : -1, 1);
   });
 
   test('Tab on a fresh line fetches, applies the first suggestion immediately, and fetches usage afterward without blocking', () => {
     let m = createMachine();
-    let r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    let r = step(m, { kind: 'tab', line: '/gamemode ' });
     m = r.machine;
     const completionsFetch = find(r.effects, 'fetchCompletions')!;
     assert.strictEqual(completionsFetch.query, 'gamemode -');
     assert.strictEqual(find(r.effects, 'applySuggestion'), undefined);   // nothing to apply yet — still waiting on the server
 
-    r = step(m, { kind: 'completionsResult', requestId: completionsFetch.requestId, items: ['survival', 'creative'], now: 1500 });
+    r = step(m, { kind: 'completionsResult', requestId: completionsFetch.requestId, items: ['survival', 'creative'] });
     m = r.machine;
     // Applied right away — usage fetch is a trailing effect, not a gate
     assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'fetchUsage', 'render']);
@@ -393,24 +393,39 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     assert.strictEqual(render.usage, '/gamemode <mode> [<target>]');
   });
 
-  test('quick re-press while cycling just advances; a slow re-press re-derives from the current line', () => {
+  test('repeated Tab presses cycle through the items, with no dependency on elapsed time', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
-    let r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });           // → cycling, index 0 ("survival")
+    let r = step(m, { kind: 'tab', line: '/gamemode ' });           // → cycling, index 0 ("survival")
     let cur = r.machine;
     // Usage for "/gamemode " was already fetched at the pause point when the
     // list opened (see openWithItems) — Tab reuses it, so the wire is
     // already free for what follows; nothing to resolve here.
     assert.strictEqual(cur.fetch.kind, 'idle');
 
-    r = step(cur, { kind: 'tab', line: '/gamemode survival', now: 1100 });     // 100ms later: quick re-press, advance
+    r = step(cur, { kind: 'tab', line: '/gamemode survival' });     // re-press, nothing typed since: advance
     assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'creative');
     cur = r.machine;
 
-    // 800ms after that advance — too slow to be "cycling"; treated as a fresh line and re-derives
-    r = step(cur, { kind: 'tab', line: '/gamemode creative', now: 1900 });
-    assert.deepStrictEqual(kinds(r.effects), ['fetchCompletions']);
-    assert.strictEqual(find(r.effects, 'fetchCompletions')!.query, 'gamemode creative');
+    // however long this takes, nothing was typed since "creative" was applied
+    // — still advances rather than re-deriving
+    r = step(cur, { kind: 'tab', line: '/gamemode creative' });
+    assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'adventure');
+  });
+
+  test('a Tab press whose line no longer matches the last-applied suggestion re-derives, even immediately', () => {
+    const m = openWithItems(['survival', 'creative', 'adventure']);
+    const r = step(m, { kind: 'tab', line: '/gamemode ' });         // → cycling, index 0 ("survival")
+    const cur = r.machine;
+    assert.strictEqual(cur.fetch.kind, 'idle');
+
+    // the user edited the line instead of pressing Tab again — even though no
+    // time has passed, the line no longer matches "/gamemode survival", so
+    // this re-derives for the new line rather than cycling
+    const r2 = step(cur, { kind: 'tab', line: '/gamemode survival ' });
+    assert.deepStrictEqual(kinds(r2.effects), ['fetchCompletions']);
+    assert.strictEqual(find(r2.effects, 'fetchCompletions')!.query, 'gamemode survival -');
   });
 
   test('a re-derive request that arrives while the wire is busy is queued, not dropped, and fires once it frees up', () => {
@@ -421,15 +436,15 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     // The trailing space is a "natural pause point" — completions coming back
     // also kicks off a background usage fetch right away, leaving the wire
     // busy with something the user didn't directly ask to wait on.
-    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 });
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'] });
     let cur = r.machine;
     const usageFetch = find(r.effects, 'fetchUsage')!;
     assert.strictEqual(cur.fetch.kind, 'busy');
 
-    // 800ms later (past the cycling window) the user has typed past the cached
-    // items and presses Tab wanting fresh completions for the new line —
-    // but the wire is still tied up with that usage fetch.
-    r = step(cur, { kind: 'tab', line: '/gamemode creative ', now: 1800 });
+    // The user has typed past the cached items and presses Tab wanting fresh
+    // completions for the new line — but the wire is still tied up with that
+    // usage fetch.
+    r = step(cur, { kind: 'tab', line: '/gamemode creative ' });
     assert.deepStrictEqual(r.effects, [], 'must not be dropped silently nor issue a second concurrent fetch');
     cur = r.machine;
     assert.deepStrictEqual(cur.fetch.kind === 'busy' ? cur.fetch.queued : null, { line: '/gamemode creative ', reason: 'tab' });
@@ -443,24 +458,24 @@ suite('completionEngine: Tab / Shift-Tab', () => {
 
   test('Shift-Tab on a freshly-opened list steps backward from the current selection (wrapping to the end)', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
-    const r = step(m, { kind: 'shiftTab', line: '/gamemode ', now: 1000 });
+    const r = step(m, { kind: 'shiftTab', line: '/gamemode ' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'adventure');  // wrapped from index 0 to length-1
   });
 
   test('a second Tab press while a fetch is already in flight is queued (not a second concurrent request) and fires on resolution', () => {
     let m = createMachine();
-    let r = step(m, { kind: 'tab', line: '/gamemode', now: 1000 });
+    let r = step(m, { kind: 'tab', line: '/gamemode' });
     m = r.machine;
     const firstId = find(r.effects, 'fetchCompletions')!.requestId;
     assert.strictEqual(m.fetch.kind, 'busy');
 
-    r = step(m, { kind: 'tab', line: '/gamemode s', now: 1050 });
+    r = step(m, { kind: 'tab', line: '/gamemode s' });
     assert.deepStrictEqual(r.effects, [], 'no second concurrent fetchCompletions effect');
     m = r.machine;
     assert.strictEqual(m.fetch.kind === 'busy' ? m.fetch.requestId : -1, firstId);   // original request untouched
     assert.deepStrictEqual(m.fetch.kind === 'busy' ? m.fetch.queued : null, { line: '/gamemode s', reason: 'tab' });
 
-    r = step(m, { kind: 'completionsResult', requestId: firstId, items: ['(stale — discarded)'], now: 1100 });
+    r = step(m, { kind: 'completionsResult', requestId: firstId, items: ['(stale — discarded)'] });
     assert.deepStrictEqual(kinds(r.effects), ['fetchCompletions']);
     assert.strictEqual(find(r.effects, 'fetchCompletions')!.query, 'gamemode s');
   });
@@ -473,13 +488,13 @@ suite('completionEngine: Tab common-prefix completion', () => {
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
     m = step(m, {
       kind: 'completionsResult', requestId: fetchId,
-      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'], now: 1,
+      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'],
     }).machine;
     assert.strictEqual(m.fetch.kind, 'idle');
 
     // First Tab: complete to the shared "minecraft:diamond_" prefix, nothing
     // committed to a specific item yet.
-    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond', now: 1000 });
+    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond' });
     assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_');
     let phase = r.machine.phase;
@@ -488,25 +503,26 @@ suite('completionEngine: Tab common-prefix completion', () => {
 
     // Second Tab: nothing left to gain from the prefix — falls through to
     // cycling, applying the first full suggestion.
-    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_', now: 1010 });
+    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_sword');
     phase = r.machine.phase;
     assert.strictEqual(phase.kind === 'open' ? phase.mode.kind : '', 'cycling');
 
-    // Third Tab, in the quick-re-press window: cycles to the second suggestion.
-    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_sword', now: 1020 });
+    // Third Tab: nothing typed since "minecraft:diamond_sword" was applied —
+    // cycles to the second suggestion.
+    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_sword' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_pickaxe');
   });
 
   test('fresh fetch from Tab: results sharing a longer common prefix complete to that prefix instead of the first match', () => {
     let m = createMachine();
-    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond', now: 1000 });
+    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond' });
     m = r.machine;
     const fetchEffect = find(r.effects, 'fetchCompletions')!;
 
     r = step(m, {
       kind: 'completionsResult', requestId: fetchEffect.requestId,
-      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'], now: 1500,
+      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'],
     });
     assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_');
@@ -521,18 +537,18 @@ suite('completionEngine: Tab common-prefix completion', () => {
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
     m = step(m, {
       kind: 'completionsResult', requestId: fetchId,
-      items: ['minecraft:diamond_sword'], now: 1,
+      items: ['minecraft:diamond_sword'],
     }).machine;
     assert.strictEqual(m.fetch.kind, 'idle');
 
-    const r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond_sw', now: 1000 });
+    const r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond_sw' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_sword');
     assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.mode.kind : '', 'cycling');
   });
 
   test('items with no shared prefix beyond what is typed: first Tab cycles straight to the first item (existing behavior)', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
-    const r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    const r = step(m, { kind: 'tab', line: '/gamemode ' });
     assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'survival');
     assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.mode.kind : '', 'cycling');
   });
@@ -548,7 +564,7 @@ suite('completionEngine: usage staleness', () => {
     // back with a non-empty list also kicks off a background usage fetch
     // right away (rather than waiting for Tab), since at this point the
     // engine doesn't yet know whether "gamemode" resolves to a single usage.
-    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative'], now: 1 });
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative'] });
     m = r.machine;
     const usageFetchId = find(r.effects, 'fetchUsage')!.requestId;
     assert.strictEqual(m.fetch.kind === 'busy' ? m.fetch.purpose.kind : '', 'usage');
@@ -569,8 +585,8 @@ suite('completionEngine: arrow keys and escape', () => {
     let m = createMachine();
     m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
-    return step(m, { kind: 'tab', line: '/gamemode ', now: 1000 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items }).machine;
+    return step(m, { kind: 'tab', line: '/gamemode ' }).machine;
   }
 
   test('arrow keys browse without entering cycling mode, and wrap at both ends', () => {
@@ -586,7 +602,7 @@ suite('completionEngine: arrow keys and escape', () => {
       let mm = createMachine();
       mm = step(mm, { kind: 'lineChanged', line: '/gamemode ' }).machine;
       const fetchId = (mm.fetch.kind === 'busy') ? mm.fetch.requestId : -1;
-      return step(mm, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 }).machine;
+      return step(mm, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'] }).machine;
     }
   });
 
@@ -594,7 +610,7 @@ suite('completionEngine: arrow keys and escape', () => {
     let m = createMachine();
     m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'], now: 1 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative', 'adventure'] }).machine;
 
     let r = step(m, { kind: 'selectIndex', index: 2 });
     assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.selectedIndex : -1, 2);
@@ -621,7 +637,7 @@ suite('completionEngine: arrow keys and escape', () => {
     let m = createMachine();
     m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
     const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival'], now: 1 }).machine;
+    m = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival'] }).machine;
 
     const r = step(m, { kind: 'escape' });
     assert.deepStrictEqual(kinds(r.effects), ['hide']);

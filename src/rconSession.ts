@@ -421,7 +421,7 @@ export class RconSession {
     } catch {
       items = [];
     }
-    this.dispatchToEngine({ kind: 'completionsResult', requestId, items, now: Date.now() });
+    this.dispatchToEngine({ kind: 'completionsResult', requestId, items });
   }
 
   private async runEngineUsageFetch(requestId: number): Promise<void> {
@@ -440,11 +440,11 @@ export class RconSession {
   }
 
   private handleTabComplete(): void {
-    this.dispatchToEngine({ kind: 'tab', line: this.lineEditor.line, now: Date.now() });
+    this.dispatchToEngine({ kind: 'tab', line: this.lineEditor.line });
   }
 
   private handleShiftTab(): void {
-    this.dispatchToEngine({ kind: 'shiftTab', line: this.lineEditor.line, now: Date.now() });
+    this.dispatchToEngine({ kind: 'shiftTab', line: this.lineEditor.line });
   }
 
   private handleEnter(): void {

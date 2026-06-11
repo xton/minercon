@@ -270,11 +270,22 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   in both `onTabOrShiftTab`'s "items already on hand" path and
   `onCompletionsResult`'s fresh-fetch `'tab'` path). A follow-up Tab with
   nothing left to gain falls through to the existing cycling behavior
-  (1st suggestion, then 2nd, ... on quick re-presses) — which, together with
-  the existing live-as-you-type `lineChanged` refetch on Space, already
-  covered the rest of the requested cycle/accept flow. 9 new tests
-  (`longestCommonPrefix` + a new "Tab common-prefix completion" suite).
-  `tsc`/`eslint` clean, 286 tests passing
+  (1st suggestion, then 2nd, ...) — which, together with the existing
+  live-as-you-type `lineChanged` refetch on Space, already covered the rest
+  of the requested cycle/accept flow. 9 new tests (`longestCommonPrefix` +
+  a new "Tab common-prefix completion" suite). `tsc`/`eslint` clean,
+  286 tests passing.
+
+  Follow-up: cycling between Tab presses no longer depends on elapsed
+  wall-clock time. Previously a re-press only cycled if it landed within
+  500ms of the last one (`Mode.cycling.lastAdvanceAt`); a slower re-press
+  re-derived from scratch instead, which made the behavior feel arbitrary.
+  Replaced with an exact check: cycle if the line still equals
+  `applySuggestion(phase.query, phase.items[selectedIndex])` (i.e. nothing
+  was typed since the last suggestion was applied), regardless of timing;
+  otherwise re-derive for the new line. `now`/`Date.now()` removed entirely
+  from `completionEngine.ts`'s `Event`/`Mode`/reducer signatures and from
+  `rconSession.ts`'s three dispatch sites. 287 tests passing.
 - [ ] `/history` built-in command (if not already present) and a Ctrl+R-style
   reverse history search
 

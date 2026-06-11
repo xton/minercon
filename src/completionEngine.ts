@@ -4,11 +4,11 @@
 //
 // This module knows nothing about VS Code, sockets, or wall-clock time — it's
 // a reducer: (Machine, Event) -> { machine: Machine, effects: Effect[] }. The
-// shell (RconSession) feeds it terminal events plus its own clock, and
-// executes the Effects it returns (RCON sends, ANSI writes, applying text to
-// the line). That makes every async race and timing rule in here something
-// you can drive with a scripted event sequence in a test, rather than
-// something that happens to you against a real server at 2am.
+// shell (RconSession) feeds it terminal events and executes the Effects it
+// returns (RCON sends, ANSI writes, applying text to the line). That makes
+// every async race in here something you can drive with a scripted event
+// sequence in a test, rather than something that happens to you against a
+// real server at 2am.
 
 // ─────────────────────────── pure query helpers ───────────────────────────
 
@@ -163,9 +163,9 @@ function usageCoversLine(usage: Usage, line: string): boolean {
 export type Mode =
   // showing live as the user types; nothing has been spliced into the line yet
   | { kind: 'preview' }
-  // Tab applied a suggestion; further Tab/Shift-Tab advance through the list.
-  // `lastAdvanceAt` drives the "quick re-press cycles instead of re-deriving" window.
-  | { kind: 'cycling'; lastAdvanceAt: number };
+  // Tab applied a suggestion; further Tab/Shift-Tab advance through the list,
+  // as long as the line still matches what was applied (see onTabOrShiftTab).
+  | { kind: 'cycling' };
 
 export type FetchPurpose =
   | { kind: 'completions'; reason: 'typing' | 'tab' | 'shiftTab' }
@@ -222,20 +222,19 @@ export type Effect =
   | { kind: 'restoreLine'; text: string };
 
 // ───────────────────────────────── events ─────────────────────────────────
-// Everything the machine can react to — user input, server replies, and time
-// itself, delivered explicitly rather than read off Date.now() mid-handler.
+// Everything the machine can react to — user input and server replies.
 
 export type Event =
   | { kind: 'lineChanged'; line: string }
-  | { kind: 'tab'; line: string; now: number }
-  | { kind: 'shiftTab'; line: string; now: number }
+  | { kind: 'tab'; line: string }
+  | { kind: 'shiftTab'; line: string }
   | { kind: 'arrow'; direction: 'up' | 'down' }
   /** Jump/page operations land here too — they're shell-side windowing concerns,
    *  but the shell still needs to keep the machine's selection in sync so a
    *  later Tab knows which item is "currently selected". */
   | { kind: 'selectIndex'; index: number }
   | { kind: 'escape' }
-  | { kind: 'completionsResult'; requestId: number; items: string[]; now: number }
+  | { kind: 'completionsResult'; requestId: number; items: string[] }
   | { kind: 'usageResult'; requestId: number; text: string };
 
 // ─────────────────────────────── the reducer ───────────────────────────────
@@ -245,12 +244,12 @@ export interface StepResult { machine: Machine; effects: Effect[]; }
 export function step(m: Machine, event: Event): StepResult {
   switch (event.kind) {
     case 'lineChanged':       return onLineChanged(m, event.line);
-    case 'tab':               return onTabOrShiftTab(m, event.line, event.now, 'tab');
-    case 'shiftTab':          return onTabOrShiftTab(m, event.line, event.now, 'shiftTab');
+    case 'tab':               return onTabOrShiftTab(m, event.line, 'tab');
+    case 'shiftTab':          return onTabOrShiftTab(m, event.line, 'shiftTab');
     case 'arrow':             return onArrow(m, event.direction);
     case 'selectIndex':       return onSelectIndex(m, event.index);
     case 'escape':            return onEscape(m);
-    case 'completionsResult': return onCompletionsResult(m, event.requestId, event.items, event.now);
+    case 'completionsResult': return onCompletionsResult(m, event.requestId, event.items);
     case 'usageResult':       return onUsageResult(m, event.requestId, event.text);
   }
 }
@@ -306,7 +305,7 @@ function onLineChanged(m: Machine, line: string): StepResult {
 
 // ── tab / shiftTab ──
 
-function onTabOrShiftTab(m: Machine, line: string, now: number, which: 'tab' | 'shiftTab'): StepResult {
+function onTabOrShiftTab(m: Machine, line: string, which: 'tab' | 'shiftTab'): StepResult {
   const query = buildCompletionsQuery(line);
   if (query === null) {
     return m.phase.kind === 'open'
@@ -317,11 +316,13 @@ function onTabOrShiftTab(m: Machine, line: string, now: number, which: 'tab' | '
   const phase = m.phase;
   const delta = which === 'tab' ? 1 : -1;
 
-  // Quick re-press while already cycling: just advance through the list —
-  // `now` (not Date.now()) drives the "is this a quick re-press" check.
+  // Already cycling and nothing's been typed since the last suggestion was
+  // applied: advance to the next/previous item. This is an exact comparison
+  // (not a time window) — as soon as the line diverges from what was applied,
+  // we fall through and re-derive for the new line instead.
   if (phase.kind === 'open' && phase.mode.kind === 'cycling' && phase.items.length > 0
-      && (now - phase.mode.lastAdvanceAt) < 500) {
-    return advance(m, phase, phase.selectedIndex, delta, now);
+      && line === applySuggestion(phase.query, phase.items[phase.selectedIndex])) {
+    return advance(m, phase, phase.selectedIndex, delta);
   }
 
   // We already have fresh items for exactly this input — they were pulled
@@ -346,7 +347,7 @@ function onTabOrShiftTab(m: Machine, line: string, now: number, which: 'tab' | '
     // back from it — both rules match the pre-refactor behavior.
     const base = (phase.selectedIndex >= 0 && phase.selectedIndex < phase.items.length) ? phase.selectedIndex : 0;
     const initialDelta = which === 'tab' ? 0 : -1;
-    return advance(m, phase, base, initialDelta, now, /* maybeFetchUsage */ true);
+    return advance(m, phase, base, initialDelta, /* maybeFetchUsage */ true);
   }
 
   // Need fresh completions from the server, but only one fetch at a time —
@@ -359,9 +360,9 @@ function onTabOrShiftTab(m: Machine, line: string, now: number, which: 'tab' | '
   return fetchCompletionsFor(m, line, which);
 }
 
-function advance(m: Machine, phase: OpenPhase, baseIndex: number, delta: number, now: number, maybeFetchUsage = false): StepResult {
+function advance(m: Machine, phase: OpenPhase, baseIndex: number, delta: number, maybeFetchUsage = false): StepResult {
   const selectedIndex = (baseIndex + delta + phase.items.length) % phase.items.length;
-  let newPhase: OpenPhase = { ...phase, selectedIndex, mode: { kind: 'cycling', lastAdvanceAt: now } };
+  let newPhase: OpenPhase = { ...phase, selectedIndex, mode: { kind: 'cycling' } };
   let machine: Machine = { ...m, phase: newPhase };
 
   const effects: Effect[] = [{ kind: 'applySuggestion', text: phase.items[selectedIndex] }];
@@ -416,7 +417,7 @@ function onEscape(m: Machine): StepResult {
 
 // ── server replies ──
 
-function onCompletionsResult(m: Machine, requestId: number, items: string[], now: number): StepResult {
+function onCompletionsResult(m: Machine, requestId: number, items: string[]): StepResult {
   if (m.fetch.kind !== 'busy' || m.fetch.requestId !== requestId || m.fetch.purpose.kind !== 'completions') {
     return unchanged(m); // stale/superseded response — ignore
   }
@@ -509,7 +510,7 @@ function onCompletionsResult(m: Machine, requestId: number, items: string[], now
   const selectedIndex = purpose.reason === 'shiftTab' ? items.length - 1 : 0;
   const basePhase: OpenPhase = {
     kind: 'open', query: forLine, items, selectedIndex,
-    usage: { kind: 'none' }, mode: { kind: 'cycling', lastAdvanceAt: now },
+    usage: { kind: 'none' }, mode: { kind: 'cycling' },
   };
   const effects: Effect[] = [{ kind: 'applySuggestion', text: items[selectedIndex] }];
 
