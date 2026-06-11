@@ -86,14 +86,19 @@ export class RconSession {
       write: (text) => sessionHost.write(text),
       cursorColumn: () => {
         // Visual width of the prompt (ANSI codes stripped) plus cursor position
-        // within the typed text — gives the terminal column the cursor sits on.
+        // within the typed text — gives the cursor's offset from the start of
+        // the prompt. When that exceeds the terminal width, the line has
+        // wrapped onto a later row, so reduce it mod the column count to get
+        // the cursor's actual column on that row.
         const promptText = this.connectionManager.isReconnecting
           ? ansi.yellow('[reconnecting]') + ' > '
           : this.connectionManager.isConnected
           ? ansi.green('>') + ' '
           : ansi.red('[disconnected]') + ' > ';
         const promptWidth = promptText.replace(/\x1b\[[0-9;]*m/g, '').length;
-        return promptWidth + this.lineEditor.cursor;
+        const column = promptWidth + this.lineEditor.cursor;
+        const terminalWidth = this.sessionHost.dimensions()?.columns;
+        return terminalWidth ? column % terminalWidth : column;
       },
     });
 
@@ -116,7 +121,7 @@ export class RconSession {
     });
   }
 
-  open(_dimensions: { columns: number; rows: number } | undefined): void {
+  open(): void {
     this.writeWelcomeBanner();
     this.detectAndInitialize();
   }

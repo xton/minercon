@@ -94,7 +94,7 @@ for (const variant of addonVariants) {
       const session = new RconSession(ctrl, host, port, PASSWORD, silent, sessionHost);
       const h: Harness = { session, writes, output: () => writes.join('') };
 
-      session.open(undefined);
+      session.open();
       await waitUntil(() => h.output().includes('tab-complete plugin detected'));
       h.writes.length = 0;
 

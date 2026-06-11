@@ -177,8 +177,19 @@ rough edges left over from earlier refactors.
   `loadSubcommandDetails` (~line 455), and the 4x-repeated
   `(process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void })`
   cast in `cli.ts`
-- [ ] Dead `dimensions()` plumbing — `RconSession.open`'s `_dimensions`
-  parameter is accepted but never used (`rconSession.ts`)
+- [x] Dead `dimensions()` plumbing — `RconSession.open`'s `_dimensions`
+  parameter was accepted but never used (`rconSession.ts`). Investigated with
+  a new xterm-headless test (`suggestionDisplay.screen.test.ts`): when the
+  typed line wraps onto a second terminal row, `SuggestionDisplay`'s cursor
+  restoration (`\x1b[${col}C` from column 0) used the raw, un-wrapped
+  `promptWidth + lineEditor.cursor` as `col`, which a real terminal clamps to
+  its rightmost column instead of the cursor's actual (wrapped) column — the
+  popup itself was still drawn in the right place and intact. Fixed by
+  reducing that value mod `sessionHost.dimensions().columns` (already
+  implemented live by both adapters — `process.stdout.columns/rows` for the
+  CLI, `setDimensions`-cached `TerminalDimensions` for the VS Code
+  `Pseudoterminal`) when known. The now-genuinely-dead `_dimensions` parameter
+  on `open()` was removed (`rconSession.ts`, `rconTerminal.ts`, `cli.ts`)
 
 ---
 *Last updated: 2026-06-10 — §8's items 3, 5, and 7 (renamed here to match this
@@ -225,6 +236,35 @@ fully loaded, sets `rootCommands.set(alias, targetNode)` so alias names are
 just additional keys sharing the canonical command's node — `getSuggestions`
 and the cache format are unchanged. `cacheVersion` bumped to `2.2.0`.
 `tsc`/`eslint` clean, 275 tests passing.*
+
+---
+*Last updated: 2026-06-10 — §8's dead-`dimensions()`-plumbing item (now `[x]`)
+is done: `RconSession`'s `cursorColumn()` now reduces `promptWidth +
+lineEditor.cursor` mod `sessionHost.dimensions()?.columns` (falling back to
+the raw value when dimensions are unknown), fixing the suggestion popup's
+cursor-restoration column when the typed line wraps onto a second terminal
+row. Both adapters already supplied `dimensions()` live (CLI:
+`process.stdout.columns/rows`; VS Code: `setDimensions`-cached
+`TerminalDimensions`), so no new dimension-gathering code was needed. The
+now-genuinely-dead `_dimensions` parameter on `RconSession.open()` was
+removed (`rconSession.ts`, `rconTerminal.ts`, `cli.ts`, plus two test call
+sites). New xterm-headless test in `suggestionDisplay.screen.test.ts` and a
+new `rconSession.test.ts` test cover the wrap case end-to-end. `tsc`/`eslint`
+clean, 277 tests passing.*
+
+## 9. Feature ideas
+
+Smaller UX enhancements noticed along the way, not yet scheduled.
+
+- [ ] Tab completion should complete to the **longest common prefix** when
+  multiple suggestions share one, instead of jumping straight to the first
+  match (`applySuggestion` in `completionEngine.ts`). E.g. with
+  `minecraft:diamond_sword`/`minecraft:diamond_pickaxe` as the only matches,
+  the first Tab should complete to `minecraft:diamond_` (and open/keep the
+  suggestion popup), not commit to `minecraft:diamond_sword`. Most useful
+  when exploring a shared namespace like `minecraft:`
+- [ ] `/history` built-in command (if not already present) and a Ctrl+R-style
+  reverse history search
 
 ## How to record a live RCON fixture
 

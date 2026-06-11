@@ -80,7 +80,7 @@ function type(h: Harness, text: string): void {
 
 /** Opens the session and waits for the server-side plugin probe to land it on the prompt. */
 async function openInPluginMode(h: Harness): Promise<void> {
-    h.session.open(undefined);
+    h.session.open();
     await waitUntil(() => h.output().includes('tab-complete plugin detected'));
     h.writes.length = 0;
     h.controller.sendCalls.length = 0;
@@ -100,7 +100,7 @@ suite('RconSession', () => {
         fs.rmSync(storageDir, { recursive: true, force: true });
     });
 
-    function createHarness(sendImpl: SendImpl = defaultSend): Harness {
+    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined): Harness {
         const controller = new FakeController(sendImpl);
         const writes: string[] = [];
         const closes: number[] = [];
@@ -114,7 +114,7 @@ suite('RconSession', () => {
                 writeText: (text) => { pasteboard = text; return Promise.resolve(); },
             },
             cacheDir: storageDir,
-            dimensions: () => undefined,
+            dimensions,
         };
 
         const session = new RconSession(
@@ -129,7 +129,7 @@ suite('RconSession', () => {
 
     test('open writes the welcome banner, probes for the tab-complete plugin, and switches to plugin mode', async () => {
         const h = createHarness();
-        h.session.open(undefined);
+        h.session.open();
         await waitUntil(() => h.output().includes('tab-complete plugin detected'));
 
         const out = h.output();
@@ -208,6 +208,34 @@ suite('RconSession', () => {
         h.session.handleInput('\t');
 
         await waitUntil(() => h.controller.sendCalls.includes('tabcomplete say hel'));
+    });
+
+    test('when the typed line wraps onto a second terminal row, the suggestion popup\'s cursor restoration accounts for the wrap', async () => {
+        const h = createHarness(
+            cmd => cmd === 'tabcomplete' ? PLUGIN_PROBE_RESPONSE
+                 : cmd.startsWith('tabcomplete ') ? 'minecraft:diamond_sword\nminecraft:diamond_pickaxe'
+                 : '',
+            () => ({ columns: 20, rows: 10 }),
+        );
+        await openInPluginMode(h);
+
+        const line = '/give @a minecraft:diamond';
+        type(h, line);
+        h.session.handleInput('\t');
+
+        await waitUntil(() => h.output().includes('diamond_sword'));
+
+        // Tab auto-applies the first match, extending the line - read it back
+        // rather than re-deriving applySuggestion's behavior here.
+        const finalLine = (h.session as unknown as { lineEditor: { line: string } }).lineEditor.line;
+
+        // promptWidth ("> ") + cursor (end of line) — the raw, wrap-unaware offset.
+        const rawColumn = 2 + finalLine.length;
+        const wrappedColumn = rawColumn % 20;
+        assert.notStrictEqual(wrappedColumn, rawColumn, 'sanity check: this line is long enough to wrap on a 20-column terminal');
+
+        assert.ok(h.output().includes(`\x1b[${wrappedColumn}C`), 'cursor restoration uses the column on the wrapped row');
+        assert.ok(!h.output().includes(`\x1b[${rawColumn}C`), 'cursor restoration does not use the raw, un-wrapped offset');
     });
 
     test('/help prints the built-in command reference without touching the server', async () => {

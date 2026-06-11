@@ -240,7 +240,7 @@ async function main(): Promise<void> {
   });
 
   // Open the session (writes the welcome banner and starts the plugin probe)
-  session.open(sessionHost.dimensions());
+  session.open();
 }
 
 main().catch((err) => {

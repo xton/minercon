@@ -43,7 +43,7 @@ export class RconTerminal implements vscode.Pseudoterminal {
 
   open(initialDimensions: vscode.TerminalDimensions | undefined): void {
     this.dims = initialDimensions;
-    this.session.open(initialDimensions);
+    this.session.open();
   }
 
   close(): void {
