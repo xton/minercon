@@ -257,13 +257,24 @@ clean, 277 tests passing.*
 
 Smaller UX enhancements noticed along the way, not yet scheduled.
 
-- [ ] Tab completion should complete to the **longest common prefix** when
+- [x] Tab completion should complete to the **longest common prefix** when
   multiple suggestions share one, instead of jumping straight to the first
   match (`applySuggestion` in `completionEngine.ts`). E.g. with
   `minecraft:diamond_sword`/`minecraft:diamond_pickaxe` as the only matches,
   the first Tab should complete to `minecraft:diamond_` (and open/keep the
   suggestion popup), not commit to `minecraft:diamond_sword`. Most useful
-  when exploring a shared namespace like `minecraft:`
+  when exploring a shared namespace like `minecraft:`. Done: new
+  `longestCommonPrefix(items)` helper in `completionEngine.ts`; on the first
+  Tab with >1 candidate, if `applySuggestion(line, lcp) !== line` it's applied
+  instead of `items[0]` and the list stays open in `'preview'` mode (handled
+  in both `onTabOrShiftTab`'s "items already on hand" path and
+  `onCompletionsResult`'s fresh-fetch `'tab'` path). A follow-up Tab with
+  nothing left to gain falls through to the existing cycling behavior
+  (1st suggestion, then 2nd, ... on quick re-presses) — which, together with
+  the existing live-as-you-type `lineChanged` refetch on Space, already
+  covered the rest of the requested cycle/accept flow. 9 new tests
+  (`longestCommonPrefix` + a new "Tab common-prefix completion" suite).
+  `tsc`/`eslint` clean, 286 tests passing
 - [ ] `/history` built-in command (if not already present) and a Ctrl+R-style
   reverse history search
 

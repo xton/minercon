@@ -72,6 +72,19 @@ export function applySuggestion(line: string, suggestionText: string): string {
   return line.slice(0, line.length - overlap) + suggestionText;
 }
 
+/** The longest string every item in `items` starts with (`''` if `items` is empty). */
+export function longestCommonPrefix(items: string[]): string {
+  if (items.length === 0) { return ''; }
+  let prefix = items[0];
+  for (let i = 1; i < items.length && prefix.length > 0; i++) {
+    let len = 0;
+    const max = Math.min(prefix.length, items[i].length);
+    while (len < max && prefix[len] === items[i][len]) { len++; }
+    prefix = prefix.slice(0, len);
+  }
+  return prefix;
+}
+
 /** Every failure/meta message from both `tabcomplete` and `cmdusage` starts with "(". */
 function isFailureResponse(response: string | undefined): boolean {
   return !response || response.trim().startsWith('(');
@@ -314,6 +327,21 @@ function onTabOrShiftTab(m: Machine, line: string, now: number, which: 'tab' | '
   // We already have fresh items for exactly this input — they were pulled
   // live as the user typed, so there's no need to hit the server again.
   if (phase.kind === 'open' && phase.query === line && phase.items.length > 0) {
+    // First Tab with multiple candidates: if they share a prefix longer than
+    // what's typed, complete to that prefix (bash-style) and leave the list
+    // open — a follow-up Tab with nothing further to gain falls through to
+    // cycling below. A single candidate's "common prefix" is itself, but
+    // that case is left to the cycling branch, which already fills it in
+    // (and fetches its usage line) on the first press.
+    if (which === 'tab' && phase.items.length > 1) {
+      const lcp = longestCommonPrefix(phase.items);
+      const completed = applySuggestion(line, lcp);
+      if (completed !== line) {
+        const newPhase: OpenPhase = { ...phase, query: completed };
+        return { machine: { ...m, phase: newPhase }, effects: [{ kind: 'applySuggestion', text: lcp }, renderEffect(newPhase)] };
+      }
+    }
+
     // Tab keeps the existing selection (e.g. from arrow keys); Shift-Tab steps
     // back from it — both rules match the pre-refactor behavior.
     const base = (phase.selectedIndex >= 0 && phase.selectedIndex < phase.items.length) ? phase.selectedIndex : 0;
@@ -459,6 +487,21 @@ function onCompletionsResult(m: Machine, requestId: number, items: string[], now
     }
 
     return { machine: { ...m, phase: basePhase, fetch: { kind: 'idle' } }, effects: [renderEffect(basePhase)] };
+  }
+
+  // First Tab landing fresh completions for multiple candidates: same
+  // common-prefix completion as the "items already on hand" path in
+  // onTabOrShiftTab, just reached via a server round trip instead.
+  if (purpose.reason === 'tab' && items.length > 1) {
+    const lcp = longestCommonPrefix(items);
+    const completed = applySuggestion(forLine, lcp);
+    if (completed !== forLine) {
+      const phase: OpenPhase = {
+        kind: 'open', query: completed, items, selectedIndex: 0,
+        usage: { kind: 'none' }, mode: { kind: 'preview' },
+      };
+      return { machine: { ...m, phase, fetch: { kind: 'idle' } }, effects: [{ kind: 'applySuggestion', text: lcp }, renderEffect(phase)] };
+    }
   }
 
   // purpose.reason is 'tab' or 'shiftTab': apply a suggestion right away and

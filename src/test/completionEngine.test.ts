@@ -2,7 +2,7 @@
 import * as assert from 'assert';
 import {
   buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse,
-  applySuggestion,
+  applySuggestion, longestCommonPrefix,
   createMachine, step, Machine, Effect, Event,
 } from '../completionEngine';
 
@@ -99,6 +99,28 @@ suite('completionEngine: applySuggestion (splicing a candidate into the typed li
       assert.strictEqual(applySuggestion(line, suggestion), expected);
     });
   }
+});
+
+suite('completionEngine: longestCommonPrefix', () => {
+  test('shared prefix across multiple items', () => {
+    assert.strictEqual(longestCommonPrefix(['minecraft:diamond_sword', 'minecraft:diamond_pickaxe']), 'minecraft:diamond_');
+  });
+
+  test('one item is a prefix of the other', () => {
+    assert.strictEqual(longestCommonPrefix(['survival', 'survivalists']), 'survival');
+  });
+
+  test('no shared prefix at all', () => {
+    assert.strictEqual(longestCommonPrefix(['survival', 'creative']), '');
+  });
+
+  test('a single item is its own common prefix', () => {
+    assert.strictEqual(longestCommonPrefix(['survival']), 'survival');
+  });
+
+  test('empty list', () => {
+    assert.strictEqual(longestCommonPrefix([]), '');
+  });
 });
 
 suite('completionEngine: response parsing', () => {
@@ -306,24 +328,25 @@ suite('completionEngine: serialized fetching (no concurrent RCON sends)', () => 
   });
 });
 
-suite('completionEngine: Tab / Shift-Tab', () => {
-  function openWithItems(items: string[]): Machine {
-    let m = createMachine();
-    m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
-    const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
-    m = step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
+/** Opens the suggestion list for "/gamemode " with the given items, as if fetched live while typing. */
+function openWithItems(items: string[]): Machine {
+  let m = createMachine();
+  m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
+  const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+  m = step(m, { kind: 'completionsResult', requestId: fetchId, items, now: 1 }).machine;
 
-    // The trailing space is a "natural pause point" — the engine now also
-    // kicks off a background usage fetch right away. Resolve it (empty —
-    // "gamemode" alone isn't a fully resolved usage) so the returned machine
-    // is idle, the way these Tab-focused tests expect; usage behavior itself
-    // is covered by the usage-staleness and rendering-flow tests.
-    if (m.fetch.kind === 'busy' && m.fetch.purpose.kind === 'usage') {
-      m = step(m, { kind: 'usageResult', requestId: m.fetch.requestId, text: '' }).machine;
-    }
-    return m;
+  // The trailing space is a "natural pause point" — the engine now also
+  // kicks off a background usage fetch right away. Resolve it (empty —
+  // "gamemode" alone isn't a fully resolved usage) so the returned machine
+  // is idle, the way these Tab-focused tests expect; usage behavior itself
+  // is covered by the usage-staleness and rendering-flow tests.
+  if (m.fetch.kind === 'busy' && m.fetch.purpose.kind === 'usage') {
+    m = step(m, { kind: 'usageResult', requestId: m.fetch.requestId, text: '' }).machine;
   }
+  return m;
+}
 
+suite('completionEngine: Tab / Shift-Tab', () => {
   test('Tab reuses already-fetched suggestions for the current line — no extra round trip', () => {
     const m = openWithItems(['survival', 'creative', 'adventure']);
     assert.strictEqual(m.fetch.kind, 'idle');
@@ -440,6 +463,78 @@ suite('completionEngine: Tab / Shift-Tab', () => {
     r = step(m, { kind: 'completionsResult', requestId: firstId, items: ['(stale — discarded)'], now: 1100 });
     assert.deepStrictEqual(kinds(r.effects), ['fetchCompletions']);
     assert.strictEqual(find(r.effects, 'fetchCompletions')!.query, 'gamemode s');
+  });
+});
+
+suite('completionEngine: Tab common-prefix completion', () => {
+  test('items already on hand: first Tab completes to their shared prefix; a follow-up Tab then cycles 1st, 2nd, ...', () => {
+    let m = createMachine();
+    m = step(m, { kind: 'lineChanged', line: '/give @a minecraft:diamond' }).machine;
+    const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+    m = step(m, {
+      kind: 'completionsResult', requestId: fetchId,
+      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'], now: 1,
+    }).machine;
+    assert.strictEqual(m.fetch.kind, 'idle');
+
+    // First Tab: complete to the shared "minecraft:diamond_" prefix, nothing
+    // committed to a specific item yet.
+    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond', now: 1000 });
+    assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_');
+    let phase = r.machine.phase;
+    assert.strictEqual(phase.kind === 'open' ? phase.mode.kind : '', 'preview');
+    assert.strictEqual(phase.kind === 'open' ? phase.query : '', '/give @a minecraft:diamond_');
+
+    // Second Tab: nothing left to gain from the prefix — falls through to
+    // cycling, applying the first full suggestion.
+    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_', now: 1010 });
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_sword');
+    phase = r.machine.phase;
+    assert.strictEqual(phase.kind === 'open' ? phase.mode.kind : '', 'cycling');
+
+    // Third Tab, in the quick-re-press window: cycles to the second suggestion.
+    r = step(r.machine, { kind: 'tab', line: '/give @a minecraft:diamond_sword', now: 1020 });
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_pickaxe');
+  });
+
+  test('fresh fetch from Tab: results sharing a longer common prefix complete to that prefix instead of the first match', () => {
+    let m = createMachine();
+    let r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond', now: 1000 });
+    m = r.machine;
+    const fetchEffect = find(r.effects, 'fetchCompletions')!;
+
+    r = step(m, {
+      kind: 'completionsResult', requestId: fetchEffect.requestId,
+      items: ['minecraft:diamond_sword', 'minecraft:diamond_pickaxe'], now: 1500,
+    });
+    assert.deepStrictEqual(kinds(r.effects), ['applySuggestion', 'render']);
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_');
+    const phase = r.machine.phase;
+    assert.strictEqual(phase.kind === 'open' ? phase.mode.kind : '', 'preview');
+    assert.strictEqual(phase.kind === 'open' ? phase.query : '', '/give @a minecraft:diamond_');
+  });
+
+  test('a single suggestion is filled in entirely on the first Tab — no common-prefix detour', () => {
+    let m = createMachine();
+    m = step(m, { kind: 'lineChanged', line: '/give @a minecraft:diamond_sw' }).machine;
+    const fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+    m = step(m, {
+      kind: 'completionsResult', requestId: fetchId,
+      items: ['minecraft:diamond_sword'], now: 1,
+    }).machine;
+    assert.strictEqual(m.fetch.kind, 'idle');
+
+    const r = step(m, { kind: 'tab', line: '/give @a minecraft:diamond_sw', now: 1000 });
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'minecraft:diamond_sword');
+    assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.mode.kind : '', 'cycling');
+  });
+
+  test('items with no shared prefix beyond what is typed: first Tab cycles straight to the first item (existing behavior)', () => {
+    const m = openWithItems(['survival', 'creative', 'adventure']);
+    const r = step(m, { kind: 'tab', line: '/gamemode ', now: 1000 });
+    assert.strictEqual(find(r.effects, 'applySuggestion')!.text, 'survival');
+    assert.strictEqual(r.machine.phase.kind === 'open' ? r.machine.phase.mode.kind : '', 'cycling');
   });
 });
 
