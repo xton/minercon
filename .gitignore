@@ -45,3 +45,6 @@ command-cache/
 # Optional - keep some VS Code configs
 # Uncomment if you want to share VS Code settings with contributors
 # !.vscode/
+
+plugin/bin
+fabric-mod/bin
