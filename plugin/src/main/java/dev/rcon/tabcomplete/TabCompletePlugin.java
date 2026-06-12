@@ -15,6 +15,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
 public class TabCompletePlugin extends JavaPlugin {
 
@@ -255,16 +256,26 @@ public class TabCompletePlugin extends JavaPlugin {
                 }
             }
 
-            // When the deepest parsed node is an argument (user has typed past the last
-            // subcommand), drop the empty-string entry — it means "executable here with no
-            // more args" but the user is clearly trying to type more.
-            StringBuilder sb = new StringBuilder();
-            for (String usage : usages) {
-                if (usage.isEmpty() && deepestIsArgument) continue;
-                if (!sb.isEmpty()) sb.append("\n");
-                sb.append(usage.isEmpty() ? prefix : prefix + " " + usage);
+            // getAllUsage's "ladder" expands optional trailing arguments into one
+            // line per depth (e.g. "clear", "clear <targets>", "clear <targets>
+            // <item>", ...), which the RCON client can't distinguish from genuine
+            // ambiguity. getSmartUsage instead collapses those into a single
+            // "[<param>]"-bracketed usage string, matching minecraft:help's
+            // compact form (e.g. "clear [<targets>] [<item>]"). Each entry in the
+            // returned map is a genuinely distinct continuation (e.g. different
+            // subcommand branches), so multiple entries become separate lines -
+            // that's the real-ambiguity case the client still treats as unresolved.
+            Map<CommandNode, String> smartUsages = dispatcher.getSmartUsage(deepestNode, source);
+            if (smartUsages.isEmpty()) {
+                sender.sendMessage(prefix);
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for (String usage : smartUsages.values()) {
+                    if (!sb.isEmpty()) sb.append("\n");
+                    sb.append(prefix).append(" ").append(usage);
+                }
+                sender.sendMessage(sb.toString());
             }
-            sender.sendMessage(sb.isEmpty() ? prefix : sb.toString());
         } catch (Exception e) {
             sender.sendMessage("Error getting usage: " + e.getMessage());
         }

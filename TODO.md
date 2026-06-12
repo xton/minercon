@@ -406,9 +406,10 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   Overview" section updated to match current module names
   (`RconSession`/`rconSession.ts` instead of the pre-mega-module-split
   `RconTerminal`) and now points to the new doc.
-- [ ] **Argument hint never shows for commands with optional trailing
-  arguments, in plugin mode** (found 2026-06-11). `cmdusage clear` returns a
-  Brigadier "usage ladder" - one line per optional-argument depth:
+- [x] **Argument hint never shows for commands with optional trailing
+  arguments, in plugin mode** (found 2026-06-11, fixed 2026-06-11). `cmdusage
+  clear` returned a Brigadier "usage ladder" - one line per optional-argument
+  depth:
   ```
   clear
   clear <targets>
@@ -419,16 +420,29 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   [<item>]` form. `parseUsageResponse` (`completionEngine.ts`) treats any
   response with more than one non-empty line as unresolved/ambiguous (the
   shape it's designed to recognize is genuine ambiguity, e.g. "mvp c" →
-  "mvp create"/"mvp config") and returns `''`, so no argument hint is ever
+  "mvp create"/"mvp config") and returns `''`, so no argument hint was ever
   shown for `/clear` or any other command with optional trailing args.
-  Per the user: "we should just be displaying the optional params like they
-  show up originally in help" - i.e. collapse this ladder (each line ==
-  previous line + one more trailing `<token>`, all sharing a common prefix)
-  into a single usage line with the extra tokens wrapped in `[...]`
-  (`clear [<targets>] [<item>] [<maxCount>]`), and keep treating
-  non-ladder multi-line responses (real ambiguity) as unresolved. Likely
-  lives in `parseUsageResponse` or a new helper it calls, with unit tests
-  covering both the ladder-collapse and genuine-ambiguity cases.
+  Root cause was on the plugin side: `plugin/src/main/java/dev/rcon/
+  tabcomplete/TabCompletePlugin.java`'s `handleUsageCommand` called
+  Brigadier's `CommandDispatcher.getAllUsage`, which deliberately enumerates
+  one usage string per executable depth (the ladder).
+  `CommandDispatcher.getSmartUsage` instead returns a `Map<CommandNode,
+  String>` already collapsed into the compact `[<param>]` "smart form" - the
+  same form `minecraft:help` displays. Fixed by switching
+  `handleUsageCommand` to `getSmartUsage`: an empty map means "no further
+  args" (sends bare `prefix`), a single-entry map means one collapsed usage
+  line (`clear [<targets>] [<item>]`), and a multi-entry map (genuinely
+  different subcommand branches, e.g. `team add ...` / `team empty ...`)
+  still produces one line per entry - preserving the real-ambiguity case
+  `parseUsageResponse` correctly treats as unresolved. No `parseUsageResponse`
+  change was needed - its existing single-line/multi-line split already does
+  the right thing once the plugin emits the compact form. Updated
+  `autocompleteSession.test.ts`'s "highlights the next argument" functional
+  test to accept either `[<target>]` (paper/spigot+plugin, now bracketed) or
+  `<target>` (fabric+mod, still on `getAllUsage` and unbracketed - same
+  ladder issue, not yet fixed there). Verified against real servers via
+  `npm run test:functional` (all 7 variants) and a targeted re-run of
+  `autocompleteSession.test.ts` (24/24 passing).
 
 ## How to record a live RCON fixture
 
