@@ -22,6 +22,65 @@ The codebase is organized in layers, bottom-up:
 Two small **shared utilities** (`ansi.ts`, `logger.ts`) are used throughout
 and are omitted from the diagram below for clarity — see their own section.
 
+## Terminology
+
+A few terms carry specific meaning throughout this codebase and its docs:
+
+- **Plugin mode** — `RconSession.pluginMode` is `true` when the server
+  answers the `tabcomplete`/`cmdusage` probe commands, i.e. a server-side
+  **RconTabComplete** addon (see below) is installed. In this mode
+  `RconCompletionsBackend` asks the server directly for completions and
+  argument usage on every keystroke; no command tree is built or cached.
+
+- **Local mode** — the opposite of plugin mode: no RconTabComplete addon
+  responded (vanilla servers, modded servers without the mod, or
+  `--no-plugin`/`disablePlugin` below). `CommandAutocomplete` crawls `/help`
+  (and `minecraft:help`, where supported) once at startup to build a
+  **command tree**, which `LocalCompletionsBackend`/`commandSuggestions.ts`
+  query thereafter. This is the path exercised by the "no-plugin" help-crawl
+  work — see `docs/technical/NO_PLUGIN_HELP_CRAWL.md`.
+
+- **`--no-plugin` / `disablePlugin`** — a CLI flag / `RconSessionHost` option
+  that forces local mode even when a compatible addon is present. Useful for
+  developing/testing the help-crawl path against any server, but bugs found
+  this way are real bugs for the (large) population of production servers
+  that don't run the addon — not dev-only edge cases.
+
+- **RconTabComplete** — the umbrella name for the server-side addons (a
+  Paper/Spigot plugin under `plugin/` and a Fabric mod under `fabric-mod/`)
+  that implement the `tabcomplete`/`cmdusage` RCON commands enabling plugin
+  mode. The two addons' naming is currently inconsistent (see TODO.md §10/§12
+  for the planned per-server-type fork).
+
+- **Command tree** / `CommandNode` — the data structure built by
+  `commandAutocomplete.ts` in local mode: every root command, its
+  subcommands, and argument parameters, parsed from `/help` text by
+  `helpTextParsing.ts`. Persisted on disk by `commandTreeCache.ts`.
+
+- **`minecraft:` namespace prefix** — on Paper/Spigot, prefixing a command
+  with `minecraft:` (e.g. `minecraft:help`) surfaces Brigadier's full
+  `<arg>` syntax even for commands whose plain `/help` only shows a `Usage:`
+  line; vanilla and Fabric reject this prefix entirely.
+  `supportsMinecraftNamespace` detects which is true for the connected
+  server, and `mergeHelpSources()` combines both responses when both are
+  available. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md`.
+
+- **Fence packet** (a.k.a. double-packet technique) — the empty dummy RCON
+  command sent partway through a response to detect where a fragmented
+  response ends. See `docs/TECHNICAL.md` for the full writeup.
+
+- **Built-in commands** — `/`-prefixed commands (`/help`, `/clear`,
+  `/disconnect`, `/reconnect`, `/history`, ...) handled entirely by
+  `RconSession.handleEnter` via a lookup table and never sent to the server
+  as RCON commands. Anything typed *without* a leading `/` is sent to the
+  server as-is (e.g. `tp Steve 0 64 0`).
+
+- **`RconSessionHost`** — the narrow interface `RconSession` talks to instead
+  of VS Code or stdio directly (`write`, `close`, `clipboard`, `cacheDir`,
+  `dimensions`, plus optional `historySize`/`disablePlugin`). Implemented by
+  `RconTerminal` (VS Code) and the CLI's host adapter — see "Host adapters"
+  below.
+
 ## Module dependency diagram
 
 ```mermaid
