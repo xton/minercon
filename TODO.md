@@ -618,11 +618,13 @@ Ordered roughly by user impact within each group.
   `npm test` (unit/mocha) from `npm run test:functional` (live-server,
   local/plugin mode); "RCON Protocol Layer" no longer attributes reconnect to
   `RconController` (that's `ConnectionManager`'s job).
-- [ ] **README drift** — CLI options section omits `--log-level`,
-  `--history-size`, and `--no-plugin` (all in `--help`); the built-in
-  commands table omits `/history`; the keyboard-shortcut tables omit Ctrl+R
-  history search. Also worth a "formerly Minecraft RCON Terminal" naming
-  note near the version badge for returning users.
+- [x] **README drift** — CLI options/env-var tables now include
+  `--log-level`/`MCRCON_LOG_LEVEL`, `--history-size`/`MCRCON_HISTORY_SIZE`,
+  and `--no-plugin` (with prose notes on each, the last linking to
+  ARCHITECTURE.md's new local-mode/plugin-mode terminology); the built-in
+  commands table now lists `/history`; "Navigation and completion" now
+  includes Ctrl+R reverse history search; added a "Formerly published as
+  'Minecraft RCON Terminal'" note under the version badges.
 - [ ] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
   while the package is at 3.0.0.
 - [ ] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,

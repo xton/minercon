@@ -8,6 +8,8 @@ tool** (`minercon`) that runs in any terminal.
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
+> Formerly published as "Minecraft RCON Terminal" — same project, new name.
+
 ---
 
 ## Features
@@ -112,13 +114,19 @@ minercon [host] [port] [options]
 
 Options:
   -p, --password <pw>   RCON password
-  --save                Save host/port to ~/.config/minercon/config.json
-  --log-file <path>     Write log output to a file instead of stderr
+  --save                Save host/port/history-size to ~/.config/minercon/config.json
+  --log-file <path>     Append log output to a file instead of stderr
+  --log-level <level>   One of: debug, info, warning, error (default: info)
+  --history-size <n>    Number of commands to remember in history (default: 100)
+  --no-plugin           Skip the server-side tab-complete plugin probe (manual
+                         testing only; not persisted to config)
   -h, --help            Show help
 
 Environment variables:
   MCRCON_PASSWORD       RCON password (used when --password is not given)
   MCRCON_LOG_FILE       Log file path (used when --log-file is not given)
+  MCRCON_LOG_LEVEL      Log level (used when --log-level is not given)
+  MCRCON_HISTORY_SIZE   History size (used when --history-size is not given)
 ```
 
 **Password handling:** the CLI never writes the password to disk. Supply it
@@ -136,7 +144,17 @@ Ctrl+X / Ctrl+C-with-selection do the same within the session.
 
 **Log output:** diagnostic messages go to stderr by default, colored by level.
 Use `--log-file` to redirect them to a file (useful when stderr would
-interfere with piped output).
+interfere with piped output). Use `--log-level debug` for verbose per-command
+RCON send/receive logging.
+
+**History size:** `--history-size` controls how many commands are remembered
+for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `/history` command, and (with
+`--save`) persists to the saved config.
+
+**`--no-plugin`:** forces local mode (crawling `/help` for tab completion)
+even if the server-side RconTabComplete plugin/mod is installed. Intended for
+testing the local-mode crawl — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#terminology)
+for what "local mode" vs. "plugin mode" means.
 
 ### Quick examples
 
@@ -166,6 +184,7 @@ minercon
 | `Shift+Tab` | Cycle to previous suggestion |
 | `Up` / `Ctrl+P` | Previous command in history (or move up in suggestion list) |
 | `Down` / `Ctrl+N` | Next command in history (or move down in suggestion list) |
+| `Ctrl+R` | Reverse search command history; press again to cycle to the next-older match |
 | `Page Up` / `Page Down` | Page through suggestion list |
 | `Esc` | Close suggestion list; if already closed, clear the line |
 | `Enter` | Submit the current command |
@@ -229,6 +248,7 @@ These are handled by the terminal itself and never sent to the server.
 |---|---|
 | `/help` | Show this list of built-in commands and keyboard shortcuts |
 | `/clear` | Clear the terminal screen |
+| `/history` | Show command history |
 | `/reconnect` | Manually reconnect to the server |
 | `/disconnect` | Disconnect (stays open; use `Ctrl+D` to also exit) |
 | `/reload-commands` | Force a fresh crawl of the server's command tree (local mode only) |
