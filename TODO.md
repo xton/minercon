@@ -511,14 +511,17 @@ Ordered roughly by user impact within each group.
   `LineEditor`'s `promptText()` host callback (~line 123), and `showPrompt()`
   (~line 244). Fixed: one private `promptText(): string`; all three derive
   from it.
-- [ ] **`handleEnter`'s built-in command if/else chain** mirrors the old
+- [x] **`handleEnter`'s built-in command if/else chain** mirrors the old
   `handleInput` smell that §1 fixed with a lookup table — `/reconnect`,
   `/disconnect`, `/clear`, `/help`, `/reload-commands`, `/clear-cache`,
   `/cache-info`, `/history` (`rconSession.ts:580-626`). A
   `Map<string, () => void>` (plus a description field) would also let
   `showHelp()` generate its command list from the same table instead of
   hand-maintaining a parallel copy (CONTRIBUTING.md even documents the
-  "add another else-if, don't forget /help" dance).
+  "add another else-if, don't forget /help" dance). Fixed: new
+  `BuiltinCommand` table (`buildBuiltinCommands()` / `builtinLookup`) drives
+  both `handleEnter` dispatch and `showHelp()`'s command list; adding a
+  command is now a single table entry.
 - [ ] **Two § color-code strippers** — `completionEngine.ts` has a private
   `stripMinecraftColorCodes` (handles the `Â§` UTF-8-mangled form) while
   `ansi.ts` exports `stripColors`. Consolidate in `ansi.ts` (folding in the

@@ -36,6 +36,15 @@ export interface RconSessionHost {
   disablePlugin?: boolean;
 }
 
+/** A terminal-side `/` command: dispatched by name/alias, listed (by name only) in /help. */
+interface BuiltinCommand {
+  name: string;
+  description: string;
+  /** Alternate names that dispatch to the same command but aren't listed in /help. */
+  aliases?: string[];
+  run: () => void;
+}
+
 export class RconSession {
   private connectionManager: ConnectionManager;
   private lineEditor: LineEditor;
@@ -568,36 +577,94 @@ export class RconSession {
         this.historyStore.save(this.lineEditor.historyEntries);
       }
 
-      if (command === '/reconnect') {
-        this.connectionManager.manualReconnect();
-      } else if (command === '/disconnect') {
-        this.connectionManager.disconnect();
-      } else if (command === '/clear') {
-        this.sessionHost.write('\x1b[2J\x1b[H');
-        this.showPrompt();
-      } else if (command === '/help') {
-        this.showHelp();
-      } else if (command === '/reload-commands' || command === '/refresh-commands') {
-        if (this.pluginMode) {
-          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no command cache to reload.') + '\r\n\r\n');
+      const builtin = this.builtinLookup.get(command);
+      if (builtin) {
+        builtin.run();
+      } else {
+        this.executeCommand(command);
+      }
+    } else {
+      this.showPrompt();
+    }
+  }
+
+  // ── built-in `/` commands ──
+  //
+  // One table drives both dispatch (handleEnter → builtinLookup) and the
+  // command list /help prints — adding a command here is the whole job.
+  // Same lookup-table pattern as buildKeyHandlers; like there, the run()
+  // closures resolve collaborators lazily at call time.
+
+  private readonly builtinCommands = this.buildBuiltinCommands();
+  private readonly builtinLookup: Map<string, BuiltinCommand> = new Map(
+    this.builtinCommands.flatMap(cmd => [cmd.name, ...(cmd.aliases ?? [])].map(name => [name, cmd] as const))
+  );
+
+  private buildBuiltinCommands(): BuiltinCommand[] {
+    /** Writes the "this is plugin mode, there's no local cache" notice — shared by every cache-related command. */
+    const pluginModeNotice = (text: string): void => {
+      this.sessionHost.write(ansi.yellow(text) + '\r\n\r\n');
+      this.showPrompt();
+    };
+
+    return [
+      {
+        name: '/help', description: 'Show this help message',
+        run: () => this.showHelp(),
+      },
+      {
+        name: '/clear', description: 'Clear the terminal screen',
+        run: () => {
+          this.sessionHost.write('\x1b[2J\x1b[H');
           this.showPrompt();
-        } else {
-          this.initializeCommands(true);
-        }
-      } else if (command === '/clear-cache') {
-        if (this.pluginMode) {
-          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no cache.') + '\r\n\r\n');
-          this.showPrompt();
-        } else {
-          this.autocomplete.clearCache();
-          this.sessionHost.write(ansi.yellow('Command cache cleared.') + '\r\n\r\n');
-          this.showPrompt();
-        }
-      } else if (command === '/cache-info') {
-        if (this.pluginMode) {
-          this.sessionHost.write(ansi.yellow('Using server-side tab completion — no cache.') + '\r\n\r\n');
-          this.showPrompt();
-        } else {
+        },
+      },
+      {
+        name: '/history', description: 'Show command history',
+        run: () => {
+          this.showHistory();
+          this.lineEditor.pushHistory('/history');
+          this.historyStore.save(this.lineEditor.historyEntries);
+        },
+      },
+      {
+        name: '/reconnect', description: 'Reconnect to the server',
+        run: () => { this.connectionManager.manualReconnect(); },
+      },
+      {
+        name: '/disconnect', description: 'Disconnect from the server',
+        run: () => this.connectionManager.disconnect(),
+      },
+      {
+        name: '/reload-commands', description: 'Force reload command database from server',
+        aliases: ['/refresh-commands'],
+        run: () => {
+          if (this.pluginMode) {
+            pluginModeNotice('Using server-side tab completion — no command cache to reload.');
+          } else {
+            this.initializeCommands(true);
+          }
+        },
+      },
+      {
+        name: '/clear-cache', description: 'Clear cached command database',
+        run: () => {
+          if (this.pluginMode) {
+            pluginModeNotice('Using server-side tab completion — no cache.');
+          } else {
+            this.autocomplete.clearCache();
+            this.sessionHost.write(ansi.yellow('Command cache cleared.') + '\r\n\r\n');
+            this.showPrompt();
+          }
+        },
+      },
+      {
+        name: '/cache-info', description: 'Show command cache information',
+        run: () => {
+          if (this.pluginMode) {
+            pluginModeNotice('Using server-side tab completion — no cache.');
+            return;
+          }
           const info = this.autocomplete.getCacheInfo();
           if (info.exists) {
             this.sessionHost.write(ansi.cyan('Cache Status:') + '\r\n');
@@ -607,17 +674,9 @@ export class RconSession {
             this.sessionHost.write(ansi.yellow('No cache found.') + '\r\n\r\n');
           }
           this.showPrompt();
-        }
-      } else if (command === '/history') {
-        this.showHistory();
-        this.lineEditor.pushHistory(command);
-        this.historyStore.save(this.lineEditor.historyEntries);
-      } else {
-        this.executeCommand(command);
-      }
-    } else {
-      this.showPrompt();
-    }
+        },
+      },
+    ];
   }
 
   private showHistory(): void {
@@ -636,14 +695,9 @@ export class RconSession {
 
   private showHelp(): void {
     this.sessionHost.write(ansi.boldCyan('Built-in Commands:') + '\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/help') + ' - Show this help message\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/clear') + ' - Clear the terminal screen\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/history') + ' - Show command history\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/reconnect') + ' - Reconnect to the server\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/disconnect') + ' - Disconnect from the server\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/reload-commands') + ' - Force reload command database from server\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/clear-cache') + ' - Clear cached command database\r\n');
-    this.sessionHost.write('  ' + ansi.yellow('/cache-info') + ' - Show command cache information\r\n');
+    for (const { name, description } of this.builtinCommands) {
+      this.sessionHost.write('  ' + ansi.yellow(name) + ' - ' + description + '\r\n');
+    }
     this.sessionHost.write('\r\n');
     this.sessionHost.write(ansi.boldCyan('Keyboard Shortcuts:') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Tab - Autocomplete commands and cycle suggestions') + '\r\n');
