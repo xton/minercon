@@ -76,7 +76,9 @@ export class RconController {
         this.logger.warning(`Received non-string response: ${JSON.stringify(res)}`);
       }
 
-      const result = typeof res === 'string' ? res : JSON.stringify(res);
+      // JSON.stringify(undefined) is undefined, not a string — fall back to
+      // '' so the debug line's result.length can't throw.
+      const result = typeof res === 'string' ? res : JSON.stringify(res) ?? '';
       this.logger.debug(`recv (+${elapsedMs}ms): ${cmd} -> ${result.length} chars`);
       return result;
     } catch (err) {

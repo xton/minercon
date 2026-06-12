@@ -487,12 +487,13 @@ Ordered roughly by user impact within each group.
   early if page 1 was empty); it clearly meant `if (pageOutput)`. Currently
   harmless but a logic slip waiting to bite. Fixed: guard is now `pageOutput`,
   so empty pages are neither logged nor appended.
-- [ ] **`RconController.sendNow`'s non-string fallback can throw** — `const
+- [x] **`RconController.sendNow`'s non-string fallback can throw** — `const
   result = typeof res === 'string' ? res : JSON.stringify(res)` yields
   `undefined` when `res` is `undefined`, and the next line reads
   `result.length` (`rconClient.ts:79-80`). Unreachable today
   (`RconProtocol.send` always resolves a string) but the defensive path is
-  itself broken — simplify to trust the type or fix the fallback.
+  itself broken — fixed with `?? ''` on the stringify fallback, plus a
+  rconClient.test.ts case driving an `undefined` response through the seam.
 
 ### Code smells / structure
 
