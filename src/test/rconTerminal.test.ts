@@ -27,6 +27,7 @@ import * as vscode from 'vscode';
 import { Logger } from '../logger';
 import { RconController } from '../rconClient';
 import { RconTerminal } from '../rconTerminal';
+import { FakeController, PLUGIN_PROBE_RESPONSE, SendImpl, defaultSend, waitUntil } from './support/fakeController';
 
 function silentLogger(): Logger {
     return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
@@ -34,42 +35,6 @@ function silentLogger(): Logger {
 
 function fakeContext(storageDir: string): vscode.ExtensionContext {
     return { globalStorageUri: { fsPath: storageDir } } as unknown as vscode.ExtensionContext;
-}
-
-const PLUGIN_PROBE_RESPONSE = 'Returns tab completions for a partial command string. Usage: /tabcomplete <text>';
-
-type SendImpl = (cmd: string) => string | Promise<string | undefined> | undefined;
-
-function defaultSend(cmd: string): string {
-    return cmd === 'tabcomplete' ? PLUGIN_PROBE_RESPONSE : '';
-}
-
-class FakeController {
-    sendCalls: string[] = [];
-    disconnectCalls = 0;
-    private connected = true;
-
-    constructor(private sendImpl: SendImpl) {}
-
-    async send(cmd: string): Promise<string | undefined> {
-        this.sendCalls.push(cmd);
-        return this.sendImpl(cmd);
-    }
-
-    async disconnect(): Promise<void> { this.disconnectCalls++; this.connected = false; }
-    async connect(): Promise<void> { this.connected = true; }
-    isConnected(): boolean { return this.connected; }
-}
-
-/** Polls until `predicate` is true, or fails with a clear message after `timeoutMs`. */
-async function waitUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
-    const start = Date.now();
-    while (!predicate()) {
-        if (Date.now() - start > timeoutMs) {
-            throw new Error(`waitUntil: condition not met within ${timeoutMs}ms`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 5));
-    }
 }
 
 interface Harness {

@@ -568,10 +568,16 @@ Ordered roughly by user impact within each group.
 
 ### Tests
 
-- [ ] **`FakeController` is defined three times** — near-identical copies in
+- [x] **`FakeController` is defined three times** — near-identical copies in
   `rconSession.test.ts`, `rconTerminal.test.ts`, and
   `connectionManager.test.ts`; `waitUntil` twice. Move both to
-  `src/test/support/` alongside `fakeSocket.ts`.
+  `src/test/support/` alongside `fakeSocket.ts`. Fixed: the
+  `rconSession.test.ts`/`rconTerminal.test.ts` copies (plus
+  `PLUGIN_PROBE_RESPONSE`/`SendImpl`/`defaultSend`) were truly identical and
+  now live in `src/test/support/fakeController.ts`, imported by both.
+  `connectionManager.test.ts`'s `FakeController` serves a different purpose
+  (backoff/reconnect timing via a `connectImpl` callback, no `sendCalls`) and
+  was left as-is.
 - [ ] **Stale "no injection seam" comments + missing reconnect coverage** —
   `rconSession.test.ts` and `rconTerminal.test.ts` headers still say the
   auto-reconnect path can't be tested because `ConnectionManager` constructs
