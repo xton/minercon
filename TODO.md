@@ -597,16 +597,17 @@ Ordered roughly by user impact within each group.
 
 ### Docs
 
-- [ ] **`docs/TECHNICAL.md` contradicts the code it documents** — it says the
-  fence/dummy packet is sent *immediately* after the command (now deferred
-  until the first response fragment — the whole point of the fence fix);
-  claims "multiple commands in-flight / no head-of-line blocking" (the send
-  queue now deliberately serializes — the opposite, and load-bearing);
-  claims Nagle is disabled (no `setNoDelay` call exists); gives 5s/30s
-  timeouts (actual: one 10s `RESPONSE_TIMEOUT`); and references methods that
-  don't exist (`parsePackets`, `encodePacket`, a `debug()` using
-  `this.output`) plus Jest examples in a mocha project. Rewrite against the
-  current `rconProtocol.ts`/`rconClient.ts`.
+- [x] **`docs/TECHNICAL.md` contradicts the code it documents** — rewritten
+  against current `rconProtocol.ts`/`rconClient.ts`: the fence packet is now
+  documented as deferred until the first response fragment (with the
+  `RconClient.run()` batching bug as the "why"); the concurrency section now
+  describes `RconController.sendQueue`'s deliberate serialization instead of
+  "no head-of-line blocking"; the Nagle/`setNoDelay` claim is removed in
+  favor of the actual `SO_KEEPALIVE` behavior; timeouts now read 5s
+  (auth)/10s (`RESPONSE_TIMEOUT`); the Testing/Debugging sections now
+  describe the real mocha record/replay harness and `--log-level debug`
+  output instead of nonexistent `parsePackets`/`encodePacket`/`this.output`
+  and Jest examples.
 - [ ] **`CONTRIBUTING.md` staleness** — "Node.js 14+" (devDeps target Node
   22 types / modern TS), the "Project Structure" tree lists 5 of ~22
   modules, and the debugging tip says `this.output.appendLine()` (pre-Logger).
