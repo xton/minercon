@@ -46,15 +46,13 @@ export function createTerminalWriter(sink: (text: string) => void): TerminalWrit
 
 /** A `Logger` that writes through `terminal` (stdout) or, if `logFile` is given, appends to that file instead. */
 export function createCliLogger(terminal: TerminalWriter, logFile?: string): Logger {
-  let stream: fs.WriteStream | undefined;
-  if (logFile) {
-    stream = fs.createWriteStream(logFile, { flags: 'a' });
-  }
-
   function write(level: string, color: string, msg: string): void {
     const line = `${ansi.style(color, level)} ${msg}\n`;
-    if (stream) {
-      stream.write(`${level} ${msg}\n`);
+    if (logFile) {
+      // Synchronous append: log lines are infrequent, and a WriteStream's
+      // async open left a window where a write could be queued before the
+      // file existed on disk, racing readers (and CI) that check it back.
+      fs.appendFileSync(logFile, `${level} ${msg}\n`);
     } else {
       terminal.writeLogLine(line);
     }
