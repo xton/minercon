@@ -763,6 +763,46 @@ courtesy, which costs little and occasionally pays off big:
 - [ ] Keep the branding distinct (already done — different name, icon, and
   description), so Marketplace/npm listings can't be confused with his.
 
+## 12. Server-side plugin: fork per server type, drop reflection on Paper (2026-06-12)
+
+`plugin/src/main/java/dev/rcon/tabcomplete/TabCompletePlugin.java` reaches
+Brigadier's `CommandDispatcher` via reflection because `plugin/build.gradle`
+only depends on `paper-api`, which deliberately doesn't expose
+CraftBukkit/NMS types (`CraftServer`, `MinecraftServer`, `Commands`,
+`CommandSourceStack`). All the reflected members are `public` — the
+reflection exists to name types that aren't on the compile classpath, not to
+reach package-private members (a "declare your class in `net.minecraft.*`"
+trick wouldn't help: it only addresses access modifiers, and plugin classes
+load under a different ClassLoader than the server anyway, so same-package
+access control doesn't even apply).
+
+- [ ] **Fork the plugin into Paper-specific and Spigot-specific projects.**
+  User is fine with this — in fact prefers it. This also resolves the
+  addon-naming-inconsistency item above (§10): each fork gets its own
+  gradle project name / jar / plugin.yml name, decided as part of this work.
+- [ ] **Paper fork: use `paperweight-userdev`** to add the Mojang-mapped dev
+  bundle to the compile classpath, giving direct typed access to
+  `CraftServer`, `MinecraftServer`, `Commands`, `CommandSourceStack`, and
+  `CommandDispatcher<CommandSourceStack>`. This replaces the entire
+  Mojang-mapped happy path (`onEnable` lines ~38-46) and removes the need for
+  `findDispatcherAndSourceReflectively()` on Paper entirely — `cmdusage` and
+  `tabcomplete` become ordinary typed Brigadier calls. Need to confirm
+  whether a `reobfJar` step is still required for current Paper versions
+  (Paper's runtime server jar may already be Mojang-mapped since 1.20.5).
+- [ ] **Spigot fork: investigate current mapping state** before deciding the
+  approach — Spigot may have also moved to Mojang mappings post-1.20.5, in
+  which case compiling against a BuildTools-produced `org.spigotmc:spigot`
+  jar (still versioned `vX_Y_R_` CraftBukkit packages, so version-pinned)
+  could replace reflection there too. If not, keep the existing structural
+  `findDispatcherAndSourceReflectively()` fallback for Spigot — it already
+  works and is well-documented.
+- [ ] Update README, functional test harness (`variants.ts`,
+  testcontainers plugin-deploy paths), and `fabric-mod/` references for the
+  new artifact name(s)/jar filename(s) once the naming decision is made.
+
+This is a build/architecture change, not a code-smell fix — treat as its own
+session, after the §10 cleanup pass.
+
 ## How to record a live RCON fixture
 
 ```
