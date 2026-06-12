@@ -538,11 +538,13 @@ Ordered roughly by user impact within each group.
   `ProgressPhase` (`'cache-hit' | 'fetching' | 'loading' | 'complete'`)
   instead of a free-text message; `rconSession.ts` switches on the phase
   value directly.
-- [ ] **`addFallbackCommands` list is stale and has duplicates** — `'reload'`
+- [x] **`addFallbackCommands` list is stale and has duplicates** — `'reload'`
   appears twice, and many entries were removed from the game years ago
   (`testfor`, `testforblock(s)`, `blockdata`, `entitydata`, `replaceitem`,
   `achievement`, `stats`) (`commandAutocomplete.ts:309-321`). Prune to a
   small modern set — wrong suggestions are worse than fewer suggestions.
+  Fixed: removed the duplicate `reload` and all eight long-removed commands
+  (72 → 63 entries).
 - [x] **`parseHelpResponse` pattern char-class inconsistency** — patterns 2/4
   use `[a-zA-Z0-9_\:-]` (needless `\:` escape) while 1/3 use
   `[a-zA-Z0-9_:-]` (`commandAutocomplete.ts:252-255`). Fixed: all four use

@@ -316,9 +316,8 @@ export class CommandAutocomplete {
       'effect', 'enchant', 'xp', 'experience', 'clear', 'difficulty', 'gamerule',
       'defaultgamemode', 'setworldspawn', 'spawnpoint', 'time', 'weather', 'worldborder',
       'locate', 'particle', 'playsound', 'stopsound', 'title', 'tellraw', 'help',
-      'seed', 'clone', 'fill', 'setblock', 'summon', 'testfor', 'testforblock',
-      'testforblocks', 'execute', 'blockdata', 'entitydata', 'replaceitem', 'stats',
-      'achievement', 'recipe', 'advancement', 'reload', 'function', 'tag', 'team',
+      'seed', 'clone', 'fill', 'setblock', 'summon', 'execute',
+      'recipe', 'advancement', 'function', 'tag', 'team',
       'bossbar', 'data', 'datapack', 'debug', 'forceload', 'locatebiome', 'loot',
       'publish', 'schedule', 'spreadplayers', 'spectate'
     ];
