@@ -567,6 +567,16 @@ export class RconSession {
     this.dispatchToEngine({ kind: 'lineChanged', line: '' });
 
     if (command) {
+      // Record every command, including minercon's own built-ins, so they're
+      // recallable via Up/Ctrl+R and listed by /history — just like a shell's
+      // history includes "history" itself. /history is the one exception:
+      // it's recorded after displaying, so its own listing reflects the
+      // history *before* this invocation, not including itself.
+      if (command !== '/history') {
+        this.lineEditor.pushHistory(command);
+        this.historyStore.save(this.lineEditor.historyEntries);
+      }
+
       if (command === '/reconnect') {
         this.connectionManager.manualReconnect();
       } else if (command === '/disconnect') {
@@ -609,9 +619,9 @@ export class RconSession {
         }
       } else if (command === '/history') {
         this.showHistory();
-      } else {
         this.lineEditor.pushHistory(command);
         this.historyStore.save(this.lineEditor.historyEntries);
+      } else {
         this.executeCommand(command);
       }
     } else {

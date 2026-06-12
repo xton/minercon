@@ -362,6 +362,25 @@ suite('RconSession', () => {
         await waitUntil(() => h.output().includes('no history yet'));
     });
 
+    test('built-in commands are recorded in history and recallable via Up, just like server commands', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, '/help');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.output().includes('Built-in Commands:'));
+
+        h.writes.length = 0;
+        h.session.handleInput('\x10'); // Ctrl+P / Up: recall the last entry
+        await waitUntil(() => h.output().includes('/help'));
+        h.session.handleInput('\r'); // clear the recalled line again
+
+        h.writes.length = 0;
+        type(h, '/history');
+        h.session.handleInput('\r');
+        await waitUntil(() => h.output().includes('/help'));
+    });
+
     test('Ctrl+R opens a search popup showing recent history, newest first', async () => {
         const h = createHarness();
         await openInPluginMode(h);
@@ -519,8 +538,11 @@ suite('RconSession', () => {
 
         h2.session.handleInput('\x12'); // Ctrl+R
         await waitUntil(() => h2.output().includes('reverse-i-search'));
+        // /history was itself recorded after displaying (see handleEnter), so
+        // it now occupies the second slot, evicting "say two".
+        assert.ok(h2.output().includes('/history'), 'running /history itself is recorded too, and persists');
         assert.ok(h2.output().includes('say three'), 'persisted history respects the configured cap');
-        assert.ok(h2.output().includes('say two'), 'persisted history respects the configured cap');
+        assert.ok(!h2.output().includes('say two'), 'persisted history respects the configured cap');
         assert.ok(!h2.output().includes('say one'), 'persisted history respects the configured cap');
     });
 });
