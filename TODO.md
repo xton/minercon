@@ -444,6 +444,308 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   `npm run test:functional` (all 7 variants) and a targeted re-run of
   `autocompleteSession.test.ts` (24/24 passing).
 
+## 10. Code review findings — fresh pass (2026-06-12)
+
+A full read of `src/`, `src/test/`, `plugin/`, `fabric-mod/`, and `docs/`.
+Ordered roughly by user impact within each group.
+
+### Bugs / behavior
+
+- [ ] **Several `LineEditor` edits never fire `host.onLineChanged`** —
+  `insertText` and `handleBackspace` notify the host (so completions/argument
+  hints re-derive), but `deleteForward`, `killToStart`, `killToEnd`,
+  `killWordBack`, `killWordForward`, and `transposeChars` all mutate the line
+  without notifying (`lineEditor.ts`). Net effect: after Delete / Ctrl+K /
+  Ctrl+U / Ctrl+W / Alt+D / Ctrl+T, the suggestion popup and argument hint
+  keep showing results for the *old* line. Fix: call
+  `this.host.onLineChanged(this.currentLine)` from every mutating op (or
+  centralize in a private `lineMutated()` helper).
+- [ ] **Cancelling the VS Code password prompt connects with an empty
+  password** — `password = await vscode.window.showInputBox({...}) ?? ''`
+  followed by a dead `if (password === undefined)` check
+  (`extension.ts:186-194`); the `?? ''` makes the guard unreachable, so Esc
+  at the password box proceeds to connect with `''` instead of aborting like
+  the host/port prompts do. Drop the `?? ''` and check for `undefined`.
+- [ ] **`/disconnect` echoes a spurious `^D`** —
+  `ConnectionManager.disconnect()` unconditionally writes `'^D\r\n'`
+  (`connectionManager.ts:92`), but its only caller is the typed `/disconnect`
+  built-in (Ctrl+D goes through `handleCtrlD` → `sessionHost.close`, which
+  writes its own `^D`). The terminal-echo of a key chord doesn't belong in
+  the connection-lifecycle class — remove it (and consider whether
+  `disconnect()` should be writing UI text at all vs. returning status for
+  `RconSession` to render).
+- [ ] **A slow command (>10s) triggers a full reconnect of a healthy
+  connection** — `executeCommand`'s connection-loss detection is substring
+  sniffing (`errorMsg.includes('timeout')`, `'socket'`, ...
+  `rconSession.ts:711-718`), and `RconProtocol`'s `Command timeout: <cmd>`
+  error matches it, so a long-running-but-fine server command tears down and
+  re-establishes the connection. Better signal: ask
+  `connectionManager.controller.isConnected()` after the failure (or have
+  `RconController` throw typed errors) instead of grepping messages.
+- [x] **`fetchPaginatedCommand` checks the wrong variable** — the page loop's
+  `if (output)` (`commandAutocomplete.ts:159`) is always true (we returned
+  early if page 1 was empty); it clearly meant `if (pageOutput)`. Currently
+  harmless but a logic slip waiting to bite. Fixed: guard is now `pageOutput`,
+  so empty pages are neither logged nor appended.
+- [ ] **`RconController.sendNow`'s non-string fallback can throw** — `const
+  result = typeof res === 'string' ? res : JSON.stringify(res)` yields
+  `undefined` when `res` is `undefined`, and the next line reads
+  `result.length` (`rconClient.ts:79-80`). Unreachable today
+  (`RconProtocol.send` always resolves a string) but the defensive path is
+  itself broken — simplify to trust the type or fix the fallback.
+
+### Code smells / structure
+
+- [ ] **Prompt text is computed in three places in `rconSession.ts`** — the
+  `[reconnecting] > ` / `[disconnected] > ` / `> ` conditional appears in
+  `SuggestionDisplay`'s `cursorColumn()` host callback (~line 110),
+  `LineEditor`'s `promptText()` host callback (~line 123), and `showPrompt()`
+  (~line 244). Extract one private `promptText(): string` and derive all
+  three from it.
+- [ ] **`handleEnter`'s built-in command if/else chain** mirrors the old
+  `handleInput` smell that §1 fixed with a lookup table — `/reconnect`,
+  `/disconnect`, `/clear`, `/help`, `/reload-commands`, `/clear-cache`,
+  `/cache-info`, `/history` (`rconSession.ts:580-626`). A
+  `Map<string, () => void>` (plus a description field) would also let
+  `showHelp()` generate its command list from the same table instead of
+  hand-maintaining a parallel copy (CONTRIBUTING.md even documents the
+  "add another else-if, don't forget /help" dance).
+- [ ] **Two § color-code strippers** — `completionEngine.ts` has a private
+  `stripMinecraftColorCodes` (handles the `Â§` UTF-8-mangled form) while
+  `ansi.ts` exports `stripColors`. Consolidate in `ansi.ts` (folding in the
+  `Â§` handling) so the alphabet lives in one place.
+- [ ] **Progress phase is signaled by string-sniffing** —
+  `initializeCommands` decides the progress-bar phase via
+  `message.includes('Fetching')` / `'Loading'` / `'Complete'`
+  (`rconSession.ts:212-218`) against strings composed in
+  `commandAutocomplete.ts`. Pass a structured phase
+  (`'fetching' | 'loading' | 'done'`) through the `onProgress` callback
+  instead of parsing prose.
+- [ ] **`addFallbackCommands` list is stale and has duplicates** — `'reload'`
+  appears twice, and many entries were removed from the game years ago
+  (`testfor`, `testforblock(s)`, `blockdata`, `entitydata`, `replaceitem`,
+  `achievement`, `stats`) (`commandAutocomplete.ts:309-321`). Prune to a
+  small modern set — wrong suggestions are worse than fewer suggestions.
+- [ ] **`parseHelpResponse` pattern char-class inconsistency** — patterns 2/4
+  use `[a-zA-Z0-9_\:-]` (needless `\:` escape) while 1/3 use
+  `[a-zA-Z0-9_:-]` (`commandAutocomplete.ts:252-255`). Unify; consider
+  naming the shared char-class once.
+- [ ] **`extension.ts` `let` → `const`** for `activeTerminals` and
+  `ptyToController` (`extension.ts:21-22`); they're never reassigned.
+- [ ] **fabric-mod's `cmdusage` still emits the `getAllUsage` ladder** —
+  `TabcompleteMod.java:107` — so argument hints for commands with optional
+  trailing args (`/clear`, etc.) never show on fabric+mod, the exact bug
+  fixed in the Paper plugin by switching to `getSmartUsage` (§9, fb81e69).
+  Port the same fix (and the functional-test assertion already accepts both
+  forms, so tightening it afterwards would lock it in).
+- [ ] **Server-side addon naming is inconsistent** — plugin.yml says
+  `RconTabComplete`, the gradle project/jar is `paper-tabcomplete`, the
+  fabric mod id is `fabric-tabcomplete`, README calls it "the RconTabComplete
+  plugin". Pick one public name (worth doing *before* publishing to
+  Hangar/Modrinth — see §11).
+
+### Tests
+
+- [ ] **`FakeController` is defined three times** — near-identical copies in
+  `rconSession.test.ts`, `rconTerminal.test.ts`, and
+  `connectionManager.test.ts`; `waitUntil` twice. Move both to
+  `src/test/support/` alongside `fakeSocket.ts`.
+- [ ] **Stale "no injection seam" comments + missing reconnect coverage** —
+  `rconSession.test.ts` and `rconTerminal.test.ts` headers still say the
+  auto-reconnect path can't be tested because `ConnectionManager` constructs
+  a real `RconController`, but `ConnectionManager` has since gained a
+  `controllerFactory` param (used by `connectionManager.test.ts`).
+  `RconSession` just doesn't thread it through. Plumb an optional factory
+  from `RconSession`'s constructor into `ConnectionManager`, update the
+  comments, and add the session-level "connection lost → auto-reconnect →
+  onReconnected reloads commands" test the gap was about.
+- [ ] **`variants.ts:34` ends with a double semicolon** (`...hasMod);;`).
+
+### Docs
+
+- [ ] **`docs/TECHNICAL.md` contradicts the code it documents** — it says the
+  fence/dummy packet is sent *immediately* after the command (now deferred
+  until the first response fragment — the whole point of the fence fix);
+  claims "multiple commands in-flight / no head-of-line blocking" (the send
+  queue now deliberately serializes — the opposite, and load-bearing);
+  claims Nagle is disabled (no `setNoDelay` call exists); gives 5s/30s
+  timeouts (actual: one 10s `RESPONSE_TIMEOUT`); and references methods that
+  don't exist (`parsePackets`, `encodePacket`, a `debug()` using
+  `this.output`) plus Jest examples in a mocha project. Rewrite against the
+  current `rconProtocol.ts`/`rconClient.ts`.
+- [ ] **`CONTRIBUTING.md` staleness** — "Node.js 14+" (devDeps target Node
+  22 types / modern TS), the "Project Structure" tree lists 5 of ~22
+  modules, and the debugging tip says `this.output.appendLine()` (pre-Logger).
+  Also update "Adding a New Built-in Command" if the command table from §10
+  lands.
+- [ ] **README drift** — CLI options section omits `--log-level`,
+  `--history-size`, and `--no-plugin` (all in `--help`); the built-in
+  commands table omits `/history`; the keyboard-shortcut tables omit Ctrl+R
+  history search. Also worth a "formerly Minecraft RCON Terminal" naming
+  note near the version badge for returning users.
+- [ ] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
+  while the package is at 3.0.0.
+- [ ] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
+  `RENDERING_FIX.md` as historical** — they describe code shapes that have
+  since been refactored away (e.g. quoting pre-split `commandAutocomplete.ts`
+  internals). A one-line "historical writeup, see ARCHITECTURE.md for the
+  current shape" header keeps them useful without misleading.
+
+## 11. Publishing & audience roadmap (2026-06-12)
+
+Everything between "works great locally" and "strangers use it". Roughly in
+order. npm name check (2026-06-12): **`minercon` is unclaimed on the npm
+registry** — grab it early.
+
+### 11.1 Pre-flight: make the package publishable
+
+- [ ] **Fix the npm tarball — it is currently broken and bloated.**
+  `npm pack --dry-run` today produces 228 files / 2.1 MB unpacked: it ships
+  `src/` and all tests, while `out/` (the actual compiled code) is excluded
+  by `.gitignore`-fallback rules — npm force-includes only the `main`/`bin`
+  files, so the published CLI would crash on its first `require('./rconSession')`.
+  Add a `files` whitelist (e.g. `["out/", "!out/test/", "images/icon.png",
+  "LICENSE", "README.md", "CHANGELOG.md"]`) and a `prepublishOnly: "npm run
+  compile"` script; re-audit with `npm pack --dry-run` until it's just the
+  compiled tree.
+- [ ] **Fill in package.json metadata** — `author`, `keywords` (`minecraft`,
+  `rcon`, `console`, `terminal`, `server-admin`, `tab-completion`, ...),
+  `homepage`, `bugs`, `repository.url` in `git+https://...` form, and an
+  `engines.node` (`>=18`) for the CLI. These feed both the npm page and the
+  Marketplace listing search.
+- [ ] **Add `--version` to the CLI** (read from package.json at runtime).
+  First thing people try; also needed in bug reports.
+- [ ] **Write the missing CHANGELOG entries** — CHANGELOG stops at 2.2.0
+  (2025-10-03) but the package says 3.0.0; everything since (the standalone
+  CLI, plugin mode + RconTabComplete, the help-crawl local mode, Ctrl+R,
+  history persistence, `--no-plugin`, ...) is the actual launch story.
+  The 3.0.0 entry is effectively the announcement post — write it well once,
+  reuse it everywhere.
+- [ ] **LICENSE: add your own copyright line** alongside the existing
+  `Copyright (c) 2025 Jake T Cooper` (keep his — MIT requires preserving the
+  notice; the fork attribution in README's Acknowledgements is already good).
+- [ ] **Fill in or delete `.github/FUNDING.yml`** — it's still the unfilled
+  GitHub template (every line a placeholder comment).
+- [ ] **Windows smoke test** the CLI (raw-mode stdin, ANSI rendering in
+  Windows Terminal, `~/.config` path assumptions — `os.homedir()+'/.config'`
+  is unixy; consider `env.APPDATA`/`XDG_CONFIG_HOME` handling). The
+  `cp`/`chmod` in the compile script also breaks `npm run compile` for
+  Windows contributors — a tiny node script fixes both.
+- [ ] **Refresh the demo media** — `images/demo-autocomplete.gif` predates
+  argument hints/Ctrl+R; record one ~20s GIF (or asciinema for the CLI)
+  showing: connect → type `/give` → live suggestions → Tab cycling →
+  argument hint. This single asset gets reused in README, Marketplace,
+  Reddit, and HN.
+
+### 11.2 Publish to npm
+
+- [ ] Create/verify npm account with 2FA; `npm login`.
+- [ ] `npm publish --dry-run`, then `npm publish` (unscoped packages are
+  public by default). Verify with a cold `npm install -g minercon` on a
+  clean machine/container and run against a real server.
+- [ ] Tag `v3.0.0` and create a GitHub Release; attach the `.vsix`, the
+  plugin jar, and the fabric mod jar so non-npm users have direct downloads.
+- [ ] (Nice) Set up a GitHub Actions release workflow that publishes on tag
+  with `npm publish --provenance` — the provenance badge is a real trust
+  signal for a tool that takes server passwords.
+
+### 11.3 Publish to the VS Code Marketplace
+
+The Marketplace is run through Azure DevOps; the steps are:
+
+- [ ] **Create a publisher**: sign in at
+  https://marketplace.visualstudio.com/manage with a Microsoft account →
+  "Create publisher" → pick the publisher ID (e.g. `xton`) and display name.
+- [ ] **Create a PAT**: at https://dev.azure.com → user settings → Personal
+  Access Tokens → new token with org "All accessible organizations" and the
+  **Marketplace → Manage** scope. (This is the step everyone fumbles —
+  the scope must be Marketplace/Manage, not the defaults.)
+- [ ] **Add Marketplace fields to package.json**: `"publisher": "<your-id>"`
+  (required — packaging fails without it), and improve the listing:
+  `keywords` show in Marketplace search, `galleryBanner` colors the header,
+  `icon` is already set. Consider whether `categories: ["Other"]` is right
+  (there's no great category for terminals; "Other" is what similar
+  extensions use).
+- [ ] **Create `.vscodeignore`** — without it the `.vsix` bundles everything
+  (src, tests, docker/, plugin/, fabric-mod/, docs/). Exclude all of those;
+  `vsce ls` shows exactly what will ship. (There are no runtime deps, so no
+  bundler is needed — the compiled `out/` is already self-contained.)
+- [ ] **Package and publish**: `npm i -g @vscode/vsce` → `vsce package`
+  (produces `minercon-3.0.0.vsix`; install it locally via "Install from
+  VSIX" as a final check) → `vsce login <publisher>` with the PAT →
+  `vsce publish`. Subsequent releases: `vsce publish minor` bumps and
+  publishes in one step.
+- [ ] **Also publish to Open VSX** (https://open-vsx.org, `npx ovsx publish`)
+  — it's the registry used by VSCodium, Gitpod, and many Cursor/forks
+  setups; it's ~10 minutes of extra work for a real chunk of audience.
+- [ ] README *is* the listing page — make sure the demo GIF is near the top
+  and image links are absolute URLs (Marketplace can't resolve repo-relative
+  paths for some setups; `vsce` rewrites most but verify the rendered page).
+
+### 11.4 Publish the server-side addon where admins actually look
+
+Plugin mode is the best experience, and plugin sites are themselves
+discovery channels that link back to the client:
+
+- [ ] **Hangar** (hangar.papermc.io) for the Paper/Spigot plugin — the
+  modern Paper-ecosystem registry.
+- [ ] **Modrinth** for both the plugin and the fabric mod (Modrinth hosts
+  plugins now too, and is where Fabric users live).
+- [ ] **SpigotMC resources** — older crowd but still the biggest plugin
+  audience; the resource page doubles as a place people ask questions.
+- [ ] Unify the addon naming first (see §10) and give the addon README a
+  clear "this powers tab completion for the Minercon client → link" pitch.
+
+### 11.5 Announce / find an audience
+
+Order matters: have npm + Marketplace + GitHub Release all live *before*
+posting anywhere, then announce within a few days while it's fresh.
+
+- [ ] **r/admincraft** — the primary audience (server admins). Read the
+  self-promo rules first, post with the demo GIF, lead with the pain point
+  ("RCON clients truncate /help and have no tab completion"), mention it's
+  free/MIT/open-source, and stick around in the comments. This is the single
+  highest-value post.
+- [ ] **r/MinecraftCommands** — people who live in command syntax; the
+  argument-hint/tab-completion angle lands well here.
+- [ ] **r/feedthebeast** (modded servers — the Fabric mod angle) and
+  **r/vscode** (the extension angle) as secondary posts, reworded per
+  audience, spaced out by a week or so.
+- [ ] **Show HN** — "Show HN: Minercon – a Minecraft RCON terminal with tab
+  completion". HN loves the technical meat: the double-packet fragmentation
+  fence and the /help-crawl Brigadier reverse-engineering
+  (docs/technical/NO_PLUGIN_HELP_CRAWL.md is most of a blog post already).
+  Consider polishing that into a post and submitting the post instead of the
+  repo.
+- [ ] **Discord servers**: PaperMC (#plugins / tooling channels), the
+  Admincraft discord, Fabric's discord (for the mod). Ask-don't-spam: most
+  have a showcase channel.
+- [ ] **The itzg/minecraft-server (docker) ecosystem** — minercon pairs
+  naturally with dockerized servers (the functional tests already use it); a
+  docs PR or discussion post there reaches exactly the right users.
+- [ ] **Awesome lists** — PR to awesome-minecraft / awesome-vscode style
+  lists once the listing pages look good.
+- [ ] After launch: enable GitHub Discussions (or point people at issues),
+  and watch the Marketplace Q&A tab — answered questions are marketing.
+
+### 11.6 Relationship with the original author (jaketcooper/Minecraft-rcon)
+
+There's no legal todo — MIT is satisfied by the preserved LICENSE copyright
+line and the README Acknowledgements (both already in place). The rest is
+courtesy, which costs little and occasionally pays off big:
+
+- [ ] **Send a friendly heads-up** (GitHub issue on his repo, or email if
+  listed): the fork lives on, got renamed to Minercon, here's what it became,
+  he's credited in README + LICENSE — and a thank-you. No ask attached.
+- [ ] **Offer a cross-link**: if his project is dormant, he may be happy to
+  add "actively maintained fork: minercon" to his README — that converts his
+  existing installs/stars into your funnel. His call; offer once.
+- [ ] If he engages, add him to `contributors` in package.json and the
+  release notes. If he doesn't respond, the existing attribution is already
+  correct and sufficient — proceed.
+- [ ] Keep the branding distinct (already done — different name, icon, and
+  description), so Marketplace/npm listings can't be confused with his.
+
 ## How to record a live RCON fixture
 
 ```

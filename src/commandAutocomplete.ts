@@ -156,7 +156,7 @@ export class CommandAutocomplete {
 
       for (let page = 2; page <= pageCount; page++) {
         const pageOutput = await this.sendCommand(`${command} ${page}`);
-        if (output) {
+        if (pageOutput) {
           this.logger.info(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
           output += pageOutput;
         }
