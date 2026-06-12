@@ -18,7 +18,7 @@ import {
 import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
 import { LineEditor } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
-import { ConnectionManager } from './connectionManager';
+import { ConnectionManager, ControllerFactory } from './connectionManager';
 import { Logger, errorMessage } from './logger';
 import { HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historySearch';
 import { HistoryStore } from './historyStore';
@@ -76,7 +76,8 @@ export class RconSession {
     port: number,
     password: string,
     logger: Logger,
-    private readonly sessionHost: RconSessionHost
+    private readonly sessionHost: RconSessionHost,
+    controllerFactory?: ControllerFactory
   ) {
     this.serverHost = host;
     this.serverPort = port;
@@ -87,7 +88,7 @@ export class RconSession {
       write: (text) => sessionHost.write(text),
       showPrompt: () => this.showPrompt(),
       onReconnected: () => this.initializeCommands(),
-    });
+    }, controllerFactory);
 
     this.autocomplete = new CommandAutocomplete(
       async (cmd) => {

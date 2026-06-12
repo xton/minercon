@@ -13,11 +13,12 @@
 // `FakeHost`.
 //
 // One deliberate gap: we never produce a "connection lost"-shaped error from
-// the fake controller. `ConnectionManager.reportConnectionLost` schedules a
-// reconnect that constructs a brand-new *real* `RconController` (it isn't
-// behind an injection seam — see TODO.md), which would attempt a live socket
-// connection from the test run. The "not connected" guard in `executeCommand`
-// is exercised instead via `/disconnect`, which is side-effect-free.
+// the fake controller here — `RconTerminal` doesn't expose a
+// `controllerFactory` seam to this test. The "not connected" guard in
+// `executeCommand` is exercised instead via `/disconnect`, which is
+// side-effect-free. The auto-reconnect path itself (`reportConnectionLost` →
+// `attemptReconnect` → `onReconnected`) is covered at the `RconSession` level
+// in rconSession.test.ts, which does have the seam.
 
 import * as assert from 'assert';
 import * as fs from 'fs';

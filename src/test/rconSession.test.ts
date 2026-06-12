@@ -10,10 +10,10 @@
 // rconTerminal.test.ts, now driving RconSession through a FakeHost instead
 // of the vscode event-emitter wrapper.
 //
-// Deliberate gap (same as rconTerminal.test.ts): the auto-reconnect path is
-// not exercised because ConnectionManager.attemptReconnect constructs a real
-// RconController directly (no injection seam), which would attempt a live
-// socket connection from the test run.
+// The auto-reconnect path is exercised by passing a `controllerFactory` to
+// `createHarness`/`RconSession`, so `ConnectionManager.attemptReconnect` gets
+// a fresh `FakeController` instead of constructing a real `RconController`
+// (see "connection lost → auto-reconnect → onReconnected reloads commands").
 
 import * as assert from 'assert';
 import * as fs from 'fs';
@@ -22,6 +22,7 @@ import * as path from 'path';
 import { Logger } from '../logger';
 import { RconController } from '../rconClient';
 import { RconSession, RconSessionHost } from '../rconSession';
+import { ControllerFactory } from '../connectionManager';
 import { FakeController, PLUGIN_PROBE_RESPONSE, SendImpl, defaultSend, waitUntil } from './support/fakeController';
 
 function silentLogger(): Logger {
@@ -65,7 +66,7 @@ suite('RconSession', () => {
         fs.rmSync(storageDir, { recursive: true, force: true });
     });
 
-    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined, historySize?: number, disablePlugin?: boolean): Harness {
+    function createHarness(sendImpl: SendImpl = defaultSend, dimensions: () => { columns: number; rows: number } | undefined = () => undefined, historySize?: number, disablePlugin?: boolean, controllerFactory?: ControllerFactory): Harness {
         const controller = new FakeController(sendImpl);
         const writes: string[] = [];
         const closes: number[] = [];
@@ -89,6 +90,7 @@ suite('RconSession', () => {
             'localhost', 25575, 'pw',
             silentLogger(),
             sessionHost,
+            controllerFactory,
         );
         activeSession = session;
         return { session, controller, writes, closes, output: () => writes.join('') };
@@ -300,6 +302,39 @@ suite('RconSession', () => {
         h.session.handleInput('\r');
 
         await waitUntil(() => h.output().includes('Connection lost. Auto-reconnecting...'));
+    });
+
+    test('connection lost → auto-reconnect → onReconnected reloads commands', async () => {
+        let reconnectController: FakeController | undefined;
+        const h = createHarness(
+            cmd => {
+                if (cmd === 'tabcomplete') { return PLUGIN_PROBE_RESPONSE; }
+                throw new Error('Connection closed');
+            },
+            () => undefined,
+            undefined,
+            undefined,
+            () => {
+                reconnectController = new FakeController(defaultSend);
+                return reconnectController as unknown as RconController;
+            }
+        );
+        await openInPluginMode(h);
+        h.controller.connected = false; // the socket died out from under us
+
+        type(h, 'list');
+        h.session.handleInput('\r');
+
+        await waitUntil(() => h.output().includes('Connection lost. Auto-reconnecting...'));
+        // reportConnectionLost's auto-reconnect fires after a 1s delay.
+        await waitUntil(() => h.output().includes('Reconnected successfully'), 3000);
+
+        assert.ok(reconnectController, 'controllerFactory built the replacement controller');
+        await waitUntil(() => h.output().includes('Failed to load commands'), 3000);
+        assert.ok(
+            reconnectController!.sendCalls.some(c => c.includes('help')),
+            'onReconnected reloaded the command tree through the new controller'
+        );
     });
 
     test('Ctrl+K stashes killed text so Ctrl+Y yanks it back', async () => {

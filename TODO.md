@@ -578,7 +578,7 @@ Ordered roughly by user impact within each group.
   `connectionManager.test.ts`'s `FakeController` serves a different purpose
   (backoff/reconnect timing via a `connectImpl` callback, no `sendCalls`) and
   was left as-is.
-- [ ] **Stale "no injection seam" comments + missing reconnect coverage** —
+- [x] **Stale "no injection seam" comments + missing reconnect coverage** —
   `rconSession.test.ts` and `rconTerminal.test.ts` headers still say the
   auto-reconnect path can't be tested because `ConnectionManager` constructs
   a real `RconController`, but `ConnectionManager` has since gained a
@@ -586,7 +586,13 @@ Ordered roughly by user impact within each group.
   `RconSession` just doesn't thread it through. Plumb an optional factory
   from `RconSession`'s constructor into `ConnectionManager`, update the
   comments, and add the session-level "connection lost → auto-reconnect →
-  onReconnected reloads commands" test the gap was about.
+  onReconnected reloads commands" test the gap was about. Fixed:
+  `RconSession`'s constructor now takes an optional `ControllerFactory` and
+  passes it to `ConnectionManager`; `createHarness` in `rconSession.test.ts`
+  accepts one too. New test drives `reportConnectionLost` → 1s auto-reconnect
+  → `onReconnected` → `initializeCommands` against a fresh `FakeController`
+  from the factory. `rconTerminal.test.ts`'s header now points to that test
+  instead of claiming the gap.
 - [x] **`variants.ts:34` ends with a double semicolon** (`...hasMod);;`). Fixed.
 
 ### Docs
