@@ -74,6 +74,13 @@ export class LineEditor {
 
   deleteSelection(): void {
     if (!this.hasSelection()) { return; }
+    this.deleteSelectionInternal();
+    this.host.onLineChanged(this.currentLine);
+  }
+
+  /** `deleteSelection` without the host notification — for compound edits (insertText) that notify once themselves, with the final line. */
+  private deleteSelectionInternal(): void {
+    if (!this.hasSelection()) { return; }
     const start = Math.min(this.selectionStart, this.selectionEnd);
     const end = Math.max(this.selectionStart, this.selectionEnd);
 
@@ -250,7 +257,7 @@ export class LineEditor {
     }
 
     if (this.hasSelection()) {
-      this.deleteSelection();
+      this.deleteSelectionInternal();
     }
 
     const filteredText = text.replace(/[\x00-\x08\x0a-\x1f\x7f]/g, '');
@@ -305,6 +312,8 @@ export class LineEditor {
       if (restOfLine.length + 1 > 0) {
         this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
       }
+
+      this.host.onLineChanged(this.currentLine);
     }
   }
 
@@ -324,6 +333,7 @@ export class LineEditor {
       if (afterCursor.length > 0) {
         this.host.write('\x1b[' + afterCursor.length + 'D');
       }
+      this.host.onLineChanged(this.currentLine);
       return killed;
     }
     return '';
@@ -336,6 +346,7 @@ export class LineEditor {
       this.currentLine = this.currentLine.slice(0, this.cursorPosition);
       this.host.write('\x1b[K');
       this.clearSelection();
+      this.host.onLineChanged(this.currentLine);
       return killed;
     }
     return '';
@@ -369,6 +380,7 @@ export class LineEditor {
       if (afterCursor.length > 0) {
         this.host.write('\x1b[' + afterCursor.length + 'D');
       }
+      this.host.onLineChanged(this.currentLine);
       return killed;
     }
     return '';
@@ -389,6 +401,7 @@ export class LineEditor {
       if (afterDeleted.length > 0) {
         this.host.write('\x1b[' + afterDeleted.length + 'D');
       }
+      this.host.onLineChanged(this.currentLine);
       return killed;
     }
     return '';
@@ -406,6 +419,7 @@ export class LineEditor {
       this.cursorPosition = Math.min(pos + 1, this.currentLine.length);
       this.clearSelection();
       this.redraw();
+      this.host.onLineChanged(this.currentLine);
     }
   }
 

@@ -493,3 +493,83 @@ suite('LineEditor: whole-line operations', () => {
         assert.strictEqual(editor.hasSelection(), false);
     });
 });
+
+suite('LineEditor: host notification on every mutating edit', () => {
+    // Every edit that changes the line must fire onLineChanged, or the host's
+    // completions/argument-hint display goes stale (the bug: Delete and the
+    // kill operations mutated silently while insertText/backspace notified).
+
+    test('deleteForward notifies with the new line', () => {
+        const { editor, host } = setup('hello');
+        editor.moveToStart();
+        editor.deleteForward();
+        assert.deepStrictEqual(host.lineChanges, ['ello']);
+    });
+
+    test('deleteForward at end of line is a no-op and does not notify', () => {
+        const { editor, host } = setup('hello');
+        editor.moveToEnd();
+        editor.deleteForward();
+        assert.deepStrictEqual(host.lineChanges, []);
+    });
+
+    test('killToEnd notifies with the new line', () => {
+        const { editor, host } = setup('hello world');
+        placeCursor(editor, 5);
+        editor.killToEnd();
+        assert.deepStrictEqual(host.lineChanges, ['hello']);
+    });
+
+    test('killToEnd at end of line is a no-op and does not notify', () => {
+        const { editor, host } = setup('hello');
+        editor.moveToEnd();
+        editor.killToEnd();
+        assert.deepStrictEqual(host.lineChanges, []);
+    });
+
+    test('killToStart notifies with the new line', () => {
+        const { editor, host } = setup('hello world');
+        placeCursor(editor, 6);
+        editor.killToStart();
+        assert.deepStrictEqual(host.lineChanges, ['world']);
+    });
+
+    test('killWordBack notifies with the new line', () => {
+        const { editor, host } = setup('hello world');
+        editor.moveToEnd();
+        editor.killWordBack();
+        assert.deepStrictEqual(host.lineChanges, ['hello ']);
+    });
+
+    test('killWordForward notifies with the new line', () => {
+        const { editor, host } = setup('hello world');
+        editor.moveToStart();
+        editor.killWordForward();
+        assert.deepStrictEqual(host.lineChanges, [' world']);
+    });
+
+    test('transposeChars notifies with the new line', () => {
+        const { editor, host } = setup('ab');
+        editor.moveToEnd();
+        editor.transposeChars();
+        assert.deepStrictEqual(host.lineChanges, ['ba']);
+    });
+
+    test('deleteSelection notifies with the new line', () => {
+        const { editor, host } = setup('hello world');
+        editor.moveToStart();
+        editor.selectWordRight(); // selects "hello"
+        host.lineChanges.length = 0;
+        editor.deleteSelection();
+        assert.deepStrictEqual(host.lineChanges, [' world']);
+    });
+
+    test('insertText over a selection notifies exactly once, with the final line', () => {
+        const { editor, host } = setup('hello world');
+        editor.moveToStart();
+        editor.selectWordRight(); // selects "hello"
+        host.lineChanges.length = 0;
+        editor.insertText('goodbye');
+        assert.deepStrictEqual(host.lineChanges, ['goodbye world']);
+    });
+});

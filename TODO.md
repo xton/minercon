@@ -451,15 +451,18 @@ Ordered roughly by user impact within each group.
 
 ### Bugs / behavior
 
-- [ ] **Several `LineEditor` edits never fire `host.onLineChanged`** —
+- [x] **Several `LineEditor` edits never fire `host.onLineChanged`** —
   `insertText` and `handleBackspace` notify the host (so completions/argument
   hints re-derive), but `deleteForward`, `killToStart`, `killToEnd`,
   `killWordBack`, `killWordForward`, and `transposeChars` all mutate the line
   without notifying (`lineEditor.ts`). Net effect: after Delete / Ctrl+K /
   Ctrl+U / Ctrl+W / Alt+D / Ctrl+T, the suggestion popup and argument hint
-  keep showing results for the *old* line. Fix: call
-  `this.host.onLineChanged(this.currentLine)` from every mutating op (or
-  centralize in a private `lineMutated()` helper).
+  keep showing results for the *old* line. Fixed: every mutating op (incl.
+  the public `deleteSelection`, used by Ctrl+X cut) now notifies; `insertText`
+  uses a private non-notifying `deleteSelectionInternal` so replacing a
+  selection notifies exactly once, with the final line. New
+  "host notification on every mutating edit" suite (10 tests) pins each op,
+  including the no-op-doesn't-notify cases.
 - [x] **Cancelling the VS Code password prompt connects with an empty
   password** — `password = await vscode.window.showInputBox({...}) ?? ''`
   followed by a dead `if (password === undefined)` check
