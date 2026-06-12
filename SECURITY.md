@@ -6,10 +6,8 @@ We take security seriously and will patch security vulnerabilities in all recent
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.0.x   | :white_check_mark: |
-| 1.1.x   | :white_check_mark: |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 3.0.x   | :white_check_mark: |
+| < 3.0   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -153,5 +151,5 @@ For non-security questions:
 
 *This security policy is adapted from best practices recommended by GitHub and the Open Source Security Foundation.*
 
-**Last updated**: October 2025  
+**Last updated**: June 2026  
 **Policy version**: 1.0

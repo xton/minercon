@@ -625,8 +625,9 @@ Ordered roughly by user impact within each group.
   commands table now lists `/history`; "Navigation and completion" now
   includes Ctrl+R reverse history search; added a "Formerly published as
   'Minecraft RCON Terminal'" note under the version badges.
-- [ ] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
-  while the package is at 3.0.0.
+- [x] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
+  while the package is at 3.0.0. Fixed: table now reads `3.0.x` (supported) /
+  `< 3.0` (unsupported); also bumped the "Last updated" date.
 - [ ] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
   `RENDERING_FIX.md` as historical** — they describe code shapes that have
   since been refactored away (e.g. quoting pre-split `commandAutocomplete.ts`
