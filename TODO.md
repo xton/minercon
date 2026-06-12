@@ -535,10 +535,10 @@ Ordered roughly by user impact within each group.
   (`testfor`, `testforblock(s)`, `blockdata`, `entitydata`, `replaceitem`,
   `achievement`, `stats`) (`commandAutocomplete.ts:309-321`). Prune to a
   small modern set — wrong suggestions are worse than fewer suggestions.
-- [ ] **`parseHelpResponse` pattern char-class inconsistency** — patterns 2/4
+- [x] **`parseHelpResponse` pattern char-class inconsistency** — patterns 2/4
   use `[a-zA-Z0-9_\:-]` (needless `\:` escape) while 1/3 use
-  `[a-zA-Z0-9_:-]` (`commandAutocomplete.ts:252-255`). Unify; consider
-  naming the shared char-class once.
+  `[a-zA-Z0-9_:-]` (`commandAutocomplete.ts:252-255`). Fixed: all four use
+  `[a-zA-Z0-9_:-]`; pattern 4's needless `\[`/`\(` class escapes dropped too.
 - [x] **`extension.ts` `let` → `const`** for `activeTerminals` and
   `ptyToController` (`extension.ts:21-22`); they're never reassigned. Fixed.
 - [x] **fabric-mod's `cmdusage` still emits the `getAllUsage` ladder** —

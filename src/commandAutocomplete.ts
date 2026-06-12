@@ -250,9 +250,9 @@ export class CommandAutocomplete {
       // Pattern 4: just the command name at start of line
       const patterns = [
         /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
-        /^([a-zA-Z0-9_\:-]+):\s/,            // command: or command-with-hyphens:
+        /^([a-zA-Z0-9_:-]+):\s/,          // command: or command-with-hyphens:
         /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
-        /^([a-zA-Z0-9_\:-]+)\s+[-<\[\(]/   // command followed by args
+        /^([a-zA-Z0-9_:-]+)\s+[-<[(]/     // command followed by args
       ];
 
       let matched = false;
