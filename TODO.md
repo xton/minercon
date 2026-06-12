@@ -505,12 +505,12 @@ Ordered roughly by user impact within each group.
 
 ### Code smells / structure
 
-- [ ] **Prompt text is computed in three places in `rconSession.ts`** — the
+- [x] **Prompt text is computed in three places in `rconSession.ts`** — the
   `[reconnecting] > ` / `[disconnected] > ` / `> ` conditional appears in
   `SuggestionDisplay`'s `cursorColumn()` host callback (~line 110),
   `LineEditor`'s `promptText()` host callback (~line 123), and `showPrompt()`
-  (~line 244). Extract one private `promptText(): string` and derive all
-  three from it.
+  (~line 244). Fixed: one private `promptText(): string`; all three derive
+  from it.
 - [ ] **`handleEnter`'s built-in command if/else chain** mirrors the old
   `handleInput` smell that §1 fixed with a lookup table — `/reconnect`,
   `/disconnect`, `/clear`, `/help`, `/reload-commands`, `/clear-cache`,

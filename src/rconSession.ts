@@ -107,12 +107,7 @@ export class RconSession {
           const column = this.historySearchLabel.length + this.historySearch.query.length;
           return terminalWidth ? column % terminalWidth : column;
         }
-        const promptText = this.connectionManager.isReconnecting
-          ? ansi.yellow('[reconnecting]') + ' > '
-          : this.connectionManager.isConnected
-          ? ansi.green('>') + ' '
-          : ansi.red('[disconnected]') + ' > ';
-        const promptWidth = promptText.replace(/\x1b\[[0-9;]*m/g, '').length;
+        const promptWidth = this.promptText().replace(/\x1b\[[0-9;]*m/g, '').length;
         const column = promptWidth + this.lineEditor.cursor;
         return terminalWidth ? column % terminalWidth : column;
       },
@@ -120,11 +115,7 @@ export class RconSession {
 
     this.lineEditor = new LineEditor({
       write: (text) => sessionHost.write(text),
-      promptText: () => {
-        if (this.connectionManager.isReconnecting) { return ansi.yellow('[reconnecting]') + ' > '; }
-        if (!this.connectionManager.isConnected) { return ansi.red('[disconnected]') + ' > '; }
-        return ansi.green('>') + ' ';
-      },
+      promptText: () => this.promptText(),
       onLineChanged: (line) => this.dispatchToEngine({ kind: 'lineChanged', line }),
       beforeLineCleared: () => this.suggestionDisplay.clear(),
       consumeOutputArtifacts: () => {
@@ -236,18 +227,18 @@ export class RconSession {
     this.connectionManager.dispose();
   }
 
+  /** The current colored prompt string — the single source of truth for what the prompt looks like in each connection state. */
+  private promptText(): string {
+    if (this.connectionManager.isReconnecting) { return ansi.yellow('[reconnecting]') + ' > '; }
+    if (!this.connectionManager.isConnected) { return ansi.red('[disconnected]') + ' > '; }
+    return ansi.green('>') + ' ';
+  }
+
   private showPrompt(): void {
     if (this.isExecutingCommand) {
       return;
     }
-
-    if (this.connectionManager.isReconnecting) {
-      this.sessionHost.write(ansi.yellow('[reconnecting]') + ' > ');
-    } else if (!this.connectionManager.isConnected) {
-      this.sessionHost.write(ansi.red('[disconnected]') + ' > ');
-    } else {
-      this.sessionHost.write(ansi.green('>') + ' ');
-    }
+    this.sessionHost.write(this.promptText());
   }
 
   private readonly keyHandlers = this.buildKeyHandlers();
