@@ -175,7 +175,7 @@ export function parseCommandHelp(helpText: string): Parameter[] {
  * command itself. `null` means there were no tokens to classify.
  */
 export type ParameterTokenClassification =
-  | { kind: 'variant'; name: string; parameters: Parameter[] }
+  | { kind: 'variant'; name: string; optional: boolean; parameters: Parameter[] }
   | { kind: 'direct'; parameters: Parameter[] }
   | null;
 
@@ -225,10 +225,12 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
 
   // First token is a literal/subcommand name introducing a variant
   let name = firstToken;
+  let optional = false;
 
   // Strip optional brackets if present
   if (name.startsWith('[') && name.endsWith(']')) {
     name = name.slice(1, -1); // Remove [ and ]
+    optional = true;
   }
 
   const parameters: Parameter[] = [];
@@ -239,7 +241,7 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
     }
   }
 
-  return { kind: 'variant', name, parameters };
+  return { kind: 'variant', name, optional, parameters };
 }
 
 /**
@@ -248,8 +250,23 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
  * literal), or a single direct parameter list (first token an argument or
  * choice-list — the last such line wins), or both empty if nothing matched.
  */
+/**
+ * The argument list following a named subcommand variant (e.g. "[<value>]"
+ * in "/gamerule doDaylightCycle [<value>]"), plus whether the variant's name
+ * itself came from a `[bracketed]` token (e.g. "[peaceful]" in
+ * "/minecraft:difficulty [peaceful]") vs a bare/required one (e.g. "list" in
+ * "/team list [<team>]"). `optional` distinguishes a subcommand verb (which
+ * may have further syntax discoverable via its own `help`/`minecraft:help`
+ * fetch) from one literal value of an enum-style argument (which never does)
+ * - see `loadSubcommandDetails`.
+ */
+export interface VariantInfo {
+  optional: boolean;
+  members: Parameter[];
+}
+
 export interface HelpLinesResult {
-  variants: Map<string, Parameter[]>;
+  variants: Map<string, VariantInfo>;
   direct: Parameter[] | null;
 }
 
@@ -336,7 +353,7 @@ export function parseHelpLines(text: string, commandPath: string): HelpLinesResu
     .replace(/ /g, '\\s+');
   const pattern = new RegExp(`^/?${escaped}(?::)?\\s*(.*)$`, 'i');
 
-  const variants: Map<string, Parameter[]> = new Map();
+  const variants: Map<string, VariantInfo> = new Map();
   let direct: Parameter[] | null = null;
 
   for (const rawLine of text.split('\n')) {
@@ -352,7 +369,7 @@ export function parseHelpLines(text: string, commandPath: string): HelpLinesResu
     const tokens = tokenizeParameterString(afterCommand);
     const classified = classifyParameterTokens(tokens);
     if (classified?.kind === 'variant') {
-      variants.set(classified.name, classified.parameters);
+      variants.set(classified.name, { optional: classified.optional, members: classified.parameters });
     } else if (classified?.kind === 'direct') {
       direct = classified.parameters;
     }
@@ -362,15 +379,36 @@ export function parseHelpLines(text: string, commandPath: string): HelpLinesResu
 }
 
 /**
+ * True iff `parameters` is exactly a bare `<args>`/`[<args>]` placeholder -
+ * the generic stand-in Bukkit emits (e.g. for `minecraft:help <cmd>` on
+ * commands that aren't Brigadier-backed, like `version`/`reload`/`plugins`)
+ * when it has no real argument info, regardless of whether it's optional.
+ */
+function isArgsPlaceholder(parameters: Parameter[]): boolean {
+  return parameters.length === 1
+    && parameters[0].type === ParameterType.ARGUMENT
+    && parameters[0].name === 'args';
+}
+
+/**
  * True iff `parameters` is exactly the generic `[<args>]` placeholder Bukkit
  * emits for `minecraft:help <cmd>` on commands that aren't Brigadier-backed
  * (e.g. `version`, `reload`, `plugins`) — i.e. no real argument info.
  */
 export function isGenericArgsPlaceholder(parameters: Parameter[]): boolean {
-  return parameters.length === 1
-    && parameters[0].type === ParameterType.ARGUMENT
-    && parameters[0].optional === true
-    && parameters[0].name === 'args';
+  return isArgsPlaceholder(parameters) && parameters[0].optional === true;
+}
+
+/**
+ * True iff `members` carries real, usable argument info for a subcommand
+ * variant - i.e. it's non-empty and not just an `<args>`/`[<args>]`
+ * placeholder (which means "no info available", whether or not it's
+ * optional). Used to decide whether the usage already parsed from a parent
+ * command's help output is trustworthy enough to skip a further per-subcommand
+ * help round trip.
+ */
+export function hasUsableArguments(members: Parameter[]): boolean {
+  return members.length > 0 && !isArgsPlaceholder(members);
 }
 
 /**
@@ -435,19 +473,19 @@ export function extractBukkitAliases(helpText: string): string[] {
  * a single SUBCOMMAND if there's only one, or a CHOICE_LIST wrapping a
  * SUBCOMMAND for each variant (in encounter order) otherwise.
  */
-export function buildParameterStructureFromVariants(variants: Map<string, Parameter[]>): Parameter[] {
+export function buildParameterStructureFromVariants(variants: Map<string, VariantInfo>): Parameter[] {
   if (variants.size === 0) {
     return [];
   }
 
   const subcommandChoices: Parameter[] = [];
 
-  for (const [name, members] of variants) {
+  for (const [name, { optional, members }] of variants) {
     subcommandChoices.push({
       type: ParameterType.SUBCOMMAND,
       name,
       literal: name,
-      optional: false,
+      optional,
       position: subcommandChoices.length,
       members,
       isComplete: false

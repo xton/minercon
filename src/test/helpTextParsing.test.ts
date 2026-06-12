@@ -11,11 +11,13 @@ import {
     parseHelpLines,
     parseAliasRedirect,
     isGenericArgsPlaceholder,
+    hasUsableArguments,
     isUnsupportedNamespaceError,
     extractBukkitUsageLines,
     extractBukkitAliases,
     looksLikeBukkitHelpPage,
     splitConcatenatedHelpLines,
+    VariantInfo,
 } from '../helpTextParsing';
 
 suite('helpTextParsing', () => {
@@ -180,6 +182,7 @@ suite('classifyParameterTokens', () => {
         assert.deepStrictEqual(result, {
             kind: 'variant',
             name: 'modify',
+            optional: false,
             parameters: [
                 { type: ParameterType.ARGUMENT, name: 'property', optional: false, position: 0 },
                 { type: ParameterType.ARGUMENT, name: 'value', optional: false, position: 1 },
@@ -189,7 +192,7 @@ suite('classifyParameterTokens', () => {
 
     test('a leading [bracketed] token: a named variant with the brackets stripped from its name', () => {
         const result = classifyParameterTokens(['[reload]']);
-        assert.deepStrictEqual(result, { kind: 'variant', name: 'reload', parameters: [] });
+        assert.deepStrictEqual(result, { kind: 'variant', name: 'reload', optional: true, parameters: [] });
     });
 });
 
@@ -211,9 +214,10 @@ suite('parseHelpLines', () => {
         const result = parseHelpLines(text, 'gamerule');
         assert.strictEqual(result.direct, null);
         assert.deepStrictEqual([...result.variants.keys()], ['announceAdvancements', 'doDaylightCycle', 'logAdminCommands']);
-        assert.deepStrictEqual(result.variants.get('announceAdvancements'), [
-            { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
-        ]);
+        assert.deepStrictEqual(result.variants.get('announceAdvancements'), {
+            optional: false,
+            members: [{ type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 }],
+        });
     });
 
     test('subcommand path "team list" matches "/team list [<team>]"', () => {
@@ -301,6 +305,27 @@ suite('isGenericArgsPlaceholder', () => {
         assert.ok(!isGenericArgsPlaceholder([
             { type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 },
             { type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 1 },
+        ]));
+    });
+});
+
+suite('hasUsableArguments', () => {
+    test('true for a real parameter list', () => {
+        assert.ok(hasUsableArguments([
+            { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
+        ]));
+    });
+
+    test('false for an empty parameter list', () => {
+        assert.ok(!hasUsableArguments([]));
+    });
+
+    test('false for a bare "<args>"/"[<args>]" placeholder, optional or not', () => {
+        assert.ok(!hasUsableArguments([
+            { type: ParameterType.ARGUMENT, name: 'args', optional: true, position: 0 },
+        ]));
+        assert.ok(!hasUsableArguments([
+            { type: ParameterType.ARGUMENT, name: 'args', optional: false, position: 0 },
         ]));
     });
 });
@@ -435,7 +460,7 @@ suite('buildParameterStructureFromVariants', () => {
 
     test('a single variant: becomes one SUBCOMMAND parameter directly', () => {
         const members: Parameter[] = [{ type: ParameterType.ARGUMENT, name: 'player', optional: false, position: 0 }];
-        const result = buildParameterStructureFromVariants(new Map([['add', members]]));
+        const result = buildParameterStructureFromVariants(new Map([['add', { optional: false, members }]]));
         assert.deepStrictEqual(result, [{
             type: ParameterType.SUBCOMMAND,
             name: 'add',
@@ -448,10 +473,10 @@ suite('buildParameterStructureFromVariants', () => {
     });
 
     test('multiple variants: wrapped in a CHOICE_LIST of SUBCOMMANDs in insertion order with sequential positions', () => {
-        const variants = new Map<string, Parameter[]>([
-            ['add', []],
-            ['remove', []],
-            ['list', []],
+        const variants = new Map<string, VariantInfo>([
+            ['add', { optional: false, members: [] }],
+            ['remove', { optional: false, members: [] }],
+            ['list', { optional: false, members: [] }],
         ]);
         const result = buildParameterStructureFromVariants(variants);
 

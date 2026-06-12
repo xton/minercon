@@ -151,12 +151,20 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
       }
     });
 
-    test('team list has a [<team>] parameter, found via "help team list" at depth 2', () => {
+    test('team list has a [<team>] parameter, trusted from "help" without a depth-2 fetch', () => {
       const teamParams = nodes.get('team')!.parameters;
       const list = findChoice(teamParams, 'list');
       assert.deepStrictEqual(list.members, [
         { type: ParameterType.ARGUMENT, name: 'team', optional: true, position: 0 },
       ]);
+    });
+
+    test('subcommand variants with usable arguments are trusted, without a per-subcommand help fetch', () => {
+      assert.ok(!calls.includes('help gamerule announceAdvancements'), 'gamerule rules already have a [<value>] parameter from "help"');
+      assert.ok(!calls.includes('help gamerule doDaylightCycle'));
+      assert.ok(!calls.includes('help gamerule logAdminCommands'));
+      assert.ok(!calls.includes('help team list'), 'team list already has a [<team>] parameter from "help"');
+      assert.ok(!calls.includes('help team add'), 'team add already has <team>/[<displayName>] parameters from "help"');
     });
   });
 
@@ -247,7 +255,7 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
       }
     });
 
-    test('team list/add get full parameters via minecraft:help at depth 2', () => {
+    test('team list/add get full parameters from minecraft:help, trusted without a depth-2 fetch', () => {
       const teamParams = nodes.get('team')!.parameters;
       const list = findChoice(teamParams, 'list');
       assert.deepStrictEqual(list.members, [
@@ -258,6 +266,8 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
         { type: ParameterType.ARGUMENT, name: 'team', optional: false, position: 0 },
         { type: ParameterType.ARGUMENT, name: 'displayName', optional: true, position: 1 },
       ]);
+      assert.ok(!calls.includes('help team list') && !calls.includes('minecraft:help team list'));
+      assert.ok(!calls.includes('help team add') && !calls.includes('minecraft:help team add'));
     });
 
     test('version falls back to its Bukkit "Usage: [plugin name]" line, not the generic args placeholder', () => {
@@ -282,6 +292,152 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
       assert.strictEqual(nodes.get('about'), nodes.get('version'));
       assert.strictEqual(nodes.get('rl'), nodes.get('reload'));
       assert.strictEqual(nodes.get('pl'), nodes.get('plugins'));
+    });
+  });
+
+  suite('subcommand variants: trust usage from "help" unless it is bogus', () => {
+    // "/foo bar <baz>" gives "bar" a real [<baz>] parameter directly - no
+    // further fetch needed. "/foo qux" gives "qux" no parameters at all
+    // (a bare literal), which isn't enough to know its real syntax, so
+    // "help foo qux" must still be fetched to discover its "<args>" argument.
+    const responses = new Map<string, string>([
+      ['minecraft:help', NAMESPACE_ERROR],
+      ['help', '/foo'],
+      ['help foo', ['/foo bar <baz>', '/foo qux'].join('')],
+      ['help foo qux', '/foo qux <detail>'],
+    ]);
+
+    let calls: string[];
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      calls = [];
+      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
+      await autocomplete.initialize();
+      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('a variant with a real parameter is trusted without a per-subcommand help fetch', () => {
+      const bar = findChoice(nodes.get('foo')!.parameters, 'bar');
+      assert.deepStrictEqual(bar.members, [
+        { type: ParameterType.ARGUMENT, name: 'baz', optional: false, position: 0 },
+      ]);
+      assert.ok(!calls.includes('help foo bar'), `expected no "help foo bar" fetch, got: ${JSON.stringify(calls)}`);
+    });
+
+    test('a bare-literal variant (no usable arguments) falls back to a per-subcommand help fetch', () => {
+      const qux = findChoice(nodes.get('foo')!.parameters, 'qux');
+      assert.deepStrictEqual(qux.members, [
+        { type: ParameterType.ARGUMENT, name: 'detail', optional: false, position: 0 },
+      ]);
+      assert.ok(calls.includes('help foo qux'), `expected a "help foo qux" fetch, got: ${JSON.stringify(calls)}`);
+    });
+  });
+
+  suite('minecraft:gamerule: namespace-duplicated rule names from minecraft:help', () => {
+    // Real Paper 1.21.4 `minecraft:help minecraft:gamerule` (and
+    // `minecraft:help gamerule`) lists every rule TWICE - once bare (e.g.
+    // "advance_time") and once minecraft:-prefixed (e.g.
+    // "minecraft:advance_time") - each with its own real [<value>]
+    // parameter. Both must be trusted without a further per-rule help fetch,
+    // even though the rule "name" itself contains a `:`.
+    const responses = new Map<string, string>([
+      ['minecraft:help', [
+        '/gamerule (advance_time|minecraft:advance_time|locator_bar|minecraft:locator_bar)',
+        '/minecraft:gamerule (advance_time|minecraft:advance_time|locator_bar|minecraft:locator_bar)',
+      ].join('')],
+      ['help gamerule', GENERIC_VANILLA_HELP('gamerule')],
+      ['minecraft:help gamerule', [
+        '/gamerule advance_time [<value>]',
+        '/gamerule minecraft:advance_time [<value>]',
+        '/gamerule locator_bar [<value>]',
+        '/gamerule minecraft:locator_bar [<value>]',
+      ].join('')],
+      ['help minecraft:gamerule', GENERIC_VANILLA_HELP('minecraft:gamerule')],
+      ['minecraft:help minecraft:gamerule', [
+        '/minecraft:gamerule advance_time [<value>]',
+        '/minecraft:gamerule minecraft:advance_time [<value>]',
+        '/minecraft:gamerule locator_bar [<value>]',
+        '/minecraft:gamerule minecraft:locator_bar [<value>]',
+      ].join('')],
+    ]);
+
+    let calls: string[];
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      calls = [];
+      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
+      await autocomplete.initialize();
+      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('both gamerule and minecraft:gamerule list each rule with usable [<value>] members', () => {
+      for (const cmd of ['gamerule', 'minecraft:gamerule']) {
+        const params = nodes.get(cmd)!.parameters;
+        const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
+        assert.ok(choiceList, `expected ${cmd} to be a CHOICE_LIST of rule variants`);
+        const names = choiceList!.choices!.map(c => c.name);
+        assert.deepStrictEqual(names, ['advance_time', 'minecraft:advance_time', 'locator_bar', 'minecraft:locator_bar']);
+        for (const choice of choiceList!.choices!) {
+          assert.deepStrictEqual(choice.members, [
+            { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
+          ]);
+        }
+      }
+    });
+
+    test('no per-rule help fetches for either bare or minecraft:-prefixed rule names', () => {
+      const extraFetches = calls.filter(c => /^(help|minecraft:help) (gamerule|minecraft:gamerule) /.test(c));
+      assert.deepStrictEqual(extraFetches, [], `expected no per-rule fetches, got: ${JSON.stringify(extraFetches)}`);
+    });
+  });
+
+  suite('minecraft:difficulty: enum-valued argument expressed as one "[value]" line per choice', () => {
+    // Real Paper 1.21.4 `minecraft:help minecraft:difficulty` lists each
+    // difficulty level on its own "/minecraft:difficulty [value]" line -
+    // each parsed as a variant whose name came from a [bracketed] token with
+    // no further tokens (empty members). These are literal enum VALUES for
+    // difficulty's argument, not subcommand verbs with their own syntax:
+    // "minecraft:help minecraft:difficulty <value>" returns empty and "help
+    // minecraft:difficulty <value>" returns "not found" - both wasted round
+    // trips that should be skipped.
+    const responses = new Map<string, string>([
+      ['minecraft:help', '/minecraft:difficulty [peaceful|easy|normal|hard]'],
+      ['help minecraft:difficulty', GENERIC_VANILLA_HELP('minecraft:difficulty')],
+      ['minecraft:help minecraft:difficulty', [
+        '/minecraft:difficulty [peaceful]',
+        '/minecraft:difficulty [easy]',
+        '/minecraft:difficulty [normal]',
+        '/minecraft:difficulty [hard]',
+      ].join('')],
+    ]);
+
+    let calls: string[];
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      calls = [];
+      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
+      await autocomplete.initialize();
+      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('minecraft:difficulty becomes a CHOICE_LIST of complete, argument-free value variants', () => {
+      const params = nodes.get('minecraft:difficulty')!.parameters;
+      const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
+      assert.ok(choiceList, 'expected minecraft:difficulty to be a CHOICE_LIST of value variants');
+      const names = choiceList!.choices!.map(c => c.name);
+      assert.deepStrictEqual(names, ['peaceful', 'easy', 'normal', 'hard']);
+      for (const choice of choiceList!.choices!) {
+        assert.strictEqual(choice.isComplete, true);
+        assert.deepStrictEqual(choice.members, []);
+      }
+    });
+
+    test('no per-value help fetches for the difficulty levels', () => {
+      const extraFetches = calls.filter(c => /^(help|minecraft:help) minecraft:difficulty /.test(c));
+      assert.deepStrictEqual(extraFetches, [], `expected no per-value fetches, got: ${JSON.stringify(extraFetches)}`);
     });
   });
 

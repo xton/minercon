@@ -6,6 +6,7 @@ import {
   ParameterType,
   Parameter,
   HelpLinesResult,
+  VariantInfo,
   parseHelpLines,
   parseAliasRedirect,
   splitConcatenatedHelpLines,
@@ -15,6 +16,7 @@ import {
   extractBukkitUsageLines,
   extractBukkitAliases,
   buildParameterStructureFromVariants,
+  hasUsableArguments,
 } from './helpTextParsing';
 import { CommandTreeCache } from './commandTreeCache';
 import { getSuggestions, SuggestionResult } from './commandSuggestions';
@@ -346,7 +348,7 @@ export class CommandAutocomplete {
     // mcResponse is always a flat Brigadier blob - never a Bukkit help page.
     const mc = mcResponse !== null
       ? parseHelpLines(splitConcatenatedHelpLines(mcResponse), commandPath)
-      : { variants: new Map<string, Parameter[]>(), direct: null };
+      : { variants: new Map<string, VariantInfo>(), direct: null };
 
     let result: HelpLinesResult;
     if (mc.direct !== null && !isGenericArgsPlaceholder(mc.direct)) {
@@ -455,6 +457,29 @@ export class CommandAutocomplete {
 
     // Build the full command path for this subcommand
     const fullPath = `${parentPath} ${subcommand.name}`;
+
+    // The variant line that introduced this subcommand (e.g. "/gamerule
+    // doDaylightCycle [<value>]") already gave us its argument list - trust
+    // it instead of spending a `help`/`minecraft:help` round trip per
+    // subcommand (e.g. once per gamerule, scoreboard objectives subcommand,
+    // ...). Only fall through to fetching when that usage is empty or just
+    // the generic `<args>` placeholder, i.e. we don't actually know its args.
+    if (subcommand.members && hasUsableArguments(subcommand.members)) {
+      subcommand.isComplete = true;
+      await this.loadSubcommandsIn(fullPath, subcommand.members);
+      return;
+    }
+
+    // A variant whose name came from a `[bracketed]` token with no further
+    // arguments (e.g. "[peaceful]" in "/minecraft:difficulty [peaceful]")
+    // is one literal value of an enum-style argument, not a subcommand verb
+    // - "peaceful" has no syntax of its own to discover, so
+    // "help"/"minecraft:help <fullPath>" would just be wasted round trips
+    // (confirmed: minecraft:help returns empty, help returns "not found").
+    if (subcommand.members && subcommand.members.length === 0 && subcommand.optional) {
+      subcommand.isComplete = true;
+      return;
+    }
 
     try {
       const helpResponse = await this.fetchPaginatedCommand(`help ${fullPath}`);
