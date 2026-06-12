@@ -406,6 +406,29 @@ Smaller UX enhancements noticed along the way, not yet scheduled.
   Overview" section updated to match current module names
   (`RconSession`/`rconSession.ts` instead of the pre-mega-module-split
   `RconTerminal`) and now points to the new doc.
+- [ ] **Argument hint never shows for commands with optional trailing
+  arguments, in plugin mode** (found 2026-06-11). `cmdusage clear` returns a
+  Brigadier "usage ladder" - one line per optional-argument depth:
+  ```
+  clear
+  clear <targets>
+  clear <targets> <item>
+  clear <targets> <item> <maxCount>
+  ```
+  whereas `minecraft:help clear` shows the compact `/clear [<targets>]
+  [<item>]` form. `parseUsageResponse` (`completionEngine.ts`) treats any
+  response with more than one non-empty line as unresolved/ambiguous (the
+  shape it's designed to recognize is genuine ambiguity, e.g. "mvp c" →
+  "mvp create"/"mvp config") and returns `''`, so no argument hint is ever
+  shown for `/clear` or any other command with optional trailing args.
+  Per the user: "we should just be displaying the optional params like they
+  show up originally in help" - i.e. collapse this ladder (each line ==
+  previous line + one more trailing `<token>`, all sharing a common prefix)
+  into a single usage line with the extra tokens wrapped in `[...]`
+  (`clear [<targets>] [<item>] [<maxCount>]`), and keep treating
+  non-ladder multi-line responses (real ambiguity) as unresolved. Likely
+  lives in `parseUsageResponse` or a new helper it calls, with unit tests
+  covering both the ladder-collapse and genuine-ambiguity cases.
 
 ## How to record a live RCON fixture
 
