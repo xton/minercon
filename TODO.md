@@ -571,7 +571,7 @@ Ordered roughly by user impact within each group.
   from `RconSession`'s constructor into `ConnectionManager`, update the
   comments, and add the session-level "connection lost → auto-reconnect →
   onReconnected reloads commands" test the gap was about.
-- [ ] **`variants.ts:34` ends with a double semicolon** (`...hasMod);;`).
+- [x] **`variants.ts:34` ends with a double semicolon** (`...hasMod);;`). Fixed.
 
 ### Docs
 

@@ -31,4 +31,4 @@ export const variants: ServerVariant[] = [
 ];
 
 export const nonPluginVariants = variants.filter(v => !v.hasPlugin && !v.hasMod);
-export const addonVariants = variants.filter(v => v.hasPlugin || v.hasMod);;
+export const addonVariants = variants.filter(v => v.hasPlugin || v.hasMod);
