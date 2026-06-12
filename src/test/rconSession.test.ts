@@ -38,7 +38,7 @@ function defaultSend(cmd: string): string {
 class FakeController {
     sendCalls: string[] = [];
     disconnectCalls = 0;
-    private connected = true;
+    connected = true;
 
     constructor(private sendImpl: SendImpl) {}
 
@@ -304,6 +304,37 @@ suite('RconSession', () => {
 
         await waitUntil(() => h.output().includes('Not connected'));
         assert.deepStrictEqual(h.controller.sendCalls, [], 'the command was never sent');
+    });
+
+    test('a failed command on a still-live connection shows the error without reconnecting', async () => {
+        // A slow command's "Command timeout" used to substring-match 'timeout'
+        // and tear down a healthy connection. The signal is the controller's
+        // actual socket state, not the error text.
+        const h = createHarness(cmd => {
+            if (cmd === 'tabcomplete') { return PLUGIN_PROBE_RESPONSE; }
+            throw new Error('Command timeout: list');
+        });
+        await openInPluginMode(h);
+
+        type(h, 'list');
+        h.session.handleInput('\r');
+
+        await waitUntil(() => h.output().includes('Error: Command timeout: list'));
+        assert.ok(!h.output().includes('Connection lost'), 'a live connection must not be torn down');
+    });
+
+    test('a failed command on a dead connection reports the loss and starts auto-reconnect', async () => {
+        const h = createHarness(cmd => {
+            if (cmd === 'tabcomplete') { return PLUGIN_PROBE_RESPONSE; }
+            throw new Error('Connection closed');
+        });
+        await openInPluginMode(h);
+        h.controller.connected = false; // the socket died out from under us
+
+        type(h, 'list');
+        h.session.handleInput('\r');
+
+        await waitUntil(() => h.output().includes('Connection lost. Auto-reconnecting...'));
     });
 
     test('Ctrl+K stashes killed text so Ctrl+Y yanks it back', async () => {

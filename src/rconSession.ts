@@ -708,15 +708,11 @@ export class RconSession {
       this.sessionHost.write(ansi.red(`Error: ${message}`) + '\r\n');
       outputLineCount = 1;
 
-      const errorMsg = message.toLowerCase();
-      if (errorMsg.includes('econnreset') ||
-          errorMsg.includes('econnrefused') ||
-          errorMsg.includes('epipe') ||
-          errorMsg.includes('not connected') ||
-          errorMsg.includes('connection closed') ||
-          errorMsg.includes('socket') ||
-          errorMsg.includes('timeout')) {
-
+      // Ask the controller whether the connection actually died rather than
+      // sniffing the error text for socket-ish substrings — a slow command's
+      // "Command timeout" used to match 'timeout' and tear down a perfectly
+      // healthy connection.
+      if (!this.connectionManager.controller.isConnected()) {
         this.sessionHost.write(ansi.yellow('⚠  Connection lost. Auto-reconnecting...') + '\r\n');
         outputLineCount++;
 

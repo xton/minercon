@@ -479,14 +479,17 @@ Ordered roughly by user impact within each group.
   writes its own `^D`). Fixed: echo removed; the existing disconnect() test
   now also asserts no `^D` is written. (Whether `disconnect()` should write
   UI text at all is left as a possible future refactor.)
-- [ ] **A slow command (>10s) triggers a full reconnect of a healthy
+- [x] **A slow command (>10s) triggers a full reconnect of a healthy
   connection** — `executeCommand`'s connection-loss detection is substring
   sniffing (`errorMsg.includes('timeout')`, `'socket'`, ...
   `rconSession.ts:711-718`), and `RconProtocol`'s `Command timeout: <cmd>`
   error matches it, so a long-running-but-fine server command tears down and
-  re-establishes the connection. Better signal: ask
-  `connectionManager.controller.isConnected()` after the failure (or have
-  `RconController` throw typed errors) instead of grepping messages.
+  re-establishes the connection. Fixed: the catch block now asks
+  `connectionManager.controller.isConnected()` — works because
+  `RconController` nulls its client on the protocol's `close` event, which
+  fires before pending sends reject. Two new rconSession tests cover both
+  sides (error on a live connection shows the error without reconnecting;
+  error on a dead one reports "Connection lost" and starts auto-reconnect).
 - [x] **`fetchPaginatedCommand` checks the wrong variable** — the page loop's
   `if (output)` (`commandAutocomplete.ts:159`) is always true (we returned
   early if page 1 was empty); it clearly meant `if (pageOutput)`. Currently
