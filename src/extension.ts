@@ -183,15 +183,18 @@ async function createRconTerminalProfile(
     }
     port = parseInt(portInput, 10);
 
-    password = await vscode.window.showInputBox({
+    // Cancelling the box (undefined) aborts like host/port do; an explicitly
+    // empty password (plain Enter) is allowed — some servers use one.
+    const passwordInput = await vscode.window.showInputBox({
       prompt: 'RCON Password',
       password: true,
       value: defaultPassword ?? '',
       placeHolder: 'Enter your server RCON password'
-    }) ?? '';
-    if (password === undefined) {
+    });
+    if (passwordInput === undefined) {
       throw new Error('Password is required');
     }
+    password = passwordInput;
   }
 
   // Create controller and connect

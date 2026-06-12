@@ -460,12 +460,15 @@ Ordered roughly by user impact within each group.
   keep showing results for the *old* line. Fix: call
   `this.host.onLineChanged(this.currentLine)` from every mutating op (or
   centralize in a private `lineMutated()` helper).
-- [ ] **Cancelling the VS Code password prompt connects with an empty
+- [x] **Cancelling the VS Code password prompt connects with an empty
   password** — `password = await vscode.window.showInputBox({...}) ?? ''`
   followed by a dead `if (password === undefined)` check
   (`extension.ts:186-194`); the `?? ''` makes the guard unreachable, so Esc
   at the password box proceeds to connect with `''` instead of aborting like
-  the host/port prompts do. Drop the `?? ''` and check for `undefined`.
+  the host/port prompts do. Fixed: the `?? ''` is gone and cancel now throws
+  `'Password is required'`; a deliberately *empty* password (plain Enter)
+  remains allowed, since some servers use one. (No unit test —
+  `extension.ts` is IO/UI orchestration, per §5's deep-mocking decision.)
 - [x] **`/disconnect` echoes a spurious `^D`** —
   `ConnectionManager.disconnect()` unconditionally writes `'^D\r\n'`
   (`connectionManager.ts:92`), but its only caller is the typed `/disconnect`
