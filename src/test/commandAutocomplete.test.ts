@@ -293,6 +293,23 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
       assert.strictEqual(nodes.get('rl'), nodes.get('reload'));
       assert.strictEqual(nodes.get('pl'), nodes.get('plugins'));
     });
+
+    test('redundant "help <cmd>" fetches are skipped once minecraft:help already has full info', () => {
+      // gamemode/gamerule/team's root minecraft:help summaries already carry
+      // real syntax, confirmed by minecraft:help <cmd> itself - no need for
+      // Bukkit's generic "help <cmd>" page too.
+      assert.ok(!calls.includes('help gamemode'), 'help gamemode');
+      assert.ok(!calls.includes('help gamerule'), 'help gamerule');
+      assert.ok(!calls.includes('help team'), 'help team');
+    });
+
+    test('redundant "minecraft:help <cmd>" fetches are skipped once Bukkit\'s help already has full info', () => {
+      // version/reload's root minecraft:help summaries are just the generic
+      // "[<args>]" placeholder, so Bukkit's "help <cmd>" is tried first - and
+      // its real Usage line is enough on its own.
+      assert.ok(!calls.includes('minecraft:help version'), 'minecraft:help version');
+      assert.ok(!calls.includes('minecraft:help reload'), 'minecraft:help reload');
+    });
   });
 
   suite('subcommand variants: trust usage from "help" unless it is bogus', () => {

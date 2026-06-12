@@ -43,6 +43,16 @@ export class CommandAutocomplete {
   // every per-command detail fetch. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
   private supportsMinecraftNamespace: boolean = true;
 
+  // For each root command, whether its summary line in the root
+  // `minecraft:help` dump carried no real Brigadier info (empty or the
+  // generic `[<args>]` placeholder). When true, `loadCommandDetails` tries
+  // Bukkit's `help <command>` first, since `minecraft:help <command>` is
+  // unlikely to do better; when false (or absent), it tries
+  // `minecraft:help <command>` first. Either way, the other source is only
+  // fetched if the first one turns out insufficient. Populated once during
+  // fetchRootCommands(), not persisted to the cache.
+  private rootSummaryIsPlaceholder: Map<string, boolean> = new Map();
+
   private readonly cache: CommandTreeCache;
 
   constructor(
@@ -262,6 +272,13 @@ export class CommandAutocomplete {
             parameters: [],
             isComplete: false
           });
+
+          // Record whether this command's root summary line already carries
+          // real syntax info, so loadCommandDetails can decide which help
+          // source to try first.
+          const summary = parseHelpLines(stripped, commandName);
+          this.rootSummaryIsPlaceholder.set(commandName, !this.hasRealUsage(summary));
+
           commandCount++;
           matched = true;
           break;
@@ -335,6 +352,19 @@ export class CommandAutocomplete {
   }
 
   /**
+   * True iff `result` carries real, usable syntax info - a non-generic
+   * `direct` list or at least one variant - as opposed to nothing or just
+   * the generic `[<args>]` placeholder. Mirrors the condition
+   * `mergeHelpSources` uses to let `minecraft:help` win outright over
+   * Bukkit's `help`; used by `loadCommandDetails` to decide whether a
+   * help source's result is good enough on its own, or whether the other
+   * source is worth fetching too.
+   */
+  private hasRealUsage(result: HelpLinesResult): boolean {
+    return (result.direct !== null && !isGenericArgsPlaceholder(result.direct)) || result.variants.size > 0;
+  }
+
+  /**
    * Merge the two help sources for `commandPath`'s syntax into one
    * `HelpLinesResult`. `mcResponse` (from `minecraft:help <commandPath>`,
    * only present when `supportsMinecraftNamespace`) wins unless it's empty
@@ -402,10 +432,33 @@ export class CommandAutocomplete {
     }
 
     try {
-      const helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
-      const mcResponse = this.supportsMinecraftNamespace
-        ? await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`)
-        : null;
+      let helpResponse = '';
+      let mcResponse: string | null = null;
+
+      if (!this.supportsMinecraftNamespace) {
+        helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
+      } else if (this.rootSummaryIsPlaceholder.get(commandPath)) {
+        // The root `minecraft:help` summary for this command had no real
+        // syntax (empty or `[<args>]`) - `minecraft:help <commandPath>` is
+        // unlikely to do better, so try Bukkit's `help <commandPath>` first
+        // and only fall back to `minecraft:help` if it doesn't pan out.
+        helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
+        const fromHelp = looksLikeBukkitHelpPage(helpResponse)
+          ? parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath)
+          : parseHelpLines(splitConcatenatedHelpLines(helpResponse), commandPath);
+        if (!this.hasRealUsage(fromHelp)) {
+          mcResponse = await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`);
+        }
+      } else {
+        // The root summary already had real syntax info - `minecraft:help
+        // <commandPath>` is at least as detailed, so try it first and only
+        // fall back to Bukkit's `help <commandPath>` if it doesn't pan out.
+        mcResponse = await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`);
+        const fromMc = parseHelpLines(splitConcatenatedHelpLines(mcResponse), commandPath);
+        if (!this.hasRealUsage(fromMc)) {
+          helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
+        }
+      }
 
       // Check if we got a valid response from at least one source
       if (!helpResponse && !mcResponse) {
