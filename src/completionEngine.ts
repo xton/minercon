@@ -10,6 +10,8 @@
 // sequence in a test, rather than something that happens to you against a
 // real server at 2am.
 
+import { stripColors } from './ansi';
+
 // ─────────────────────────── pure query helpers ───────────────────────────
 
 /**
@@ -90,18 +92,6 @@ function isFailureResponse(response: string | undefined): boolean {
   return !response || response.trim().startsWith('(');
 }
 
-/**
- * `cmdusage` echoes the command's help text verbatim, Minecraft `§` color
- * codes and all (e.g. "§b§bmvp create§b §a <portal-name> [destination]"). The
- * hint display applies its own ANSI styling on top of the plain usage string,
- * so any embedded color codes need to come out here, at the parsing boundary
- * — otherwise they show up as literal `§b` noise mixed in with our own escapes.
- */
-function stripMinecraftColorCodes(text: string): string {
-  // Handle both § and Â§ encodings (UTF-8 mangling some servers produce).
-  return text.replace(/[§Â]§[0-9a-fklmnor]/g, '').replace(/§[0-9a-fklmnor]/g, '');
-}
-
 export function parseCompletionsResponse(response: string | undefined): string[] {
   if (isFailureResponse(response)) { return []; }
   return response!.split('\n').map(s => s.trim()).filter(s => s.length > 0);
@@ -119,12 +109,18 @@ export function parseCompletionsResponse(response: string | undefined): string[]
  * so (same as the explicit failure case) there's nothing unambiguous to show
  * yet. This is the actual "is there a single usage line" signal — the server
  * already does the resolution; we just need to recognize its shape.
+ *
+ * `cmdusage` echoes the command's help text verbatim, Minecraft `§` color
+ * codes and all (e.g. "§b§bmvp create§b §a <portal-name> [destination]"). The
+ * hint display applies its own ANSI styling on top of the plain usage string,
+ * so any embedded color codes need to come out here, at the parsing boundary
+ * — otherwise they show up as literal `§b` noise mixed in with our own escapes.
  */
 export function parseUsageResponse(response: string | undefined): string {
   if (isFailureResponse(response)) { return ''; }
 
   const lines = response!.split('\n')
-    .map(line => stripMinecraftColorCodes(line).trim())
+    .map(line => stripColors(line).trim())
     .filter(line => line.length > 0);
 
   return lines.length === 1 ? lines[0] : '';

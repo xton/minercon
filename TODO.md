@@ -522,10 +522,12 @@ Ordered roughly by user impact within each group.
   `BuiltinCommand` table (`buildBuiltinCommands()` / `builtinLookup`) drives
   both `handleEnter` dispatch and `showHelp()`'s command list; adding a
   command is now a single table entry.
-- [ ] **Two § color-code strippers** — `completionEngine.ts` has a private
+- [x] **Two § color-code strippers** — `completionEngine.ts` has a private
   `stripMinecraftColorCodes` (handles the `Â§` UTF-8-mangled form) while
   `ansi.ts` exports `stripColors`. Consolidate in `ansi.ts` (folding in the
-  `Â§` handling) so the alphabet lives in one place.
+  `Â§` handling) so the alphabet lives in one place. Fixed: the two
+  implementations were identical; `completionEngine.ts` now imports and uses
+  `stripColors` from `ansi.ts`.
 - [ ] **Progress phase is signaled by string-sniffing** —
   `initializeCommands` decides the progress-bar phase via
   `message.includes('Fetching')` / `'Loading'` / `'Complete'`
