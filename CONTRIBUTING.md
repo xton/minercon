@@ -3,7 +3,7 @@
 ## Development Setup
 
 ### Prerequisites
-- Node.js 14+ 
+- Node.js 22+
 - VS Code
 - Git
 
@@ -35,14 +35,40 @@
 ```
 minercon/
 ├── src/
-│   ├── extension.ts          # Extension entry point
-│   ├── rconClient.ts         # RCON client wrapper
-│   ├── rconProtocol.ts       # Custom RCON protocol implementation
-│   ├── rconTerminal.ts       # Terminal interface
-│   └── commandAutocomplete.ts # Command autocomplete system
-├── package.json              # Extension manifest
-└── tsconfig.json            # TypeScript configuration
+│   ├── extension.ts            # VS Code extension entry point
+│   ├── rconTerminal.ts         # vscode.Pseudoterminal adapter over RconSession
+│   ├── cli.ts                  # Standalone CLI entry point
+│   ├── cliConfig.ts            # CLI config resolution (flags/env/saved config)
+│   ├── rconSession.ts          # Host-agnostic session orchestrator
+│   ├── connectionManager.ts    # Connect/reconnect lifecycle, backoff
+│   ├── rconClient.ts           # RconController — send queue over RconProtocol
+│   ├── rconProtocol.ts         # RCON wire protocol, framing, fence packet
+│   ├── commandAutocomplete.ts  # /help-crawl orchestration, command tree
+│   ├── commandSuggestions.ts   # Pure suggestion generation from the tree
+│   ├── commandTreeCache.ts     # On-disk command tree cache
+│   ├── helpTextParsing.ts      # Pure /help text → Parameter tree parsing
+│   ├── completionEngine.ts     # Pure tab-completion state machine
+│   ├── completionsBackend.ts   # Plugin-mode vs local-mode completions seam
+│   ├── argumentHint.ts         # Argument-hint formatting
+│   ├── lineEditor.ts           # Input line: editing, cursor, history
+│   ├── suggestionDisplay.ts    # Suggestion/argument-hint popup rendering
+│   ├── historySearch.ts        # Ctrl+R reverse history search state
+│   ├── historyStore.ts         # On-disk command history
+│   ├── ansi.ts                 # ANSI styling + § color code helpers
+│   └── logger.ts               # Logger interface (output channel/stderr/file)
+├── src/test/                   # Unit tests (mocha, via vscode-test)
+├── src/test/functional/        # Functional tests against a live server
+├── plugin/                      # Paper/Spigot server-side RconTabComplete plugin
+├── fabric-mod/                  # Fabric server-side RconTabComplete mod
+├── docs/
+│   ├── ARCHITECTURE.md         # Module-by-module tour + dependency diagram
+│   └── TECHNICAL.md            # RCON protocol/fence packet deep dive
+├── package.json                # Extension manifest
+└── tsconfig.json               # TypeScript configuration
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for what each module is
+responsible for and how they fit together.
 
 ## Making Changes
 
@@ -54,22 +80,28 @@ minercon/
 
 ### Testing Your Changes
 
-1. **Manual Testing**
+1. **Unit tests** (`npm test`) — runs the full mocha suite via `vscode-test`,
+   including the record/replay RCON protocol harness, the line editor,
+   completion engine, and command-tree parsing. This is the fast,
+   no-server-needed feedback loop; run it before every commit.
+
+2. **Functional tests** (`npm run test:functional`) — compile then run
+   `src/test/functional/**` against a real Minecraft server (configured via
+   env vars; see that directory). `test:functional:local` and
+   `test:functional:plugin` isolate the local-mode (`--no-plugin`) and
+   plugin-mode paths respectively — see "Local mode"/"Plugin mode" in
+   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#terminology).
+
+3. **Manual Testing**
    - Connect to a test Minecraft server
    - Verify basic commands work
-   - Test edge cases (large outputs, disconnections)
+   - Test edge cases (large outputs, disconnections, hyphenated commands
+     like `/titanium-rewards`)
 
-2. **Common Test Commands**
-   ```
-   /help              # Tests fragmentation
-   /status            # Tests player list parsing  
-   /gamemode          # Tests autocomplete
-   /titanium-rewards  # Tests hyphenated commands
-   ```
-
-3. **Debug Output**
-   - View → Output → Select "Minercon"
-   - Check for error messages and warnings
+4. **Debug Output**
+   - VS Code: View → Output → Select "Minercon"
+   - CLI: pass `--log-level debug` (or set `MCRCON_LOG_LEVEL=debug`) for
+     per-command RCON send/recv logging (see `docs/TECHNICAL.md`)
 
 ### Submitting Changes
 
@@ -89,10 +121,12 @@ diagram, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ### RCON Protocol Layer
 The `RconProtocol`/`RconController` classes (`rconProtocol.ts`/`rconClient.ts`)
 handle:
-- Socket communication, connect/auth/reconnect
-- Packet encoding/decoding
-- Fragmentation handling
-- Response accumulation
+- Socket communication, connect/auth, packet encoding/decoding
+- Fragmentation handling via the deferred fence packet (see `docs/TECHNICAL.md`)
+- Serializing all sends through `RconController`'s send queue
+
+Reconnection lifecycle (exponential backoff, recreating the controller) is
+`ConnectionManager`'s job (`connectionManager.ts`).
 
 ### Session Orchestration
 The `RconSession` class (`rconSession.ts`) provides:
@@ -110,13 +144,18 @@ The `CommandAutocomplete` class (`commandAutocomplete.ts`) manages:
 ## Common Development Tasks
 
 ### Adding a New Built-in Command
-Edit `rconSession.ts` in the `handleEnter()` method:
+Add an entry to the array returned by `buildBuiltinCommands()` in
+`rconSession.ts`:
 ```typescript
-} else if (command === '/your-command') {
-    this.handleYourCommand();
+{
+    name: '/your-command', description: 'What it does',
+    run: () => this.handleYourCommand(),
 }
 ```
-Don't forget to add it to the `/help` listing too.
+This single table drives both `handleEnter`'s dispatch (via `builtinLookup`)
+and the `/help` listing — no separate registration step needed. Use
+`aliases: [...]` for alternate names that should dispatch but not appear in
+`/help`.
 
 ### Modifying Autocomplete Behavior
 See `helpTextParsing.ts` and `commandSuggestions.ts`:
@@ -130,7 +169,9 @@ Edit `suggestionDisplay.ts`:
 ## Debugging Tips
 
 - Set breakpoints in VS Code
-- Use `this.output.appendLine()` for debug logging
+- Use the injected `Logger` (`this.logger.debug(...)`, etc.) for logging —
+  it's level-aware and works in both the extension (Output channel) and the
+  CLI (stderr/file), unlike a direct `OutputChannel` reference
 - Check the Extensions view for runtime errors
 - Use Developer Tools (Help → Toggle Developer Tools)
 

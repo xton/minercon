@@ -608,11 +608,16 @@ Ordered roughly by user impact within each group.
   describe the real mocha record/replay harness and `--log-level debug`
   output instead of nonexistent `parsePackets`/`encodePacket`/`this.output`
   and Jest examples.
-- [ ] **`CONTRIBUTING.md` staleness** — "Node.js 14+" (devDeps target Node
-  22 types / modern TS), the "Project Structure" tree lists 5 of ~22
-  modules, and the debugging tip says `this.output.appendLine()` (pre-Logger).
-  Also update "Adding a New Built-in Command" if the command table from §10
-  lands.
+- [x] **`CONTRIBUTING.md` staleness** — bumped to "Node.js 22+"; the
+  "Project Structure" tree now lists all ~22 `src/` modules plus
+  `plugin/`/`fabric-mod/`/`docs/`, each with a one-line role (and points to
+  `docs/ARCHITECTURE.md` for the full tour); the debugging tip now points at
+  the injected `Logger` instead of `this.output.appendLine()`; "Adding a New
+  Built-in Command" now describes the `buildBuiltinCommands()`/
+  `BuiltinCommand` table from §10; "Testing Your Changes" now distinguishes
+  `npm test` (unit/mocha) from `npm run test:functional` (live-server,
+  local/plugin mode); "RCON Protocol Layer" no longer attributes reconnect to
+  `RconController` (that's `ConnectionManager`'s job).
 - [ ] **README drift** — CLI options section omits `--log-level`,
   `--history-size`, and `--no-plugin` (all in `--help`); the built-in
   commands table omits `/history`; the keyboard-shortcut tables omit Ctrl+R
