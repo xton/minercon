@@ -24,7 +24,7 @@ import { RconController } from '../rconClient';
 import { RconSession, RconSessionHost } from '../rconSession';
 
 function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined };
+    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 const PLUGIN_PROBE_RESPONSE = 'Returns tab completions for a partial command string. Usage: /tabcomplete <text>';

@@ -9,7 +9,7 @@ import { Logger } from '../../logger';
 import { variants, PASSWORD } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
+const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
 
 for (const variant of variants) {
   suite(`[${variant.name}] connection`, function () {

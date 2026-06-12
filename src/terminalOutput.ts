@@ -6,8 +6,14 @@
 // be unit-tested without a real TTY.
 
 import * as ansi from './ansi';
-import { Logger } from './logger';
+import { Logger, LogLevel, meetsLogLevel } from './logger';
 import * as fs from 'fs';
+
+/** Formats a Date as "HH:MM:SS.mmm" — used to timestamp debug log lines down to the millisecond. */
+function formatTimestamp(d: Date): string {
+  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
 
 /**
  * Tracks the content of the terminal's current line - the bytes written
@@ -44,23 +50,32 @@ export function createTerminalWriter(sink: (text: string) => void): TerminalWrit
   };
 }
 
-/** A `Logger` that writes through `terminal` (stdout) or, if `logFile` is given, appends to that file instead. */
-export function createCliLogger(terminal: TerminalWriter, logFile?: string): Logger {
-  function write(level: string, color: string, msg: string): void {
-    const line = `${ansi.style(color, level)} ${msg}\n`;
+/**
+ * A `Logger` that writes through `terminal` (stdout) or, if `logFile` is
+ * given, appends to that file instead. Messages below `logLevel` (default
+ * "info", so "debug" is suppressed) are dropped entirely. Debug lines are
+ * additionally prefixed with a millisecond-resolution timestamp, since
+ * they're meant for performance investigation.
+ */
+export function createCliLogger(terminal: TerminalWriter, logFile?: string, logLevel: LogLevel = 'info'): Logger {
+  function write(level: LogLevel, label: string, color: string, msg: string): void {
+    if (!meetsLogLevel(level, logLevel)) { return; }
+
+    const prefix = level === 'debug' ? `${formatTimestamp(new Date())} ${label}` : label;
     if (logFile) {
       // Synchronous append: log lines are infrequent, and a WriteStream's
       // async open left a window where a write could be queued before the
       // file existed on disk, racing readers (and CI) that check it back.
-      fs.appendFileSync(logFile, `${level} ${msg}\n`);
+      fs.appendFileSync(logFile, `${prefix} ${msg}\n`);
     } else {
-      terminal.writeLogLine(line);
+      terminal.writeLogLine(`${ansi.style(color, prefix)} ${msg}\n`);
     }
   }
 
   return {
-    error:   (msg) => write('ERROR', ansi.RED, msg),
-    warning: (msg) => write('WARN',  ansi.YELLOW, msg),
-    info:    (msg) => write('INFO',  ansi.CYAN, msg),
+    error:   (msg) => write('error',   'ERROR', ansi.RED,   msg),
+    warning: (msg) => write('warning', 'WARN',  ansi.YELLOW, msg),
+    info:    (msg) => write('info',    'INFO',  ansi.CYAN,  msg),
+    debug:   (msg) => write('debug',   'DEBUG', ansi.GRAY,  msg),
   };
 }

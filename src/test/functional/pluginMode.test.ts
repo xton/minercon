@@ -12,7 +12,7 @@ import { Logger } from '../../logger';
 import { addonVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
+const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
 
 // Game modes available in every vanilla-compatible server (1.21.4).
 const GAME_MODES = ['survival', 'creative', 'adventure', 'spectator'];

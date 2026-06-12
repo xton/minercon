@@ -66,14 +66,19 @@ export class RconController {
 
   private async sendNow(cmd: string): Promise<string | undefined> {
     if (!this.client) { throw new Error('Not connected'); }
+    const sentAt = Date.now();
+    this.logger.debug(`send: ${cmd}`);
     try {
       const res = await this.client.send(cmd);
+      const elapsedMs = Date.now() - sentAt;
 
       if (typeof res !== 'string' && res !== undefined) {
         this.logger.warning(`Received non-string response: ${JSON.stringify(res)}`);
       }
 
-      return typeof res === 'string' ? res : JSON.stringify(res);
+      const result = typeof res === 'string' ? res : JSON.stringify(res);
+      this.logger.debug(`recv (+${elapsedMs}ms): ${cmd} -> ${result.length} chars`);
+      return result;
     } catch (err) {
       this.logger.error('Error sending command: ' + errorMessage(err));
       throw err;

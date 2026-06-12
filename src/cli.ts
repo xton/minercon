@@ -8,7 +8,7 @@ import * as readline from 'readline';
 import { parseArgs } from 'util';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
-import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize } from './cliConfig';
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize, resolveLogLevel } from './cliConfig';
 import { createTerminalWriter, createCliLogger } from './terminalOutput';
 import * as ansi from './ansi';
 
@@ -79,6 +79,7 @@ async function main(): Promise<void> {
       password: { type: 'string', short: 'p' },
       save:     { type: 'boolean', default: false },
       'log-file': { type: 'string' },
+      'log-level': { type: 'string' },
       'history-size': { type: 'string' },
       'no-plugin': { type: 'boolean', default: false },
       help:     { type: 'boolean', short: 'h', default: false },
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
       '  -p, --password <pw>   RCON password (also: MCRCON_PASSWORD env var)',
       '  --save                Save host/port/history-size to ~/.config/minercon/config.json',
       '  --log-file <path>     Append log output to a file instead of stderr',
+      '  --log-level <level>   One of: debug, info, warning, error (default: info)',
       '  --history-size <n>    Number of commands to remember in history (default: 100)',
       '  --no-plugin           Skip the server-side tab-complete plugin probe (manual testing only;',
       '                        not persisted to config)',
@@ -103,14 +105,21 @@ async function main(): Promise<void> {
       'Environment:',
       '  MCRCON_PASSWORD       RCON password (used if --password is not given)',
       '  MCRCON_LOG_FILE       Log file path (used if --log-file is not given)',
+      '  MCRCON_LOG_LEVEL      Log level (used if --log-level is not given)',
       '  MCRCON_HISTORY_SIZE   History size (used if --history-size is not given)',
       '',
     ].join('\n'));
     process.exit(0);
   }
 
+  const logLevelResolution = resolveLogLevel(values['log-level'] as string | undefined, process.env['MCRCON_LOG_LEVEL']);
+  if ('error' in logLevelResolution) {
+    process.stderr.write(`Error: ${logLevelResolution.error}\n`);
+    process.exit(1);
+  }
+
   const terminal = createTerminalWriter((text) => process.stdout.write(text));
-  const logger = createCliLogger(terminal, (values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE']);
+  const logger = createCliLogger(terminal, (values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE'], logLevelResolution.logLevel);
   const savedConfig = readConfig(CONFIG_FILE);
 
   // Resolve host

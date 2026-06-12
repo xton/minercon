@@ -20,7 +20,7 @@ import { RconController } from '../rconClient';
 import { ConnectionManager, ConnectionManagerHost, ControllerFactory } from '../connectionManager';
 
 function silentLogger(): Logger {
-  return { error: () => undefined, warning: () => undefined, info: () => undefined };
+  return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 class FakeController {

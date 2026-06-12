@@ -6,7 +6,7 @@ import { Logger } from '../logger';
 import { HistoryStore } from '../historyStore';
 
 function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined };
+    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 suite('HistoryStore', () => {

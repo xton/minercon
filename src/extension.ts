@@ -2,8 +2,18 @@
 import * as vscode from 'vscode';
 import { RconController } from './rconClient';
 import { RconTerminal } from './rconTerminal';
-import { Logger, createOutputChannelLogger, errorMessage } from './logger';
+import { Logger, errorMessage } from './logger';
 import * as path from 'path';
+
+/** Wraps a VS Code output channel as a `Logger` — the one place that bridges the two. */
+function createOutputChannelLogger(channel: vscode.OutputChannel): Logger {
+  return {
+    error: (message) => channel.appendLine(`[error] ${message}`),
+    warning: (message) => channel.appendLine(`[warning] ${message}`),
+    info: (message) => channel.appendLine(message),
+    debug: (message) => channel.appendLine(`[debug] ${message}`),
+  };
+}
 
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel('Minercon');

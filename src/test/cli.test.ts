@@ -11,7 +11,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, parseHistorySize, resolveHistorySize } from '../cliConfig';
+import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, parseHistorySize, resolveHistorySize, resolveLogLevel } from '../cliConfig';
 import { createTerminalWriter, createCliLogger } from '../terminalOutput';
 
 suite('CLI config', () => {
@@ -176,6 +176,27 @@ suite('CLI resolveHistorySize', () => {
     });
 });
 
+suite('CLI resolveLogLevel', () => {
+    test('prefers the --log-level flag over the env var', () => {
+        assert.deepStrictEqual(resolveLogLevel('debug', 'warning'), { logLevel: 'debug' });
+    });
+
+    test('falls back to the env var when no flag is given', () => {
+        assert.deepStrictEqual(resolveLogLevel(undefined, 'error'), { logLevel: 'error' });
+    });
+
+    test('defaults to "info" when neither is set', () => {
+        assert.deepStrictEqual(resolveLogLevel(undefined, undefined), { logLevel: 'info' });
+    });
+
+    test('returns an error for an invalid value', () => {
+        assert.deepStrictEqual(
+            resolveLogLevel('verbose', undefined),
+            { error: 'invalid log level: verbose (expected one of: debug, info, warning, error)' },
+        );
+    });
+});
+
 suite('terminal output coordination', () => {
     let written: string[];
     let terminal: ReturnType<typeof createTerminalWriter>;
@@ -245,5 +266,50 @@ suite('createCliLogger', () => {
         } finally {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         }
+    });
+
+    test('debug messages are dropped at the default ("info") log level', () => {
+        const written: string[] = [];
+        const terminal = createTerminalWriter((text) => written.push(text));
+        const logger = createCliLogger(terminal);
+
+        logger.debug('verbose detail');
+
+        assert.deepStrictEqual(written, []);
+    });
+
+    test('debug messages are written, with a millisecond-resolution timestamp, at the "debug" log level', () => {
+        const written: string[] = [];
+        const terminal = createTerminalWriter((text) => written.push(text));
+        const logger = createCliLogger(terminal, undefined, 'debug');
+
+        logger.debug('verbose detail');
+
+        assert.strictEqual(written.length, 1);
+        assert.match(written[0], /\d{2}:\d{2}:\d{2}\.\d{3} .*DEBUG/);
+        assert.match(written[0], /verbose detail\n$/);
+    });
+
+    test('info messages are still written at the "debug" log level', () => {
+        const written: string[] = [];
+        const terminal = createTerminalWriter((text) => written.push(text));
+        const logger = createCliLogger(terminal, undefined, 'debug');
+
+        logger.info('hello');
+
+        assert.strictEqual(written.length, 1);
+        assert.match(written[0], /INFO/);
+    });
+
+    test('info messages are dropped at the "warning" log level', () => {
+        const written: string[] = [];
+        const terminal = createTerminalWriter((text) => written.push(text));
+        const logger = createCliLogger(terminal, undefined, 'warning');
+
+        logger.info('hello');
+        logger.warning('careful');
+
+        assert.strictEqual(written.length, 1);
+        assert.match(written[0], /WARN/);
     });
 });

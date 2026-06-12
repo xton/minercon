@@ -52,6 +52,7 @@ function consoleLogger(): Logger {
     info: (message) => console.log(`[info] ${message}`),
     warning: (message) => console.warn(`[warning] ${message}`),
     error: (message) => console.error(`[error] ${message}`),
+    debug: (message) => console.debug(`[debug] ${message}`),
   };
 }
 

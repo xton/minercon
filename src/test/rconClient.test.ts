@@ -43,10 +43,12 @@ class FakeProtocol extends EventEmitter {
 function setup(sendImpl: (cmd: string) => Promise<string> = async (cmd) => `done:${cmd}`) {
     const warnings: string[] = [];
     const errors: string[] = [];
+    const debugLines: string[] = [];
     const logger: Logger = {
         info: () => {},
         warning: (m: string) => warnings.push(m),
         error: (m: string) => errors.push(m),
+        debug: (m: string) => debugLines.push(m),
     };
 
     let lastProtocol: FakeProtocol | undefined;
@@ -55,7 +57,7 @@ function setup(sendImpl: (cmd: string) => Promise<string> = async (cmd) => `done
         return lastProtocol as unknown as RconProtocol;
     });
 
-    return { controller, warnings, errors, protocol: () => lastProtocol! };
+    return { controller, warnings, errors, debugLines, protocol: () => lastProtocol! };
 }
 
 suite('RconController: connection lifecycle', () => {
@@ -148,5 +150,18 @@ suite('RconController: send', () => {
         assert.ok(errors.some(m => m.includes('kaboom')), `expected an error log mentioning the failure, got: ${JSON.stringify(errors)}`);
 
         assert.strictEqual(await controller.send('after'), 'done:after');
+    });
+
+    test('logs a debug line for the send and a debug line for the recv, with the elapsed time', async () => {
+        const { controller, debugLines } = setup(async (cmd) => `done:${cmd}`);
+        await controller.connect();
+
+        await controller.send('list');
+
+        assert.ok(debugLines.some(m => m === 'send: list'), `expected a "send: list" debug line, got: ${JSON.stringify(debugLines)}`);
+        assert.ok(
+            debugLines.some(m => /^recv \(\+\d+ms\): list -> \d+ chars$/.test(m)),
+            `expected a "recv (+Nms): list -> N chars" debug line, got: ${JSON.stringify(debugLines)}`,
+        );
     });
 });

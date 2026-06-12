@@ -29,7 +29,7 @@ import { RconController } from '../rconClient';
 import { RconTerminal } from '../rconTerminal';
 
 function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined };
+    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 function fakeContext(storageDir: string): vscode.ExtensionContext {

@@ -41,7 +41,7 @@ const GENERIC_VANILLA_HELP = (cmd: string) =>
   + `§f§6Usage: §f${cmd}`;
 
 function silentLogger(): Logger {
-  return { error: () => undefined, warning: () => undefined, info: () => undefined };
+  return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 /**

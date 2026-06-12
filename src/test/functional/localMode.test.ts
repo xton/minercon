@@ -12,7 +12,7 @@ import { Logger } from '../../logger';
 import { nonPluginVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {} };
+const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
 
 // Commands present on every Minecraft server regardless of variant.
 const UNIVERSAL_COMMANDS = ['list', 'help', 'gamemode', 'time', 'weather'];

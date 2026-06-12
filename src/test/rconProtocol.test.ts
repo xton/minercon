@@ -23,7 +23,7 @@ import * as synthetic from './fixtures/rcon/synthetic';
 import * as xton from './fixtures/rcon/xton';
 
 function silentLogger(): Logger {
-  return { info: () => {}, warning: () => {}, error: () => {} };
+  return { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
 }
 
 interface NamedFixture {
@@ -122,7 +122,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
   test('a packet with an implausibly small declared size is logged and skipped without disrupting the packets around it', async () => {
     const password = 'fixture-password';
     const errors: string[] = [];
-    const logger: Logger = { info: () => {}, warning: () => {}, error: (msg) => errors.push(msg) };
+    const logger: Logger = { info: () => {}, warning: () => {}, error: (msg) => errors.push(msg), debug: () => {} };
 
     // Declares a 1-byte packet (size + 4 = 5 bytes total) — too small for
     // parsePacket's 14-byte minimum, so handleData's catch block fires.
@@ -152,7 +152,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
   test('an unsolicited response packet with an unknown request ID is logged and ignored', async () => {
     const password = 'fixture-password';
     const warnings: string[] = [];
-    const logger: Logger = { info: () => {}, warning: (msg) => warnings.push(msg), error: () => {} };
+    const logger: Logger = { info: () => {}, warning: (msg) => warnings.push(msg), error: () => {}, debug: () => {} };
 
     const socket = new FakeSocket([
       ...authFrames(password),

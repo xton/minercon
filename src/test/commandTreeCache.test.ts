@@ -8,7 +8,7 @@ import { CommandNode } from '../commandAutocomplete';
 import { ParameterType } from '../helpTextParsing';
 
 function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined };
+    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
 }
 
 function sampleCommands(): Map<string, CommandNode> {
