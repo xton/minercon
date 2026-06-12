@@ -187,7 +187,7 @@ export class RconSession {
     }
 
     try {
-      await this.autocomplete.initialize((progress, message) => {
+      await this.autocomplete.initialize((progress, phase) => {
         if (willLoadFromCache) {
           if (progress >= 100) {
             this.sessionHost.write('\r\n' + ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
@@ -208,16 +208,16 @@ export class RconSession {
         progressBar += '] ';
         progressBar += Math.round(progress) + '%';
 
-        let phase = '';
-        if (message.includes('Fetching')) {
-          phase = ' Fetching commands...';
-        } else if (message.includes('Loading')) {
-          phase = ' Processing subcommands...';
-        } else if (message.includes('Complete') || message.includes('loaded')) {
-          phase = ' Complete!';
+        let phaseLabel = '';
+        if (phase === 'fetching') {
+          phaseLabel = ' Fetching commands...';
+        } else if (phase === 'loading') {
+          phaseLabel = ' Processing subcommands...';
+        } else if (phase === 'complete') {
+          phaseLabel = ' Complete!';
         }
 
-        this.sessionHost.write(ansi.yellow(progressBar) + ansi.gray(phase));
+        this.sessionHost.write(ansi.yellow(progressBar) + ansi.gray(phaseLabel));
 
         if (progress >= 100) {
           this.sessionHost.write('\r\n');

@@ -27,6 +27,9 @@ export interface CommandNode {
   isComplete: boolean;
 }
 
+/** Coarse-grained stage of `initialize()`'s progress, for UI phase labels. */
+export type ProgressPhase = 'cache-hit' | 'fetching' | 'loading' | 'complete';
+
 export class CommandAutocomplete {
   private rootCommands: Map<string, CommandNode> = new Map();
   private isLoading: boolean = false;
@@ -69,7 +72,7 @@ export class CommandAutocomplete {
    * Initialize command database
    */
   async initialize(
-    onProgress?: (progress: number, message: string) => void,
+    onProgress?: (progress: number, phase: ProgressPhase) => void,
     forceRefresh: boolean = false
   ): Promise<void> {
     if (this.isLoading) { return; }
@@ -83,7 +86,7 @@ export class CommandAutocomplete {
         const loaded = this.cache.load();
         if (loaded) {
           this.rootCommands = loaded;
-          onProgress?.(100, 'Commands loaded from cache');
+          onProgress?.(100, 'cache-hit');
           this.isReady = true;
           return;
         }
@@ -95,7 +98,7 @@ export class CommandAutocomplete {
       const pendingAliases = new Map<string, string>();
 
       // Fetch commands from server
-      onProgress?.(10, 'Fetching root commands...');
+      onProgress?.(10, 'fetching');
       await this.fetchRootCommands(pendingAliases);
 
       // Load details for each command. Namespaced commands (`minecraft:foo`,
@@ -109,7 +112,7 @@ export class CommandAutocomplete {
 
       for (let i = 0; i < commands.length; i++) {
         const progress = 10 + (80 * (i / commands.length));
-        onProgress?.(progress, `Loading ${commands[i]}...`);
+        onProgress?.(progress, 'loading');
 
         const node = this.rootCommands.get(commands[i])!;
         try {
@@ -131,7 +134,7 @@ export class CommandAutocomplete {
 
       // Save to cache
       this.cache.save(this.rootCommands);
-      onProgress?.(100, 'Commands loaded and cached');
+      onProgress?.(100, 'complete');
       this.isReady = true;
 
     } catch (error) {

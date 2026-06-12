@@ -528,13 +528,16 @@ Ordered roughly by user impact within each group.
   `Â§` handling) so the alphabet lives in one place. Fixed: the two
   implementations were identical; `completionEngine.ts` now imports and uses
   `stripColors` from `ansi.ts`.
-- [ ] **Progress phase is signaled by string-sniffing** —
+- [x] **Progress phase is signaled by string-sniffing** —
   `initializeCommands` decides the progress-bar phase via
   `message.includes('Fetching')` / `'Loading'` / `'Complete'`
   (`rconSession.ts:212-218`) against strings composed in
   `commandAutocomplete.ts`. Pass a structured phase
   (`'fetching' | 'loading' | 'done'`) through the `onProgress` callback
-  instead of parsing prose.
+  instead of parsing prose. Fixed: `onProgress` now passes a
+  `ProgressPhase` (`'cache-hit' | 'fetching' | 'loading' | 'complete'`)
+  instead of a free-text message; `rconSession.ts` switches on the phase
+  value directly.
 - [ ] **`addFallbackCommands` list is stale and has duplicates** — `'reload'`
   appears twice, and many entries were removed from the game years ago
   (`testfor`, `testforblock(s)`, `blockdata`, `entitydata`, `replaceitem`,
