@@ -541,12 +541,15 @@ Ordered roughly by user impact within each group.
   naming the shared char-class once.
 - [ ] **`extension.ts` `let` → `const`** for `activeTerminals` and
   `ptyToController` (`extension.ts:21-22`); they're never reassigned.
-- [ ] **fabric-mod's `cmdusage` still emits the `getAllUsage` ladder** —
+- [x] **fabric-mod's `cmdusage` still emits the `getAllUsage` ladder** —
   `TabcompleteMod.java:107` — so argument hints for commands with optional
   trailing args (`/clear`, etc.) never show on fabric+mod, the exact bug
   fixed in the Paper plugin by switching to `getSmartUsage` (§9, fb81e69).
-  Port the same fix (and the functional-test assertion already accepts both
-  forms, so tightening it afterwards would lock it in).
+  Fixed: same `getSmartUsage` port (empty map → bare prefix; entries →
+  one collapsed usage line each), and the autocompleteSession functional
+  test's `<target>` assertion is tightened to require the bracketed
+  `[<target>]` smart form on **all** addon variants — the bare ladder form
+  now fails the test instead of being accepted as an alternative.
 - [ ] **Server-side addon naming is inconsistent** — plugin.yml says
   `RconTabComplete`, the gradle project/jar is `paper-tabcomplete`, the
   fabric mod id is `fabric-tabcomplete`, README calls it "the RconTabComplete

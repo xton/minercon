@@ -6,13 +6,13 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.tree.CommandNode;
-import com.mojang.brigadier.tree.LiteralCommandNode;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 
+import java.util.Map;
 import java.util.stream.Collectors;
 
 public class TabcompleteMod implements ModInitializer {
@@ -104,17 +104,31 @@ public class TabcompleteMod implements ModInitializer {
                         }
 
                         String prefix = prefixBuilder.toString();
-                        String[] usages = dispatcher.getAllUsage(deepestNode, source, false);
-                        boolean deepestIsArgument = !(deepestNode instanceof LiteralCommandNode);
 
-                        StringBuilder sb = new StringBuilder();
-                        for (String usage : usages) {
-                            if (usage.isEmpty() && deepestIsArgument) continue;
-                            if (!sb.isEmpty()) sb.append("\n");
-                            sb.append(usage.isEmpty() ? prefix : prefix + " " + usage);
+                        // getAllUsage's "ladder" expands optional trailing arguments into one
+                        // line per depth (e.g. "clear", "clear <targets>", "clear <targets>
+                        // <item>", ...), which the RCON client can't distinguish from genuine
+                        // ambiguity. getSmartUsage instead collapses those into a single
+                        // "[<param>]"-bracketed usage string, matching minecraft:help's compact
+                        // form (e.g. "clear [<targets>] [<item>]"). Each entry in the returned
+                        // map is a genuinely distinct continuation (e.g. different subcommand
+                        // branches), so multiple entries become separate lines - that's the
+                        // real-ambiguity case the client still treats as unresolved.
+                        // (Same fix as the Paper plugin's handleUsageCommand.)
+                        Map<CommandNode<CommandSourceStack>, String> smartUsages =
+                                dispatcher.getSmartUsage(deepestNode, source);
+
+                        String result;
+                        if (smartUsages.isEmpty()) {
+                            result = prefix;
+                        } else {
+                            StringBuilder sb = new StringBuilder();
+                            for (String usage : smartUsages.values()) {
+                                if (!sb.isEmpty()) sb.append("\n");
+                                sb.append(prefix).append(" ").append(usage);
+                            }
+                            result = sb.toString();
                         }
-
-                        String result = sb.isEmpty() ? prefix : sb.toString();
                         ctx.getSource().sendSuccess(() -> Component.literal(result), false);
                         return 1;
                     }))

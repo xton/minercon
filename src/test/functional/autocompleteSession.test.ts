@@ -147,11 +147,11 @@ for (const variant of addonVariants) {
 
       const out = h.output();
       assert.ok(out.includes('gamemode'), `usage hint should reference "gamemode", got: ${JSON.stringify(out)}`);
-      // <target> is an optional trailing argument, so a "smart" usage string
-      // (the paper/spigot plugin) wraps it as "[<target>]", while the fabric
-      // mod's ladder-based usage leaves it bare as "<target>" - either form
-      // is correct, as long as <target> itself is the highlighted token.
-      assert.ok(/\x1b\[1;97m\[?<target>\]?/.test(out), `expected "<target>" to be highlighted as the current argument, got: ${JSON.stringify(out)}`);
+      // <target> is an optional trailing argument: the paper/spigot plugin
+      // and the fabric mod both emit getSmartUsage's compact form now, so it
+      // must arrive bracketed as "[<target>]" — the bare "<target>" ladder
+      // form would mean a regression to getAllUsage.
+      assert.ok(out.includes('\x1b[1;97m[<target>]'), `expected "[<target>]" to be highlighted as the current argument, got: ${JSON.stringify(out)}`);
 
       await ctrl.disconnect().catch(() => {});
     });
