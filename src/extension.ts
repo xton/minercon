@@ -18,8 +18,8 @@ function createOutputChannelLogger(channel: vscode.OutputChannel): Logger {
 export function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel('Minercon');
   const logger = createOutputChannelLogger(output);
-  let activeTerminals = new Map<vscode.Terminal, RconController>();
-  let ptyToController = new Map<RconTerminal, RconController>();
+  const activeTerminals = new Map<vscode.Terminal, RconController>();
+  const ptyToController = new Map<RconTerminal, RconController>();
   let currentConnection: { host: string; port: number; password: string } | null = null;
 
   migratePasswordToSecureStorage(context).catch(err => {

@@ -539,8 +539,8 @@ Ordered roughly by user impact within each group.
   use `[a-zA-Z0-9_\:-]` (needless `\:` escape) while 1/3 use
   `[a-zA-Z0-9_:-]` (`commandAutocomplete.ts:252-255`). Unify; consider
   naming the shared char-class once.
-- [ ] **`extension.ts` `let` → `const`** for `activeTerminals` and
-  `ptyToController` (`extension.ts:21-22`); they're never reassigned.
+- [x] **`extension.ts` `let` → `const`** for `activeTerminals` and
+  `ptyToController` (`extension.ts:21-22`); they're never reassigned. Fixed.
 - [x] **fabric-mod's `cmdusage` still emits the `getAllUsage` ladder** —
   `TabcompleteMod.java:107` — so argument hints for commands with optional
   trailing args (`/clear`, etc.) never show on fabric+mod, the exact bug
