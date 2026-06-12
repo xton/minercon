@@ -466,14 +466,13 @@ Ordered roughly by user impact within each group.
   (`extension.ts:186-194`); the `?? ''` makes the guard unreachable, so Esc
   at the password box proceeds to connect with `''` instead of aborting like
   the host/port prompts do. Drop the `?? ''` and check for `undefined`.
-- [ ] **`/disconnect` echoes a spurious `^D`** —
+- [x] **`/disconnect` echoes a spurious `^D`** —
   `ConnectionManager.disconnect()` unconditionally writes `'^D\r\n'`
   (`connectionManager.ts:92`), but its only caller is the typed `/disconnect`
   built-in (Ctrl+D goes through `handleCtrlD` → `sessionHost.close`, which
-  writes its own `^D`). The terminal-echo of a key chord doesn't belong in
-  the connection-lifecycle class — remove it (and consider whether
-  `disconnect()` should be writing UI text at all vs. returning status for
-  `RconSession` to render).
+  writes its own `^D`). Fixed: echo removed; the existing disconnect() test
+  now also asserts no `^D` is written. (Whether `disconnect()` should write
+  UI text at all is left as a possible future refactor.)
 - [ ] **A slow command (>10s) triggers a full reconnect of a healthy
   connection** — `executeCommand`'s connection-loss detection is substring
   sniffing (`errorMsg.includes('timeout')`, `'socket'`, ...

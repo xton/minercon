@@ -282,6 +282,9 @@ suite('ConnectionManager auto-reconnect/backoff', () => {
     assert.deepStrictEqual(timers.pendingDelays(), [], 'pending reconnect timer is cleared');
     assert.ok(h.controllers[0].disconnectCalls >= 1);
     assert.ok(h.writes.join('').includes('Connection closed'));
+    // The ^D key-chord echo belongs to RconSession's Ctrl+D handler — typing
+    // /disconnect must not print a ^D the user never pressed.
+    assert.ok(!h.writes.join('').includes('^D'), 'disconnect() must not echo ^D');
   });
 
   test('dispose() clears any pending reconnect timer and disconnects the controller', () => {

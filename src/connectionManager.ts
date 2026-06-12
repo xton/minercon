@@ -89,7 +89,8 @@ export class ConnectionManager {
   }
 
   disconnect(): void {
-    this.host.write('^D\r\n');
+    // No key-chord echo here: this runs for the typed /disconnect built-in.
+    // Ctrl+D echoes its own ^D in RconSession.handleCtrlD before closing.
     this.host.write('Disconnecting...\r\n');
 
     // Clear any pending reconnect
