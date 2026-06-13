@@ -560,13 +560,15 @@ Ordered roughly by user impact within each group.
   test's `<target>` assertion is tightened to require the bracketed
   `[<target>]` smart form on **all** addon variants — the bare ladder form
   now fails the test instead of being accepted as an alternative.
-- [x] **Server-side addon naming is inconsistent** — plugin.yml says
-  `RconTabComplete`, the gradle project/jar is `paper-tabcomplete`, the
-  fabric mod id is `fabric-tabcomplete`, README calls it "the RconTabComplete
-  plugin". Deferred rather than independently fixed: §12's planned
-  per-server-type plugin fork (Paper/Spigot split, paperweight-userdev)
-  explicitly resolves this naming as part of giving each fork its own
-  project/jar/id — picking names now would just be redone there.
+- [x] **Server-side addon naming is inconsistent** — plugin.yml said
+  `RconTabComplete`, the gradle project/jar was `paper-tabcomplete`, the
+  fabric mod id is `fabric-tabcomplete`, README called it "the RconTabComplete
+  plugin". Resolved by §12's per-server-type plugin fork (Paper/Spigot split,
+  paperweight-userdev): each addon now follows `fabric-mod`'s
+  `<platform>-tabcomplete` jar/project + `"<Platform> TabComplete"`
+  display-name pattern (`paper-tabcomplete`/`PaperTabComplete`,
+  `spigot-tabcomplete`/`SpigotTabComplete`, `fabric-tabcomplete`/"Fabric
+  TabComplete").
 
 ### Tests
 
@@ -738,9 +740,8 @@ discovery channels that link back to the client:
   plugins now too, and is where Fabric users live).
 - [ ] **SpigotMC resources** — older crowd but still the biggest plugin
   audience; the resource page doubles as a place people ask questions.
-- [ ] Unify the addon naming first (see §12's per-server-type plugin fork)
-  and give the addon README a clear "this powers tab completion for the
-  Minercon client → link" pitch.
+- [ ] Give the addon README a clear "this powers tab completion for the
+  Minercon client → link" pitch (the naming unification from §12 is done).
 
 ### 11.5 Announce / find an audience
 
@@ -805,32 +806,36 @@ trick wouldn't help: it only addresses access modifiers, and plugin classes
 load under a different ClassLoader than the server anyway, so same-package
 access control doesn't even apply).
 
-- [ ] **Fork the plugin into Paper-specific and Spigot-specific projects.**
-  User is fine with this — in fact prefers it. This also resolves the
-  addon-naming-inconsistency item above (§10): each fork gets its own
-  gradle project name / jar / plugin.yml name, decided as part of this work.
-- [ ] **Paper fork: use `paperweight-userdev`** to add the Mojang-mapped dev
-  bundle to the compile classpath, giving direct typed access to
-  `CraftServer`, `MinecraftServer`, `Commands`, `CommandSourceStack`, and
-  `CommandDispatcher<CommandSourceStack>`. This replaces the entire
-  Mojang-mapped happy path (`onEnable` lines ~38-46) and removes the need for
-  `findDispatcherAndSourceReflectively()` on Paper entirely — `cmdusage` and
-  `tabcomplete` become ordinary typed Brigadier calls. Need to confirm
-  whether a `reobfJar` step is still required for current Paper versions
-  (Paper's runtime server jar may already be Mojang-mapped since 1.20.5).
-- [ ] **Spigot fork: investigate current mapping state** before deciding the
-  approach — Spigot may have also moved to Mojang mappings post-1.20.5, in
-  which case compiling against a BuildTools-produced `org.spigotmc:spigot`
-  jar (still versioned `vX_Y_R_` CraftBukkit packages, so version-pinned)
-  could replace reflection there too. If not, keep the existing structural
-  `findDispatcherAndSourceReflectively()` fallback for Spigot — it already
-  works and is well-documented.
-- [ ] Update README, functional test harness (`variants.ts`,
-  testcontainers plugin-deploy paths), and `fabric-mod/` references for the
-  new artifact name(s)/jar filename(s) once the naming decision is made.
-
-This is a build/architecture change, not a code-smell fix — treat as its own
-session, after the §10 cleanup pass.
+- [x] **Fork the plugin into Paper-specific and Spigot-specific projects.**
+  Done: `git mv plugin paper-plugin` + new `spigot-plugin/`, following
+  `fabric-mod`'s `<platform>-tabcomplete` jar/project + `"<Platform>
+  TabComplete"` naming — `paper-tabcomplete`/`spigot-tabcomplete` jars,
+  `plugin.yml` `name: PaperTabComplete`/`SpigotTabComplete`. This also
+  resolves the addon-naming-inconsistency item above (§10).
+- [x] **Paper fork: use `paperweight-userdev`** — done, via
+  `id 'io.papermc.paperweight.userdev' version '2.0.0-beta.21'` (the `1.7.7`
+  version named in the original plan fails to resolve the
+  `1.21.4-R0.1-SNAPSHOT` dev bundle; `2.0.0-beta.21` is the version PaperMC's
+  docs currently recommend). `TabCompletePlugin.java` now uses typed
+  `CraftServer`/`MinecraftServer`/`CommandDispatcher<CommandSourceStack>`
+  directly — `findDispatcherAndSourceReflectively()` is gone on Paper
+  (~348 → ~250 lines). No `reobfJar` step needed: Paper's runtime server jar
+  has been Mojang-mapped since 1.20.5, so the dev-bundle output is directly
+  deployable.
+- [x] **Spigot fork: investigate current mapping state** — a time-boxed
+  BuildTools `--remapped` spike (2026-06-12) confirms Spigot *does* produce a
+  `remapped-mojang`-classifier `org.spigotmc:spigot` dev artifact whose
+  `Commands`/`CommandSourceStack` match Paper's Mojang-mapped API at compile
+  time. But it's compile-time only: normal Spigot server jars (built/obtained
+  without `--remapped`) keep Spigot's own NMS mappings, which don't match
+  Paper's and can vary by build. **NO-GO** — `spigot-plugin/` keeps the
+  existing `findDispatcherAndSourceReflectively()` fallback unchanged; the
+  outcome is recorded as a comment in `spigot-plugin/build.gradle`.
+- [x] Updated README, `CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, the
+  functional test harness (`harness.ts` now picks the Paper or Spigot jar by
+  `variant.type`), CI (`functional-tests.yml` builds each plugin separately),
+  and remaining `RconTabComplete` comments for the new
+  `paper-plugin`/`spigot-plugin`/`fabric-mod` naming.
 
 ## How to record a live RCON fixture
 
