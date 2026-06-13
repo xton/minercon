@@ -7,137 +7,35 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.context.ParsedCommandNode;
 import com.mojang.brigadier.tree.CommandNode;
 import com.mojang.brigadier.tree.LiteralCommandNode;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.server.MinecraftServer;
 import org.bukkit.Bukkit;
+import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 
 public class TabCompletePlugin extends JavaPlugin {
 
-    private Object nmsServer;
-    private Object bukkitCommandMap;
-    private Method createSourceStack;
-    @SuppressWarnings("rawtypes")
-    private CommandDispatcher dispatcher;
+    private MinecraftServer nmsServer;
+    private CommandDispatcher<CommandSourceStack> dispatcher;
+    private CommandMap bukkitCommandMap;
 
     @Override
-    @SuppressWarnings("rawtypes")
     public void onEnable() {
-        // Register executors first so commands always respond — even if the
-        // Brigadier NMS setup below fails, the handlers fall back to Bukkit's
-        // built-in CommandMap.tabComplete() so the plugin remains useful on
-        // servers (e.g. Spigot) where the NMS reflection chain differs.
         getCommand("tabcomplete").setExecutor(this::handleCommand);
         getCommand("cmdusage").setExecutor(this::handleUsageCommand);
 
-        try {
-            Object craftServer = Bukkit.getServer();
-            nmsServer = craftServer.getClass().getMethod("getServer").invoke(craftServer);
-            bukkitCommandMap = craftServer.getClass().getMethod("getCommandMap").invoke(craftServer);
-            try {
-                // Mojang-mapped path (Paper and other fully-mapped servers).
-                createSourceStack = nmsServer.getClass().getMethod("createCommandSourceStack");
-                Object commands = nmsServer.getClass().getMethod("getCommands").invoke(nmsServer);
-                dispatcher = (CommandDispatcher) commands.getClass().getMethod("getDispatcher").invoke(commands);
-            } catch (NoSuchMethodException notMojangMapped) {
-                // Spigot's reobfuscated server jar uses a hybrid mapping where
-                // these methods exist under different (partially obfuscated)
-                // names that vary by Minecraft version. Locate them
-                // structurally instead, by return type rather than name.
-                findDispatcherAndSourceReflectively();
-            }
-        } catch (Exception e) {
-            getLogger().warning("Could not access Brigadier dispatcher via NMS: " + e);
-            getLogger().warning("tabcomplete will fall back to Bukkit CommandMap completions.");
-            // dispatcher stays null; handlers detect this and use the fallback
-        }
+        CraftServer craftServer = (CraftServer) Bukkit.getServer();
+        nmsServer = craftServer.getServer();
+        bukkitCommandMap = craftServer.getCommandMap();
+        dispatcher = nmsServer.getCommands().getDispatcher();
     }
 
-    /**
-     * Locates the Brigadier {@link CommandDispatcher} and a usable parse()
-     * source object on servers (e.g. Spigot) where the Mojang-mapped
-     * {@code createCommandSourceStack}/{@code getCommands().getDispatcher()}
-     * accessors don't exist by those names.
-     *
-     * <p>{@code com.mojang.brigadier.CommandDispatcher} itself ships as its own
-     * library and is never obfuscated, so it can be found by return type: scan
-     * the server's no-arg methods for one whose return type has a no-arg method
-     * returning a {@code CommandDispatcher}. The source object's type (Spigot's
-     * {@code CommandListenerWrapper}, Mojang's {@code CommandSourceStack}) is
-     * obfuscated, so it's found by trial: the first no-arg NMS-typed getter on
-     * the server whose result {@link CommandDispatcher#parse} accepts.
-     */
-    @SuppressWarnings("rawtypes")
-    private void findDispatcherAndSourceReflectively() throws Exception {
-        Class<?> nmsClass = nmsServer.getClass();
-
-        Method commandsGetter = null;
-        Method dispatcherGetter = null;
-        CommandDispatcher foundDispatcher = null;
-        for (Method m : nmsClass.getMethods()) {
-            if (m.getParameterCount() != 0) continue;
-            Class<?> returnType = m.getReturnType();
-            if (returnType.isPrimitive() || returnType == void.class) continue;
-            for (Method nested : returnType.getMethods()) {
-                if (nested.getParameterCount() != 0 || nested.getReturnType() != CommandDispatcher.class) continue;
-                try {
-                    Object commandsObj = m.invoke(nmsServer);
-                    CommandDispatcher candidate = (CommandDispatcher) nested.invoke(commandsObj);
-                    // The real command dispatcher has hundreds of registered
-                    // root commands; reject smaller dispatchers some other
-                    // subsystem (e.g. custom functions) might expose.
-                    if (candidate.getRoot().getChildren().size() > 50) {
-                        commandsGetter = m;
-                        dispatcherGetter = nested;
-                        foundDispatcher = candidate;
-                        break;
-                    }
-                } catch (Exception ignored) {
-                    // not the right accessor pair — keep looking
-                }
-            }
-            if (foundDispatcher != null) break;
-        }
-        if (foundDispatcher == null) {
-            throw new NoSuchMethodException("could not locate the Brigadier CommandDispatcher by return type");
-        }
-
-        Method foundSourceMethod = null;
-        for (Method m : nmsClass.getMethods()) {
-            if (m.getParameterCount() != 0) continue;
-            if (!m.getReturnType().getName().startsWith("net.minecraft.")) continue;
-            try {
-                Object candidate = m.invoke(nmsServer);
-                if (candidate == null) continue;
-                // "gamemode" requires a real CommandSourceStack-equivalent: its
-                // permission-requirement predicate casts source to that type, so
-                // an unrelated NMS object throws here (e.g. ClassCastException)
-                // and we move on to the next candidate.
-                ParseResults probe = foundDispatcher.parse("gamemode", candidate);
-                List<ParsedCommandNode> nodes = probe.getContext().getNodes();
-                if (nodes.isEmpty() || !"gamemode".equals(nodes.get(0).getNode().getName())) continue;
-                foundSourceMethod = m;
-                break;
-            } catch (Exception ignored) {
-                // not a usable source type — keep looking
-            }
-        }
-        if (foundSourceMethod == null) {
-            throw new NoSuchMethodException("could not locate a createCommandSourceStack() equivalent");
-        }
-
-        dispatcher = foundDispatcher;
-        createSourceStack = foundSourceMethod;
-        getLogger().info("Located Brigadier dispatcher via " + commandsGetter.getName() + "()." + dispatcherGetter.getName()
-                + "() and command source via " + foundSourceMethod.getName() + "() (non-Mojang-mapped server jar).");
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean handleUsageCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (args.length == 0) {
             sender.sendMessage("Usage: /" + label + " <partial command...>");
@@ -147,38 +45,18 @@ public class TabCompletePlugin extends JavaPlugin {
             return true;
         }
 
-        if (dispatcher == null) {
-            // Fallback: look up the first word in the Bukkit CommandMap and
-            // return its registered usage string. Less detailed than Brigadier
-            // but works on servers where NMS access is unavailable.
-            try {
-                String rootName = args[0].toLowerCase();
-                Method getCmd = bukkitCommandMap.getClass().getMethod("getCommand", String.class);
-                org.bukkit.command.Command bc = (org.bukkit.command.Command) getCmd.invoke(bukkitCommandMap, rootName);
-                if (bc != null) {
-                    String usage = bc.getUsage().replace("<command>", bc.getName());
-                    sender.sendMessage(usage.isEmpty() ? "/" + bc.getName() : usage);
-                } else {
-                    sender.sendMessage("(no command found: " + rootName + ")");
-                }
-            } catch (Exception e) {
-                sender.sendMessage("Error getting usage: " + e.getMessage());
-            }
-            return true;
-        }
-
         String partial = String.join(" ", args);
 
         try {
-            Object source = createSourceStack.invoke(nmsServer);
-            ParseResults results = dispatcher.parse(partial, source);
+            CommandSourceStack source = nmsServer.createCommandSourceStack();
+            ParseResults<CommandSourceStack> results = dispatcher.parse(partial, source);
 
             // Walk parsed nodes to build the canonical prefix and find the deepest node.
             StringBuilder prefixBuilder = new StringBuilder();
-            CommandNode deepestNode = null;
+            CommandNode<CommandSourceStack> deepestNode = null;
             String rootCommandName = null;
-            for (Object pn : results.getContext().getNodes()) {
-                CommandNode node = ((ParsedCommandNode) pn).getNode();
+            for (ParsedCommandNode<CommandSourceStack> pn : results.getContext().getNodes()) {
+                CommandNode<CommandSourceStack> node = pn.getNode();
                 if (!prefixBuilder.isEmpty()) prefixBuilder.append(" ");
                 prefixBuilder.append(node.getUsageText());
                 deepestNode = node;
@@ -202,8 +80,7 @@ public class TabCompletePlugin extends JavaPlugin {
                     (!deepestIsArgument && java.util.Arrays.stream(usages).allMatch(u -> u.isEmpty() || u.equals("<args>")))
                     || (deepestIsArgument && deepestNode.getName().equals("args")));
             if (isGenericWrapper) {
-                Method getCmd = bukkitCommandMap.getClass().getMethod("getCommand", String.class);
-                org.bukkit.command.Command bc = (org.bukkit.command.Command) getCmd.invoke(bukkitCommandMap, rootCommandName);
+                Command bc = bukkitCommandMap.getCommand(rootCommandName);
                 if (bc != null) {
                     org.bukkit.help.HelpTopic topic = Bukkit.getHelpMap().getHelpTopic("/" + rootCommandName);
                     String text;
@@ -265,7 +142,7 @@ public class TabCompletePlugin extends JavaPlugin {
             // returned map is a genuinely distinct continuation (e.g. different
             // subcommand branches), so multiple entries become separate lines -
             // that's the real-ambiguity case the client still treats as unresolved.
-            Map<CommandNode, String> smartUsages = dispatcher.getSmartUsage(deepestNode, source);
+            Map<CommandNode<CommandSourceStack>, String> smartUsages = dispatcher.getSmartUsage(deepestNode, source);
             if (smartUsages.isEmpty()) {
                 sender.sendMessage(prefix);
             } else {
@@ -282,7 +159,6 @@ public class TabCompletePlugin extends JavaPlugin {
         return true;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean handleCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (args.length == 0) {
             sender.sendMessage("Usage: /" + label + " <partial command...>");
@@ -305,36 +181,15 @@ public class TabCompletePlugin extends JavaPlugin {
         // A lone "-" (no real command parts) means "request root completions".
         String partial = effectiveArgs.length == 0 ? "" : String.join(" ", effectiveArgs) + trailingSpace;
 
-        // Fast path: Brigadier dispatcher available (Paper and compatible servers).
-        if (dispatcher != null) {
-            try {
-                Object source = createSourceStack.invoke(nmsServer);
-                ParseResults results = dispatcher.parse(partial, source);
-                Suggestions suggestions = (Suggestions) dispatcher.getCompletionSuggestions(results).join();
-                List<String> completions = suggestions.getList().stream()
-                        .map(Suggestion::getText)
-                        .toList();
-
-                if (completions.isEmpty()) {
-                    sender.sendMessage("(no completions)");
-                } else {
-                    sender.sendMessage(String.join("\n", completions));
-                }
-                return true;
-            } catch (Exception e) {
-                sender.sendMessage("Error getting completions: " + e.getMessage());
-                return true;
-            }
-        }
-
-        // Fallback: Brigadier not available — use Bukkit's built-in CommandMap
-        // tab-completion. Available on all Bukkit-based servers (Spigot etc.).
         try {
-            CommandMap map = (CommandMap) bukkitCommandMap;
-            // CommandMap.tabComplete(sender, "") returns all root commands when
-            // the input has no space (prefix-matching against all known names).
-            List<String> completions = map.tabComplete(sender, partial);
-            if (completions == null || completions.isEmpty()) {
+            CommandSourceStack source = nmsServer.createCommandSourceStack();
+            ParseResults<CommandSourceStack> results = dispatcher.parse(partial, source);
+            Suggestions suggestions = dispatcher.getCompletionSuggestions(results).join();
+            List<String> completions = suggestions.getList().stream()
+                    .map(Suggestion::getText)
+                    .toList();
+
+            if (completions.isEmpty()) {
                 sender.sendMessage("(no completions)");
             } else {
                 sender.sendMessage(String.join("\n", completions));

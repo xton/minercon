@@ -1,5 +1,9 @@
 plugins {
     id 'java'
+    // 2.0.0-beta.x is the version PaperMC currently documents/supports for
+    // userdev; the older 1.7.7 release fails to resolve this dev bundle
+    // ("paperweightDevelopmentBundle ... contains more than one file").
+    id 'io.papermc.paperweight.userdev' version '2.0.0-beta.21'
 }
 
 group = 'dev.rcon'
@@ -19,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT'
+    paperweight.paperDevBundle('1.21.4-R0.1-SNAPSHOT')
 }
 
 processResources {
