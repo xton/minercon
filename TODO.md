@@ -560,11 +560,13 @@ Ordered roughly by user impact within each group.
   test's `<target>` assertion is tightened to require the bracketed
   `[<target>]` smart form on **all** addon variants — the bare ladder form
   now fails the test instead of being accepted as an alternative.
-- [ ] **Server-side addon naming is inconsistent** — plugin.yml says
+- [x] **Server-side addon naming is inconsistent** — plugin.yml says
   `RconTabComplete`, the gradle project/jar is `paper-tabcomplete`, the
   fabric mod id is `fabric-tabcomplete`, README calls it "the RconTabComplete
-  plugin". Pick one public name (worth doing *before* publishing to
-  Hangar/Modrinth — see §11).
+  plugin". Deferred rather than independently fixed: §12's planned
+  per-server-type plugin fork (Paper/Spigot split, paperweight-userdev)
+  explicitly resolves this naming as part of giving each fork its own
+  project/jar/id — picking names now would just be redone there.
 
 ### Tests
 
@@ -736,8 +738,9 @@ discovery channels that link back to the client:
   plugins now too, and is where Fabric users live).
 - [ ] **SpigotMC resources** — older crowd but still the biggest plugin
   audience; the resource page doubles as a place people ask questions.
-- [ ] Unify the addon naming first (see §10) and give the addon README a
-  clear "this powers tab completion for the Minercon client → link" pitch.
+- [ ] Unify the addon naming first (see §12's per-server-type plugin fork)
+  and give the addon README a clear "this powers tab completion for the
+  Minercon client → link" pitch.
 
 ### 11.5 Announce / find an audience
 
