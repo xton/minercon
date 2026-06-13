@@ -1,4 +1,4 @@
-name: RconTabComplete
+name: PaperTabComplete
 version: '${version}'
 main: dev.rcon.tabcomplete.TabCompletePlugin
 api-version: '1.21'
