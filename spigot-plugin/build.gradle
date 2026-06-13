@@ -1,3 +1,13 @@
+// Reflection (TabCompletePlugin#findDispatcherAndSourceReflectively) is kept
+// here rather than ported to typed Brigadier as on Paper. A BuildTools
+// `--remapped` spike (2026-06-12) does produce a `remapped-mojang`-classifier
+// `org.spigotmc:spigot` dev artifact with Mojang-mapped `Commands`/
+// `CommandSourceStack` matching Paper's API at compile time — but that's a
+// dev-only artifact; the server jars admins actually run are built/obtained
+// without `--remapped` and keep Spigot's own NMS mappings, which (per prior
+// investigation) don't match Paper's names and can vary by build. Depending
+// on the remapped types here would compile but fail at runtime against a
+// normal Spigot server, so the structural-reflection fallback stays.
 plugins {
     id 'java'
 }
