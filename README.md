@@ -18,10 +18,10 @@ tool** (`minercon`) that runs in any terminal.
 - Real-time suggestions as you type, cycling with Tab / Shift+Tab
 - Argument hints showing the full usage signature of the current command
 - Works with vanilla, Bukkit/Spigot/Paper, and plugin-extended servers
-- When the [RconTabComplete plugin](plugin/) is installed on your server,
-  completions come directly from the server (fastest, most accurate). Without
-  it, the extension builds a local command tree by crawling `/help` output once
-  per server and caching it.
+- When the [Paper TabComplete](paper-plugin/) or [Spigot TabComplete](spigot-plugin/)
+  plugin is installed on your server, completions come directly from the
+  server (fastest, most accurate). Without it, the extension builds a local
+  command tree by crawling `/help` output once per server and caching it.
 
 **Emacs-style line editing**
 - Full cursor movement, word-jump, selection, and kill/yank (kill ring shared
@@ -152,7 +152,7 @@ for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `/history` command, and (with
 `--save`) persists to the saved config.
 
 **`--no-plugin`:** forces local mode (crawling `/help` for tab completion)
-even if the server-side RconTabComplete plugin/mod is installed. Intended for
+even if the server-side TabComplete plugin/mod is installed. Intended for
 testing the local-mode crawl — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#terminology)
 for what "local mode" vs. "plugin mode" means.
 
@@ -264,9 +264,11 @@ not in the list above, is sent directly to the server as an RCON command.
 
 The terminal detects which mode to use automatically when it first connects.
 
-**Plugin mode** (preferred) — requires the [RconTabComplete plugin](plugin/)
-installed on your server. Completions are fetched live from the server as you
-type, identical to in-game tab completion.
+**Plugin mode** (preferred) — requires the [Paper TabComplete](paper-plugin/)
+or [Spigot TabComplete](spigot-plugin/) plugin (or the
+[Fabric TabComplete](fabric-mod/) mod) installed on your server. Completions
+are fetched live from the server as you type, identical to in-game tab
+completion.
 
 **Local mode** (fallback) — the terminal fetches and parses your server's
 `/help` output once, builds a command tree, and caches it to disk. Subsequent
@@ -279,22 +281,42 @@ Cache location:
 
 ---
 
-## Building and installing the RconTabComplete plugin
+## Building and installing the TabComplete plugins
 
-The server-side plugin lives in [`plugin/`](plugin/). It requires Java 21 and
-a Paper 1.21+ server.
+### Paper
+
+The Paper plugin lives in [`paper-plugin/`](paper-plugin/). It requires Java 21
+and a Paper 1.21+ server, and uses
+[paperweight-userdev](https://docs.papermc.io/paper/dev/userdev/) for direct
+typed access to Paper's Brigadier command dispatcher (no reflection).
 
 **Build:**
 
 ```sh
-cd plugin
+cd paper-plugin
 ./gradlew build
 ```
 
-The built jar ends up at `plugin/build/libs/paper-tabcomplete-1.0.0.jar`.
+The built jar ends up at `paper-plugin/build/libs/paper-tabcomplete-1.0.0.jar`.
 
-**Install:** drop the jar into your server's `plugins/` directory and restart.
-No configuration is needed — the plugin activates automatically and exposes the
+### Spigot
+
+The Spigot plugin lives in [`spigot-plugin/`](spigot-plugin/). It requires
+Java 21 and a Spigot 1.21+ server.
+
+**Build:**
+
+```sh
+cd spigot-plugin
+./gradlew build
+```
+
+The built jar ends up at `spigot-plugin/build/libs/spigot-tabcomplete-1.0.0.jar`.
+
+### Install (both)
+
+Drop the jar into your server's `plugins/` directory and restart. No
+configuration is needed — the plugin activates automatically and exposes the
 `/tabcomplete` and `/cmdusage` RCON commands that this client uses.
 
 ---

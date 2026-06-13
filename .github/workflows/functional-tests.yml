@@ -61,16 +61,29 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Cache Gradle wrapper (plugin)
-        if: matrix.variant == 'paper+plugin' || matrix.variant == 'spigot+plugin'
+      - name: Cache Gradle wrapper (paper-plugin)
+        if: matrix.variant == 'paper+plugin'
         uses: actions/cache@v4
         with:
-          path: plugin/.gradle/wrapper
-          key: gradle-wrapper-${{ hashFiles('plugin/gradle/wrapper/gradle-wrapper.properties') }}
+          path: paper-plugin/.gradle/wrapper
+          key: gradle-wrapper-paper-${{ hashFiles('paper-plugin/gradle/wrapper/gradle-wrapper.properties') }}
 
-      - name: Build plugin
-        if: matrix.variant == 'paper+plugin' || matrix.variant == 'spigot+plugin'
-        run: cd plugin && ./gradlew build
+      - name: Build paper-plugin
+        if: matrix.variant == 'paper+plugin'
+        run: cd paper-plugin && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Cache Gradle wrapper (spigot-plugin)
+        if: matrix.variant == 'spigot+plugin'
+        uses: actions/cache@v4
+        with:
+          path: spigot-plugin/.gradle/wrapper
+          key: gradle-wrapper-spigot-${{ hashFiles('spigot-plugin/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Build spigot-plugin
+        if: matrix.variant == 'spigot+plugin'
+        run: cd spigot-plugin && ./gradlew build
         env:
           GRADLE_OPTS: -Dorg.gradle.daemon=false
 

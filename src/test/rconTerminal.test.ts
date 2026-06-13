@@ -4,7 +4,7 @@
 // `CommandAutocomplete`, and the `completionEngine` state machine together —
 // it's the orchestration `extension.ts` lacks (see that file's test, closed
 // as decided-against), but with one crucial difference: putting the terminal
-// in *plugin mode* (the server-side `RconTabComplete` probe succeeds) skips
+// in *plugin mode* (the server-side `TabComplete` probe succeeds) skips
 // the entire command-tree-crawling startup path. What's left is a small,
 // fast, fully-isolated surface — `handleInput`'s key dispatch, the
 // `/`-command router in `handleEnter`, and `executeCommand`'s response/error

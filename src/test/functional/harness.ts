@@ -4,7 +4,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { ServerVariant, PASSWORD, RCON_PORT } from './variants';
 
-const PLUGIN_JAR = path.resolve(__dirname, '../../../plugin/build/libs/paper-tabcomplete-1.0.0.jar');
+const PAPER_PLUGIN_JAR = path.resolve(__dirname, '../../../paper-plugin/build/libs/paper-tabcomplete-1.0.0.jar');
+const SPIGOT_PLUGIN_JAR = path.resolve(__dirname, '../../../spigot-plugin/build/libs/spigot-tabcomplete-1.0.0.jar');
 const FABRIC_MOD_JAR = path.resolve(__dirname, '../../../fabric-mod/build/libs/fabric-tabcomplete-1.0.0.jar');
 
 const BASE_ENV: Record<string, string> = {
@@ -35,9 +36,14 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
   let tmpDir: string | undefined;
 
   if (variant.hasPlugin) {
-    if (!fs.existsSync(PLUGIN_JAR)) {
+    const isSpigot = variant.type === 'SPIGOT';
+    const pluginJar = isSpigot ? SPIGOT_PLUGIN_JAR : PAPER_PLUGIN_JAR;
+    const jarFilename = isSpigot ? 'spigot-tabcomplete.jar' : 'paper-tabcomplete.jar';
+    const buildDir = isSpigot ? 'spigot-plugin' : 'paper-plugin';
+
+    if (!fs.existsSync(pluginJar)) {
       throw new Error(
-        `Plugin jar not found at ${PLUGIN_JAR}.\nBuild it first: cd plugin && ./gradlew build`
+        `Plugin jar not found at ${pluginJar}.\nBuild it first: cd ${buildDir} && ./gradlew build`
       );
     }
     // withCopyFilesToContainer does not work for paths under a Docker VOLUME —
@@ -46,7 +52,7 @@ export async function startServer(variant: ServerVariant): Promise<StartedTestCo
     // directly bypasses the volume for that specific path.
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-plugins-'));
     fs.chmodSync(tmpDir, 0o777);
-    fs.copyFileSync(PLUGIN_JAR, path.join(tmpDir, 'paper-tabcomplete.jar'));
+    fs.copyFileSync(pluginJar, path.join(tmpDir, jarFilename));
     container = container.withBindMounts([{
       source: tmpDir,
       target: '/data/plugins',

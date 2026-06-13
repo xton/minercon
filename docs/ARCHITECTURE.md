@@ -28,11 +28,11 @@ A few terms carry specific meaning throughout this codebase and its docs:
 
 - **Plugin mode** — `RconSession.pluginMode` is `true` when the server
   answers the `tabcomplete`/`cmdusage` probe commands, i.e. a server-side
-  **RconTabComplete** addon (see below) is installed. In this mode
+  **TabComplete** addon (see below) is installed. In this mode
   `RconCompletionsBackend` asks the server directly for completions and
   argument usage on every keystroke; no command tree is built or cached.
 
-- **Local mode** — the opposite of plugin mode: no RconTabComplete addon
+- **Local mode** — the opposite of plugin mode: no TabComplete addon
   responded (vanilla servers, modded servers without the mod, or
   `--no-plugin`/`disablePlugin` below). `CommandAutocomplete` crawls `/help`
   (and `minecraft:help`, where supported) once at startup to build a
@@ -46,11 +46,10 @@ A few terms carry specific meaning throughout this codebase and its docs:
   this way are real bugs for the (large) population of production servers
   that don't run the addon — not dev-only edge cases.
 
-- **RconTabComplete** — the umbrella name for the server-side addons (a
-  Paper/Spigot plugin under `plugin/` and a Fabric mod under `fabric-mod/`)
-  that implement the `tabcomplete`/`cmdusage` RCON commands enabling plugin
-  mode. The two addons' naming is currently inconsistent (see TODO.md §10/§12
-  for the planned per-server-type fork).
+- **TabComplete** — the umbrella name for the server-side addons (the Paper
+  TabComplete and Spigot TabComplete plugins under `paper-plugin/` and
+  `spigot-plugin/`, and the Fabric TabComplete mod under `fabric-mod/`) that
+  implement the `tabcomplete`/`cmdusage` RCON commands enabling plugin mode.
 
 - **Command tree** / `CommandNode` — the data structure built by
   `commandAutocomplete.ts` in local mode: every root command, its
@@ -230,7 +229,7 @@ testable with scripted event sequences rather than against a live server.
 ### `completionsBackend.ts`
 The seam between the engine and *where completions come from*. The engine
 knows it needs completions/usage for a line; a `CompletionsBackend` is asked
-for them. `RconCompletionsBackend` asks the server-side RconTabComplete
+for them. `RconCompletionsBackend` asks the server-side TabComplete
 plugin over RCON (via `rconClient.ts`); `LocalCompletionsBackend` asks the
 locally-built tree (via `commandAutocomplete.ts`/`commandSuggestions.ts`).
 Driving both modes through the same interface is what makes `RconSession`

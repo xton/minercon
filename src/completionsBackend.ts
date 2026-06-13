@@ -3,7 +3,7 @@
 // The completionEngine state machine knows it needs completions and usage
 // text for a given input line — it doesn't know or care whether those come
 // from a network round trip or an in-memory lookup. A CompletionsBackend is
-// that boundary: one implementation asks the server-side RconTabComplete
+// that boundary: one implementation asks the server-side TabComplete
 // plugin over RCON, the other asks the locally-built command tree.
 //
 // Driving both modes through the same backend interface (and therefore the
@@ -21,7 +21,7 @@ export interface CompletionsBackend {
 }
 
 /**
- * Server-side completions via the RconTabComplete plugin's `tabcomplete`/`cmdusage` commands.
+ * Server-side completions via the TabComplete plugin's `tabcomplete`/`cmdusage` commands.
  *
  * Takes a `controller` thunk rather than a fixed `RconController` — the
  * connection manager replaces its controller wholesale on every reconnect, so

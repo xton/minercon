@@ -8,8 +8,9 @@
 // actual ANSI output a terminal would receive.
 //
 // Requires the relevant jar to be built first:
-//   paper+plugin / spigot+plugin: cd plugin && ./gradlew build
-//   fabric+mod:                   cd fabric-mod && ./gradlew build
+//   paper+plugin:  cd paper-plugin && ./gradlew build
+//   spigot+plugin: cd spigot-plugin && ./gradlew build
+//   fabric+mod:    cd fabric-mod && ./gradlew build
 
 import * as assert from 'assert';
 import * as fs from 'fs';

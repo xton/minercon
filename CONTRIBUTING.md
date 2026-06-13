@@ -58,8 +58,9 @@ minercon/
 │   └── logger.ts               # Logger interface (output channel/stderr/file)
 ├── src/test/                   # Unit tests (mocha, via vscode-test)
 ├── src/test/functional/        # Functional tests against a live server
-├── plugin/                      # Paper/Spigot server-side RconTabComplete plugin
-├── fabric-mod/                  # Fabric server-side RconTabComplete mod
+├── paper-plugin/                # Paper server-side TabComplete plugin (paperweight-userdev, typed Brigadier)
+├── spigot-plugin/               # Spigot server-side TabComplete plugin (reflection-based Brigadier access)
+├── fabric-mod/                  # Fabric server-side TabComplete mod
 ├── docs/
 │   ├── ARCHITECTURE.md         # Module-by-module tour + dependency diagram
 │   └── TECHNICAL.md            # RCON protocol/fence packet deep dive

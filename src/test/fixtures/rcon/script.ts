@@ -21,7 +21,7 @@ export const RCON_CONVERSATION_SCRIPT: readonly string[] = [
                                            // packet ceiling, exercising the
                                            // double-packet fragmentation reassembly.
                                            // (plain "help" gets paginated by some
-                                           // servers — e.g. RconTabComplete — into
+                                           // servers — e.g. TabComplete — into
                                            // short single-page responses, which
                                            // defeats the point of this entry; the
                                            // namespaced form bypasses that)

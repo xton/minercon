@@ -1,8 +1,9 @@
-// Functional tests: addon-mode tab completion via the RconTabComplete plugin
-// (Paper, Spigot) or Fabric mod. Runs against every variant that carries an
-// addon — requires the relevant jar to be built first:
-//   paper+plugin / spigot+plugin: cd plugin && ./gradlew build
-//   fabric+mod:                   cd fabric-mod && ./gradlew build
+// Functional tests: addon-mode tab completion via the Paper/Spigot
+// TabComplete plugin or Fabric mod. Runs against every variant that carries
+// an addon — requires the relevant jar to be built first:
+//   paper+plugin:  cd paper-plugin && ./gradlew build
+//   spigot+plugin: cd spigot-plugin && ./gradlew build
+//   fabric+mod:    cd fabric-mod && ./gradlew build
 
 import * as assert from 'assert';
 import { StartedTestContainer } from 'testcontainers';
