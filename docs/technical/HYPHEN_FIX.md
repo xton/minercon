@@ -1,3 +1,7 @@
+> **Historical writeup.** Describes a since-refactored shape of
+> `commandAutocomplete.ts`/`helpTextParsing.ts`. For the current
+> architecture, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
+
 # Fix for Hyphenated Commands
 
 ## Problem

@@ -1,3 +1,8 @@
+> **Historical writeup.** Describes a since-refactored shape of
+> `commandAutocomplete.ts` (now split across `commandAutocomplete.ts`,
+> `helpTextParsing.ts`, `commandSuggestions.ts`, and `commandTreeCache.ts`).
+> For the current architecture, see [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
+
 # CommandAutocomplete Updates for RCON Protocol v2
 
 ## Summary of Changes

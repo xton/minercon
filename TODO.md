@@ -628,11 +628,11 @@ Ordered roughly by user impact within each group.
 - [x] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
   while the package is at 3.0.0. Fixed: table now reads `3.0.x` (supported) /
   `< 3.0` (unsupported); also bumped the "Last updated" date.
-- [ ] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
+- [x] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
   `RENDERING_FIX.md` as historical** — they describe code shapes that have
   since been refactored away (e.g. quoting pre-split `commandAutocomplete.ts`
-  internals). A one-line "historical writeup, see ARCHITECTURE.md for the
-  current shape" header keeps them useful without misleading.
+  internals). Added a one-line "historical writeup, see ARCHITECTURE.md for
+  the current shape" blockquote header to each.
 
 ## 11. Publishing & audience roadmap (2026-06-12)
 
