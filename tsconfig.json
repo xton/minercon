@@ -3,12 +3,20 @@
     "module": "commonjs",
     "target": "es2022",
     "outDir": "out",
-    "lib": ["es2022"],
+    "lib": [
+      "es2022"
+    ],
     "sourceMap": true,
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": [
+      "mocha"
+    ]
   },
-  "exclude": ["node_modules", ".vscode-test"]
+  "exclude": [
+    "node_modules",
+    ".vscode-test"
+  ]
 }
