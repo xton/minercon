@@ -7,21 +7,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logger';
-import { Parameter } from './helpTextParsing';
 import { CommandNode } from './commandAutocomplete';
-
-// Serializable version for caching
-interface SerializedCommandNode {
-  name: string;
-  parameters: Parameter[];
-  isComplete: boolean;
-}
 
 interface CommandCache {
   version: string;
   serverIdentifier: string;
   lastUpdated: string;
-  commands: { [key: string]: SerializedCommandNode };
+  commands: { [key: string]: CommandNode };
 }
 
 export class CommandTreeCache {
@@ -57,9 +49,8 @@ export class CommandTreeCache {
         commands: {}
       };
 
-      // Convert Map to object for serialization
       rootCommands.forEach((node, name) => {
-        cache.commands[name] = this.serializeNode(node);
+        cache.commands[name] = node;
       });
 
       fs.writeFileSync(this.cacheFile, JSON.stringify(cache, null, 2));
@@ -67,17 +58,6 @@ export class CommandTreeCache {
     } catch (error) {
       this.logger.error(`Error saving cache: ${error}`);
     }
-  }
-
-  /**
-   * Serialize a command node for caching
-   */
-  private serializeNode(node: CommandNode): SerializedCommandNode {
-    return {
-      name: node.name,
-      parameters: node.parameters, // Parameters are already serializable
-      isComplete: node.isComplete
-    };
   }
 
   /**
@@ -109,8 +89,8 @@ export class CommandTreeCache {
       }
 
       const rootCommands = new Map<string, CommandNode>();
-      Object.entries(cache.commands).forEach(([name, serialized]) => {
-        rootCommands.set(name, this.deserializeNode(serialized));
+      Object.entries(cache.commands).forEach(([name, node]) => {
+        rootCommands.set(name, node);
       });
 
       this.logger.info(`Commands loaded from cache (${rootCommands.size} commands)`);
@@ -120,17 +100,6 @@ export class CommandTreeCache {
       this.logger.error(`Error loading cache: ${error}`);
       return null;
     }
-  }
-
-  /**
-   * Deserialize a command node from cache
-   */
-  private deserializeNode(serialized: SerializedCommandNode): CommandNode {
-    return {
-      name: serialized.name,
-      parameters: serialized.parameters,
-      isComplete: serialized.isComplete
-    };
   }
 
   /**

@@ -68,11 +68,11 @@ A few terms carry specific meaning throughout this codebase and its docs:
   command sent partway through a response to detect where a fragmented
   response ends. See `docs/TECHNICAL.md` for the full writeup.
 
-- **Built-in commands** — `/`-prefixed commands (`/help`, `/clear`,
+- **Built-in commands** — A set of always `/`-prefixed commands (`/help`, `/clear`,
   `/disconnect`, `/reconnect`, `/history`, ...) handled entirely by
   `RconSession.handleEnter` via a lookup table and never sent to the server
-  as RCON commands. Anything typed *without* a leading `/` is sent to the
-  server as-is (e.g. `tp Steve 0 64 0`).
+  as RCON commands. Anything typed *without* a leading `/` or not on the list of builtins 
+  is sent to the server as-is (e.g. `tp Steve 0 64 0`).
 
 - **`RconSessionHost`** — the narrow interface `RconSession` talks to instead
   of VS Code or stdio directly (`write`, `close`, `clipboard`, `cacheDir`,
