@@ -200,7 +200,7 @@ suite('classifyParameterTokens', () => {
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
 // Vanilla/Fabric 1.21.4 server, used throughout this suite and in
-// commandAutocomplete.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+// localCommandTree.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
 suite('parseHelpLines', () => {
     test('vanilla "/help <cmd>" direct syntax (gamemode)', () => {
         const result = parseHelpLines('/gamemode <gamemode> [<target>]', 'gamemode');
@@ -263,7 +263,7 @@ suite('parseHelpLines', () => {
     test('a concatenated "minecraft:help" blob requires the caller to split on "/" first', () => {
         // Real minecraft:help responses pack consecutive commands onto one
         // line with no separator; callers must replace('/', '\n/') before
-        // calling parseHelpLines (see commandAutocomplete.ts).
+        // calling parseHelpLines (see localCommandTree.ts).
         const blob = '/team list [<team>]/team add <team> [<displayName>]';
         const split = blob.replace(/\//g, '\n/');
         const result = parseHelpLines(split, 'team');

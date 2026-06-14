@@ -3,7 +3,7 @@
 // A small, level-aware logging seam that decouples the rest of the codebase
 // from `vscode.OutputChannel` — most call sites only ever used it to call
 // `appendLine` for diagnostic messages, which leaks a VS Code implementation
-// detail into classes (RconProtocol, RconController, CommandAutocomplete,
+// detail into classes (RconProtocol, RconController, LocalCommandTree,
 // RconSession, ConnectionManager, ...) that are otherwise just talking to a
 // socket or a terminal. Depending on this interface instead means those
 // classes could run against any host that can produce one.

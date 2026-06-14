@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
-import { CommandAutocomplete } from '../../commandAutocomplete';
+import { LocalCommandTree } from '../../localCommandTree';
 import { Logger } from '../../logger';
 import { nonPluginVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
@@ -17,22 +17,22 @@ const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, deb
 // Commands present on every Minecraft server regardless of variant.
 const UNIVERSAL_COMMANDS = ['list', 'help', 'gamemode', 'time', 'weather'];
 
-// Builds a `CommandAutocomplete` against `cacheDir` - if an earlier test in
+// Builds a `LocalCommandTree` against `cacheDir` - if an earlier test in
 // this suite already populated the cache, this loads instantly with no RCON
 // calls; otherwise it performs the full /help crawl.
-async function loadAutocomplete(host: string, port: number, cacheDir: string): Promise<CommandAutocomplete> {
+async function loadCommandTree(host: string, port: number, cacheDir: string): Promise<LocalCommandTree> {
   const ctrl = new RconController(host, port, 'testpassword', silent);
   await ctrl.connect();
-  const autocomplete = new CommandAutocomplete(
+  const commandTree = new LocalCommandTree(
     (cmd) => ctrl.send(cmd).then(r => r ?? ''),
     silent,
     cacheDir,
     host,
     port
   );
-  await autocomplete.initialize();
+  await commandTree.initialize();
   await ctrl.disconnect();
-  return autocomplete;
+  return commandTree;
 }
 
 for (const variant of nonPluginVariants) {
@@ -65,20 +65,20 @@ for (const variant of nonPluginVariants) {
       await ctrl.disconnect();
     });
 
-    test('CommandAutocomplete initializes without error', async function () {
+    test('LocalCommandTree initializes without error', async function () {
       // The crawl visits every command — budget extra time.
       this.timeout(180_000);
       const ctrl = new RconController(host, port, 'testpassword', silent);
       await ctrl.connect();
-      const autocomplete = new CommandAutocomplete(
+      const commandTree = new LocalCommandTree(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
         host,
         port
       );
-      await autocomplete.initialize();
-      assert.ok(autocomplete.isReady, 'expected isReady after initialize()');
+      await commandTree.initialize();
+      assert.ok(commandTree.isReady, 'expected isReady after initialize()');
       await ctrl.disconnect();
     });
 
@@ -86,18 +86,18 @@ for (const variant of nonPluginVariants) {
       this.timeout(180_000);
       const ctrl = new RconController(host, port, 'testpassword', silent);
       await ctrl.connect();
-      const autocomplete = new CommandAutocomplete(
+      const commandTree = new LocalCommandTree(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
         host,
         port
       );
-      await autocomplete.initialize();
+      await commandTree.initialize();
       await ctrl.disconnect();
 
       for (const cmd of UNIVERSAL_COMMANDS) {
-        const result = autocomplete.getSuggestions(`/${cmd}`);
+        const result = commandTree.getSuggestions(`/${cmd}`);
         assert.ok(
           result.suggestions.includes(cmd) || result.suggestions.some(s => s.startsWith(cmd)),
           `expected "${cmd}" in suggestions for input "/${cmd}", got: ${JSON.stringify(result.suggestions.slice(0, 10))}`
@@ -108,32 +108,32 @@ for (const variant of nonPluginVariants) {
     // The following tests exercise the merged /help + minecraft:help crawl
     // (see docs/technical/NO_PLUGIN_HELP_CRAWL.md). They run after the
     // "initializes without error" test above has populated the cache, so
-    // loadAutocomplete() here is fast (no RCON calls).
+    // loadCommandTree() here is fast (no RCON calls).
 
     test('gamemode has a required <gamemode> argument and an optional <target> argument', async function () {
       this.timeout(180_000);
-      const autocomplete = await loadAutocomplete(host, port, cacheDir);
-      const result = autocomplete.getSuggestions('/gamemode ');
+      const commandTree = await loadCommandTree(host, port, cacheDir);
+      const result = commandTree.getSuggestions('/gamemode ');
       assert.strictEqual(result.argumentHelp, '<gamemode> [<target>]');
     });
 
     test('team list has a [<team>] parameter', async function () {
       this.timeout(180_000);
-      const autocomplete = await loadAutocomplete(host, port, cacheDir);
-      const result = autocomplete.getSuggestions('/team list ');
+      const commandTree = await loadCommandTree(host, port, cacheDir);
+      const result = commandTree.getSuggestions('/team list ');
       assert.strictEqual(result.argumentHelp, '[<team>]');
     });
 
     test('gamerule has dozens of rule variants, each with a [<value>] parameter', async function () {
       this.timeout(180_000);
-      const autocomplete = await loadAutocomplete(host, port, cacheDir);
-      const root = autocomplete.getSuggestions('/gamerule ');
+      const commandTree = await loadCommandTree(host, port, cacheDir);
+      const root = commandTree.getSuggestions('/gamerule ');
       assert.ok(
         root.suggestions.length > 30,
         `expected dozens of gamerule variants, got ${root.suggestions.length}: ${JSON.stringify(root.suggestions)}`
       );
       for (const rule of root.suggestions) {
-        const detail = autocomplete.getSuggestions(`/gamerule ${rule} `);
+        const detail = commandTree.getSuggestions(`/gamerule ${rule} `);
         assert.strictEqual(
           detail.argumentHelp, '[<value>]',
           `expected "gamerule ${rule}" to have a [<value>] parameter, got "${detail.argumentHelp}"`
@@ -144,22 +144,22 @@ for (const variant of nonPluginVariants) {
     if (variant.name === 'vanilla' || variant.name === 'fabric') {
       test('root command set comes from /help: modern commands present, removed commands absent', async function () {
         this.timeout(180_000);
-        const autocomplete = await loadAutocomplete(host, port, cacheDir);
-        assert.ok(autocomplete.getSuggestions('/me').suggestions.includes('me'), 'expected "me" command');
-        assert.ok(autocomplete.getSuggestions('/random').suggestions.includes('random'), 'expected "random" command');
-        assert.ok(autocomplete.getSuggestions('/transfer').suggestions.includes('transfer'), 'expected "transfer" command');
-        assert.ok(!autocomplete.getSuggestions('/testfor').suggestions.includes('testfor'), '"testfor" no longer exists');
-        assert.ok(!autocomplete.getSuggestions('/achievement').suggestions.includes('achievement'), '"achievement" no longer exists');
+        const commandTree = await loadCommandTree(host, port, cacheDir);
+        assert.ok(commandTree.getSuggestions('/me').suggestions.includes('me'), 'expected "me" command');
+        assert.ok(commandTree.getSuggestions('/random').suggestions.includes('random'), 'expected "random" command');
+        assert.ok(commandTree.getSuggestions('/transfer').suggestions.includes('transfer'), 'expected "transfer" command');
+        assert.ok(!commandTree.getSuggestions('/testfor').suggestions.includes('testfor'), '"testfor" no longer exists');
+        assert.ok(!commandTree.getSuggestions('/achievement').suggestions.includes('achievement'), '"achievement" no longer exists');
       });
     }
 
     if (variant.name === 'paper' || variant.name === 'spigot') {
       test('version and reload get real usage info, not the generic "args" placeholder', async function () {
         this.timeout(180_000);
-        const autocomplete = await loadAutocomplete(host, port, cacheDir);
-        const version = autocomplete.getSuggestions('/version ');
+        const commandTree = await loadCommandTree(host, port, cacheDir);
+        const version = commandTree.getSuggestions('/version ');
         assert.notStrictEqual(version.argumentHelp, '[<args>]', `version: ${version.argumentHelp}`);
-        const reload = autocomplete.getSuggestions('/reload ');
+        const reload = commandTree.getSuggestions('/reload ');
         assert.notStrictEqual(reload.argumentHelp, '[<args>]', `reload: ${reload.argumentHelp}`);
       });
     }
@@ -170,7 +170,7 @@ for (const variant of nonPluginVariants) {
       await ctrl.connect();
 
       // First pass: populate cache
-      const first = new CommandAutocomplete(
+      const first = new LocalCommandTree(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
@@ -182,7 +182,7 @@ for (const variant of nonPluginVariants) {
       // Second pass: new instance, same cacheDir — should load from cache.
       // We verify by substituting a sendCommand that throws, so any real
       // network call would fail the test.
-      const second = new CommandAutocomplete(
+      const second = new LocalCommandTree(
         async (_cmd) => { throw new Error('should not make RCON calls when loading from cache'); },
         silent,
         cacheDir,

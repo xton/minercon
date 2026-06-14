@@ -1,7 +1,7 @@
 // src/test/rconTerminal.test.ts
 //
 // `RconTerminal` glues `LineEditor`, `SuggestionDisplay`, `ConnectionManager`,
-// `CommandAutocomplete`, and the `completionEngine` state machine together —
+// `LocalCommandTree`, and the `completionEngine` state machine together —
 // it's the orchestration `extension.ts` lacks (see that file's test, closed
 // as decided-against), but with one crucial difference: putting the terminal
 // in *plugin mode* (the server-side `TabComplete` probe succeeds) skips

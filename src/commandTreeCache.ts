@@ -1,13 +1,13 @@
 // src/commandTreeCache.ts
 //
-// On-disk persistence for the command tree `CommandAutocomplete` builds by
+// On-disk persistence for the command tree `LocalCommandTree` builds by
 // crawling a server's `/help` output — versioned, server-scoped, and aged out
 // after a week so a stale tree doesn't outlive a server's command set.
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logger';
-import { CommandNode } from './commandAutocomplete';
+import { CommandNode } from './localCommandTree';
 
 interface CommandCache {
   version: string;

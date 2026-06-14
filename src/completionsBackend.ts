@@ -12,7 +12,7 @@
 // not branched on at every call site.
 
 import { RconController } from './rconClient';
-import { CommandAutocomplete } from './commandAutocomplete';
+import { LocalCommandTree } from './localCommandTree';
 import { buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse } from './completionEngine';
 
 export interface CompletionsBackend {
@@ -49,7 +49,7 @@ export class RconCompletionsBackend implements CompletionsBackend {
 }
 
 /**
- * Local completions via the command tree CommandAutocomplete builds at
+ * Local completions via the command tree LocalCommandTree builds at
  * startup — a synchronous in-memory lookup, wrapped in `async` so it flows
  * through exactly the same dispatch path as the RCON backend (the `await`
  * still yields to the microtask queue, so a `dispatchToEngine` call made from
@@ -65,14 +65,14 @@ export class LocalCompletionsBackend implements CompletionsBackend {
   private cachedCommand: string | null = null;
   private cachedHelp: string | null = null;
 
-  constructor(private autocomplete: CommandAutocomplete) {}
+  constructor(private commandTree: LocalCommandTree) {}
 
   async fetchCompletions(line: string): Promise<string[]> {
-    return this.autocomplete.getSuggestions(line).suggestions;
+    return this.commandTree.getSuggestions(line).suggestions;
   }
 
   async fetchUsage(line: string): Promise<string> {
-    const result = this.autocomplete.getSuggestions(line);
+    const result = this.commandTree.getSuggestions(line);
     // Everything up to the first space, including any "namespace:" prefix -
     // \S rather than \w so "minecraft:clear" isn't truncated to "minecraft".
     const commandName = (line.match(/^\/?(\S+)/) || [])[1] || '';

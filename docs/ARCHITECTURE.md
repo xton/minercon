@@ -34,7 +34,7 @@ A few terms carry specific meaning throughout this codebase and its docs:
 
 - **Local mode** — the opposite of plugin mode: no TabComplete addon
   responded (vanilla servers, modded servers without the mod, or
-  `--no-plugin`/`disablePlugin` below). `CommandAutocomplete` crawls `/help`
+  `--no-plugin`/`disablePlugin` below). `LocalCommandTree` crawls `/help`
   (and `minecraft:help`, where supported) once at startup to build a
   **command tree**, which `LocalCompletionsBackend`/`commandSuggestions.ts`
   query thereafter. This is the path exercised by the "no-plugin" help-crawl
@@ -52,7 +52,7 @@ A few terms carry specific meaning throughout this codebase and its docs:
   implement the `tabcomplete`/`cmdusage` RCON commands enabling plugin mode.
 
 - **Command tree** / `CommandNode` — the data structure built by
-  `commandAutocomplete.ts` in local mode: every root command, its
+  `localCommandTree.ts` in local mode: every root command, its
   subcommands, and argument parameters, parsed from `/help` text by
   `helpTextParsing.ts`. Persisted on disk by `commandTreeCache.ts`.
 
@@ -109,7 +109,7 @@ graph TD
     end
 
     subgraph Knowledge["Command knowledge"]
-        commandAutocomplete[commandAutocomplete.ts]
+        localCommandTree[localCommandTree.ts]
         commandSuggestions[commandSuggestions.ts]
         commandTreeCache[commandTreeCache.ts]
         helpTextParsing[helpTextParsing.ts]
@@ -133,7 +133,7 @@ graph TD
     rconSession --> suggestionDisplay
     rconSession --> completionEngine
     rconSession --> completionsBackend
-    rconSession --> commandAutocomplete
+    rconSession --> localCommandTree
     rconSession --> historySearch
     rconSession --> historyStore
     rconSession --> rconClient
@@ -141,14 +141,14 @@ graph TD
     suggestionDisplay --> argumentHint
 
     completionsBackend --> completionEngine
-    completionsBackend --> commandAutocomplete
+    completionsBackend --> localCommandTree
     completionsBackend --> rconClient
 
-    commandAutocomplete --> commandSuggestions
-    commandAutocomplete --> commandTreeCache
-    commandAutocomplete --> helpTextParsing
-    commandSuggestions -.-> commandAutocomplete
-    commandTreeCache -.-> commandAutocomplete
+    localCommandTree --> commandSuggestions
+    localCommandTree --> commandTreeCache
+    localCommandTree --> helpTextParsing
+    commandSuggestions -.-> localCommandTree
+    commandTreeCache -.-> localCommandTree
     commandSuggestions --> helpTextParsing
     commandTreeCache --> helpTextParsing
 
@@ -158,7 +158,7 @@ graph TD
 
 Dashed arrows are type-only back-references (`commandSuggestions.ts` and
 `commandTreeCache.ts` both import the `CommandNode` type from
-`commandAutocomplete.ts`, which in turn imports the *value* exports of both —
+`localCommandTree.ts`, which in turn imports the *value* exports of both —
 a small, intentional cluster of mutually-referencing modules around the
 command-tree data structure).
 
@@ -201,8 +201,8 @@ On-disk persistence for the command tree, server-scoped and versioned, aged
 out after a week so a stale tree doesn't outlive a server's command set.
 Mirrors the pattern later reused by `historyStore.ts`.
 
-### `commandAutocomplete.ts`
-`CommandAutocomplete` is the orchestrator for this layer: on `initialize()`
+### `localCommandTree.ts`
+`LocalCommandTree` is the orchestrator for this layer: on `initialize()`
 it either loads a cached tree (`commandTreeCache.ts`) or crawls `/help`
 recursively (root commands, then subcommands/arguments), using
 `helpTextParsing.ts` to interpret each response. Produces the `CommandNode`
@@ -231,7 +231,7 @@ The seam between the engine and *where completions come from*. The engine
 knows it needs completions/usage for a line; a `CompletionsBackend` is asked
 for them. `RconCompletionsBackend` asks the server-side TabComplete
 plugin over RCON (via `rconClient.ts`); `LocalCompletionsBackend` asks the
-locally-built tree (via `commandAutocomplete.ts`/`commandSuggestions.ts`).
+locally-built tree (via `localCommandTree.ts`/`commandSuggestions.ts`).
 Driving both modes through the same interface is what makes `RconSession`
 mode-blind — "which backend" is decided once (`pluginMode`), not branched on
 at every call site.
@@ -283,7 +283,7 @@ commands) lives here, behind the narrow `RconSessionHost` interface (`write`,
 talks to the completion engine (`dispatchToEngine` → `step()` → execute
 `Effect[]`), and wires together every module above: `ConnectionManager` for
 the live connection, `LineEditor`/`SuggestionDisplay` for rendering,
-`CommandAutocomplete`/backends for completions, `HistorySearchState`/
+`LocalCommandTree`/backends for completions, `HistorySearchState`/
 `HistoryStore` for Ctrl+R and persistence.
 
 ## Host adapters
@@ -339,6 +339,6 @@ implementations (stderr/file, or a silent no-op).
 - **Tracing "what does Tab do without a plugin"**: `completionEngine.ts`
   `step()` → `LocalCompletionsBackend` (`completionsBackend.ts`) →
   `commandSuggestions.ts` → the `CommandNode` tree built by
-  `commandAutocomplete.ts` from `helpTextParsing.ts`.
+  `localCommandTree.ts` from `helpTextParsing.ts`.
 - **Tracing Ctrl+R**: `rconSession.ts`'s `handleHistorySearchInput` →
   `historySearch.ts` (pure state) → re-render via `suggestionDisplay.ts`.

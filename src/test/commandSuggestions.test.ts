@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { getSuggestions } from '../commandSuggestions';
-import { CommandNode } from '../commandAutocomplete';
+import { CommandNode } from '../localCommandTree';
 import { ParameterType, Parameter } from '../helpTextParsing';
 
 function arg(name: string, optional = false): Parameter {

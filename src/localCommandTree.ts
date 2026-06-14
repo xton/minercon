@@ -1,4 +1,14 @@
-// src/commandAutocomplete.ts
+// src/localCommandTree.ts
+//
+// The command tree for "local" (no-plugin) mode: built by crawling a
+// server's `/help` and `minecraft:help` output, cached to disk between runs
+// via `CommandTreeCache`, and consumed by `LocalCompletionsBackend` (which
+// turns it into completions/usage text via `commandSuggestions.ts`'s
+// `getSuggestions`). All the text parsing this crawl relies on is in
+// `helpTextParsing.ts` as pure functions - this file is the stateful
+// orchestration: deciding what to fetch, in what order, and how to merge and
+// store the results. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+
 import * as path from 'path';
 import { Logger } from './logger';
 import { stripColors } from './ansi';
@@ -31,7 +41,7 @@ export interface CommandNode {
 /** Coarse-grained stage of `initialize()`'s progress, for UI phase labels. */
 export type ProgressPhase = 'cache-hit' | 'fetching' | 'loading' | 'complete';
 
-export class CommandAutocomplete {
+export class LocalCommandTree {
   private rootCommands: Map<string, CommandNode> = new Map();
   private isLoading: boolean = false;
   private loadingProgress: number = 0;

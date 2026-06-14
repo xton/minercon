@@ -3,7 +3,7 @@
 // Pure parsing of Minecraft `/help` output into a `Parameter` tree. No
 // state, no IO — every export here is a deterministic function of its
 // arguments, which is what makes them directly unit-testable without
-// constructing a `CommandAutocomplete`.
+// constructing a `LocalCommandTree`.
 //
 // `stripColors` (used throughout to normalize input before parsing) and the
 // `formatMinecraftColors`/ANSI rendering side live in ansi.ts.
@@ -427,7 +427,7 @@ export interface ParsedHelpCommand {
   /**
    * True if this command's summary line in the response carries no real
    * Brigadier syntax info (empty, or the generic `[<args>]` placeholder) -
-   * see `CommandAutocomplete.rootSummaryIsPlaceholder`.
+   * see `LocalCommandTree.rootSummaryIsPlaceholder`.
    */
   isPlaceholder: boolean;
 }

@@ -1,12 +1,12 @@
 // src/commandSuggestions.ts
 //
-// Pure suggestion generation: given the command tree `CommandAutocomplete`
+// Pure suggestion generation: given the command tree `LocalCommandTree`
 // builds and the user's current input line, work out what to suggest next
 // and what argument-help text to show. No state, no IO — a deterministic
 // function of the tree and the input.
 
 import { ParameterType, Parameter } from './helpTextParsing';
-import { CommandNode } from './commandAutocomplete';
+import { CommandNode } from './localCommandTree';
 
 export interface SuggestionResult {
   suggestions: string[];

@@ -10,7 +10,7 @@
 //   - the CLI adapter (cli.ts) — wraps process.stdout / raw-mode stdin
 
 import { RconController } from './rconClient';
-import { CommandAutocomplete } from './commandAutocomplete';
+import { LocalCommandTree } from './localCommandTree';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step, applySuggestion,
@@ -53,7 +53,7 @@ export class RconSession {
   private readonly serverPort: number;
   private isExecutingCommand: boolean = false;
 
-  private autocomplete: CommandAutocomplete;
+  private commandTree: LocalCommandTree;
   private suggestionDisplay: SuggestionDisplay;
 
   private pluginMode: boolean = false;
@@ -90,7 +90,7 @@ export class RconSession {
       onReconnected: () => this.initializeCommands(),
     }, controllerFactory);
 
-    this.autocomplete = new CommandAutocomplete(
+    this.commandTree = new LocalCommandTree(
       async (cmd) => {
         const result = await this.connectionManager.controller.send(cmd);
         return result ?? '';
@@ -102,7 +102,7 @@ export class RconSession {
     );
 
     this.rconBackend = new RconCompletionsBackend(() => this.connectionManager.controller);
-    this.localBackend = new LocalCompletionsBackend(this.autocomplete);
+    this.localBackend = new LocalCompletionsBackend(this.commandTree);
 
     this.suggestionDisplay = new SuggestionDisplay({
       write: (text) => sessionHost.write(text),
@@ -165,7 +165,7 @@ export class RconSession {
       const response = await this.connectionManager.controller.send('tabcomplete');
       if (response && response.includes('Returns tab completions for a partial command string')) {
         this.pluginMode = true;
-        this.autocomplete.isReady = true;
+        this.commandTree.isReady = true;
         this.sessionHost.write('\r\n' + ansi.green('✓ Server tab-complete plugin detected — using server-side completions') + '\r\n\r\n');
         this.showPrompt();
         return;
@@ -177,7 +177,7 @@ export class RconSession {
   }
 
   private async initializeCommands(forceRefresh: boolean = false): Promise<void> {
-    const cacheInfo = this.autocomplete.getCacheInfo();
+    const cacheInfo = this.commandTree.getCacheInfo();
     const willLoadFromCache = !forceRefresh && cacheInfo.exists;
 
     if (!willLoadFromCache) {
@@ -188,7 +188,7 @@ export class RconSession {
     }
 
     try {
-      await this.autocomplete.initialize((progress, phase) => {
+      await this.commandTree.initialize((progress, phase) => {
         if (willLoadFromCache) {
           if (progress >= 100) {
             this.sessionHost.write('\r\n' + ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
@@ -653,7 +653,7 @@ export class RconSession {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no cache.');
           } else {
-            this.autocomplete.clearCache();
+            this.commandTree.clearCache();
             this.sessionHost.write(ansi.yellow('Command cache cleared.') + '\r\n\r\n');
             this.showPrompt();
           }
@@ -666,7 +666,7 @@ export class RconSession {
             pluginModeNotice('Using server-side tab completion — no cache.');
             return;
           }
-          const info = this.autocomplete.getCacheInfo();
+          const info = this.commandTree.getCacheInfo();
           if (info.exists) {
             this.sessionHost.write(ansi.cyan('Cache Status:') + '\r\n');
             this.sessionHost.write('  Age: ' + info.age + '\r\n');

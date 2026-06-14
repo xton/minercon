@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Logger } from '../logger';
-import { CommandAutocomplete, CommandNode } from '../commandAutocomplete';
+import { LocalCommandTree, CommandNode } from '../localCommandTree';
 import { ParameterType, Parameter, isGenericArgsPlaceholder } from '../helpTextParsing';
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
@@ -56,9 +56,9 @@ function fakeSendCommand(responses: Map<string, string>, calls: string[]): (comm
   };
 }
 
-function createAutocomplete(sendCommand: (command: string) => Promise<string>): CommandAutocomplete {
+function createCommandTree(sendCommand: (command: string) => Promise<string>): LocalCommandTree {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-cmdauto-test-'));
-  return new CommandAutocomplete(sendCommand, silentLogger(), cacheDir, 'host', 25575);
+  return new LocalCommandTree(sendCommand, silentLogger(), cacheDir, 'host', 25575);
 }
 
 function findChoice(parameters: Parameter[], name: string): Parameter {
@@ -70,7 +70,7 @@ function findChoice(parameters: Parameter[], name: string): Parameter {
   return choice!;
 }
 
-suite('CommandAutocomplete - no-plugin help crawl', () => {
+suite('LocalCommandTree - no-plugin help crawl', () => {
   suite('vanilla/fabric (no minecraft: namespace)', () => {
     const responses = new Map<string, string>([
       ['minecraft:help', NAMESPACE_ERROR],
@@ -112,9 +112,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('root command list comes from /help, not the hardcoded fallback', () => {
@@ -217,9 +217,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('root command list comes from minecraft:help', () => {
@@ -329,9 +329,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('a variant with a real parameter is trusted without a per-subcommand help fetch', () => {
@@ -384,9 +384,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('both gamerule and minecraft:gamerule list each rule with usable [<value>] members', () => {
@@ -435,9 +435,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('minecraft:difficulty becomes a CHOICE_LIST of complete, argument-free value variants', () => {
@@ -475,9 +475,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
     let nodes: Map<string, CommandNode>;
 
     setup(async () => {
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, []));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, []));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('"/tp -> teleport" does not create its own incomplete rootCommands entry', () => {
@@ -514,9 +514,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
     let nodes: Map<string, CommandNode>;
 
     setup(async () => {
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, []));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, []));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('the "/" inside "[home/away]" is preserved as one literal, not split into separate entries', () => {
@@ -563,9 +563,9 @@ suite('CommandAutocomplete - no-plugin help crawl', () => {
 
     setup(async () => {
       calls = [];
-      const autocomplete = createAutocomplete(fakeSendCommand(responses, calls));
-      await autocomplete.initialize();
-      nodes = (autocomplete as any).rootCommands as Map<string, CommandNode>;
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
     });
 
     test('namespaced commands become their own root entries, distinct from their bare counterparts', () => {

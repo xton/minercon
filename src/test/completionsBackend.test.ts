@@ -9,16 +9,16 @@
 
 import * as assert from 'assert';
 import { LocalCompletionsBackend } from '../completionsBackend';
-import { CommandAutocomplete } from '../commandAutocomplete';
+import { LocalCommandTree } from '../localCommandTree';
 import { SuggestionResult } from '../commandSuggestions';
 
-function fakeAutocomplete(getSuggestions: (input: string) => SuggestionResult): CommandAutocomplete {
-  return { getSuggestions } as unknown as CommandAutocomplete;
+function fakeCommandTree(getSuggestions: (input: string) => SuggestionResult): LocalCommandTree {
+  return { getSuggestions } as unknown as LocalCommandTree;
 }
 
 suite('LocalCompletionsBackend.fetchUsage', () => {
   test('prepends commandPath to argumentHelp ("clear [<targets>] [<item>]", not "[<targets>] [<item>]")', async () => {
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() =>
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() =>
       ({ suggestions: [], argumentHelp: '[<targets>] [<item>]', commandPath: 'clear' })
     ));
 
@@ -26,7 +26,7 @@ suite('LocalCompletionsBackend.fetchUsage', () => {
   });
 
   test('preserves a namespace prefix in the usage line ("minecraft:clear [<targets>] [<item>]")', async () => {
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() =>
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() =>
       ({ suggestions: [], argumentHelp: '[<targets>] [<item>]', commandPath: 'minecraft:clear' })
     ));
 
@@ -34,7 +34,7 @@ suite('LocalCompletionsBackend.fetchUsage', () => {
   });
 
   test('a command with no arguments shows just its commandPath ("reload"), not an empty string', async () => {
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() =>
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() =>
       ({ suggestions: [], argumentHelp: '', commandPath: 'reload' })
     ));
 
@@ -43,7 +43,7 @@ suite('LocalCompletionsBackend.fetchUsage', () => {
 
   test('once a full usage is cached for a command, a later empty result keeps showing it', async () => {
     let argumentHelp = '<property> <value>';
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() =>
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() =>
       ({ suggestions: [], argumentHelp, commandPath: 'mvp modify' })
     ));
 
@@ -57,7 +57,7 @@ suite('LocalCompletionsBackend.fetchUsage', () => {
 
   test('switching to a different command resets the cache', async () => {
     let response: SuggestionResult = { suggestions: [], argumentHelp: '<property> <value>', commandPath: 'mvp modify' };
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() => response));
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() => response));
 
     assert.strictEqual(await backend.fetchUsage('/mvp modify '), 'mvp modify <property> <value>');
 
@@ -66,7 +66,7 @@ suite('LocalCompletionsBackend.fetchUsage', () => {
   });
 
   test('returns empty string when there is nothing to show yet (still typing the command name)', async () => {
-    const backend = new LocalCompletionsBackend(fakeAutocomplete(() =>
+    const backend = new LocalCompletionsBackend(fakeCommandTree(() =>
       ({ suggestions: ['clear', 'clone'], argumentHelp: undefined, commandPath: undefined })
     ));
 

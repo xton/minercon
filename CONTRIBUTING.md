@@ -43,7 +43,7 @@ minercon/
 │   ├── connectionManager.ts    # Connect/reconnect lifecycle, backoff
 │   ├── rconClient.ts           # RconController — send queue over RconProtocol
 │   ├── rconProtocol.ts         # RCON wire protocol, framing, fence packet
-│   ├── commandAutocomplete.ts  # /help-crawl orchestration, command tree
+│   ├── localCommandTree.ts     # /help-crawl orchestration, command tree
 │   ├── commandSuggestions.ts   # Pure suggestion generation from the tree
 │   ├── commandTreeCache.ts     # On-disk command tree cache
 │   ├── helpTextParsing.ts      # Pure /help text → Parameter tree parsing
@@ -136,8 +136,8 @@ The `RconSession` class (`rconSession.ts`) provides:
 - Autocomplete orchestration via the completion engine
 - Reconnect handling
 
-### Command Autocomplete
-The `CommandAutocomplete` class (`commandAutocomplete.ts`) manages:
+### Local Command Tree
+The `LocalCommandTree` class (`localCommandTree.ts`) manages:
 - Command discovery via `/help` crawling (`helpTextParsing.ts`)
 - Suggestion generation (`commandSuggestions.ts`)
 - Cache management (`commandTreeCache.ts`)

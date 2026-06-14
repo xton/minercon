@@ -4,7 +4,7 @@
 
 When no tab-complete plugin/mod is installed (`vanilla`, `paper`, `spigot`,
 `fabric` in `src/test/functional/variants.ts`'s `nonPluginVariants`),
-`CommandAutocomplete` (`src/commandAutocomplete.ts`) builds its command tree
+`LocalCommandTree` (`src/localCommandTree.ts`) builds its command tree
 purely from RCON `/help` text:
 
 1. `fetchRootCommands()` gets the list of root command names.
@@ -69,7 +69,7 @@ every recursion depth**, picking whichever side is non-generic.
 
 ## Current bugs this explains
 
-1. **`fetchRootCommands()` (commandAutocomplete.ts:130-157)** calls
+1. **`fetchRootCommands()` (localCommandTree.ts:130-157)** calls
    `sendCommand('minecraft:help')` directly. On vanilla/fabric this returns
    the Brigadier syntax-error string above — non-empty, so the "empty
    response" fallback to `?` is never triggered, but `parseHelpResponse()`
@@ -94,7 +94,7 @@ every recursion depth**, picking whichever side is non-generic.
    parameters** in the tree. The rich `<args>` detail sitting in
    `minecraft:help <cmd>` is never fetched.
 
-3. **`loadSubcommandDetails` (commandAutocomplete.ts:378-463)** uses plain
+3. **`loadSubcommandDetails` (localCommandTree.ts:378-463)** uses plain
    `sendCommand` instead of `fetchPaginatedCommand` — a latent gap (no
    pagination format was observed for single-command `help`, but it's
    inconsistent with `loadCommandDetails` and cheap to fix).
@@ -181,10 +181,10 @@ list`).
 
 ## Test plan
 
-### Unit tests (new `src/test/commandAutocomplete.test.ts`, plus additions to
+### Unit tests (new `src/test/localCommandTree.test.ts`, plus additions to
 `helpTextParsing.test.ts`)
 
-`CommandAutocomplete` takes `sendCommand: (command: string) => Promise<string>`
+`LocalCommandTree` takes `sendCommand: (command: string) => Promise<string>`
 as a constructor argument — perfect seam for a fake keyed by exact command
 string, replaying the **real captured responses** above (verbatim, including
 `§`-color codes) for two fake servers:
@@ -219,7 +219,7 @@ Cases:
 ### Functional tests (`src/test/functional/`, all four `nonPluginVariants`)
 
 Extend `localMode.test.ts` (or a new sibling file) — after a real
-`CommandAutocomplete.initialize()` against a live container:
+`LocalCommandTree.initialize()` against a live container:
 
 - `gamemode`'s parameters include a required `<gamemode>` argument and an
   optional `<target>` argument (proves the merge works against a real server,
