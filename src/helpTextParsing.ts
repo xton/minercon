@@ -412,6 +412,107 @@ export function hasUsableArguments(members: Parameter[]): boolean {
 }
 
 /**
+ * True iff `result` carries real, usable syntax info - either a non-placeholder
+ * `direct` parameter list or at least one subcommand variant. Used to decide
+ * whether a help source already answers a command's usage, or whether the
+ * caller needs to try another source.
+ */
+export function hasRealUsage(result: HelpLinesResult): boolean {
+  return (result.direct !== null && !isGenericArgsPlaceholder(result.direct)) || result.variants.size > 0;
+}
+
+/** A root command discovered in a `/help`/`minecraft:help` response. */
+export interface ParsedHelpCommand {
+  name: string;
+  /**
+   * True if this command's summary line in the response carries no real
+   * Brigadier syntax info (empty, or the generic `[<args>]` placeholder) -
+   * see `CommandAutocomplete.rootSummaryIsPlaceholder`.
+   */
+  isPlaceholder: boolean;
+}
+
+/** The root commands and alias redirects found in a `/help`/`minecraft:help` response. */
+export interface ParsedHelpResponse {
+  commands: ParsedHelpCommand[];
+  aliases: AliasRedirect[];
+}
+
+/**
+ * Parse a `/help` or `minecraft:help` response into the root commands and
+ * alias redirects it describes.
+ *
+ * `response` is first run through `splitConcatenatedHelpLines` so that a
+ * `minecraft:help` blob (multiple `/cmd ...` entries packed onto one line)
+ * is split one-per-line. Each resulting line is then matched against one of:
+ *
+ * - an alias redirect (`/<alias> -> <target>`, via `parseAliasRedirect`)
+ * - `/command ...` or `/namespace:command ...`
+ * - `command: ...` or `command-with-hyphens: ...`
+ * - `- command ...` or `* command ...`
+ * - `command <args>` (command name followed by `-`/`<`/`[`/`(`)
+ *
+ * Namespace prefixes (`minecraft:`, `bukkit:`, ...) are part of the command
+ * name - per "ingest everything", `minecraft:advancement` is its own root
+ * command, not just `minecraft`, so `:` is included in every pattern's
+ * character class. Common non-command words that appear in descriptions
+ * (`usage`, `example`, `description`, `syntax`) are skipped.
+ *
+ * For each command found, `isPlaceholder` reflects whether its summary line
+ * already carries real syntax info (`hasRealUsage`), so callers can decide
+ * which help source to try first for that command's full details.
+ */
+export function parseHelpResponse(response: string): ParsedHelpResponse {
+  const lines = splitConcatenatedHelpLines(response).split('\n');
+
+  const commands: ParsedHelpCommand[] = [];
+  const aliases: AliasRedirect[] = [];
+
+  for (const line of lines) {
+    const stripped = stripColors(line).trim();
+
+    // Skip empty lines and headers
+    if (!stripped || stripped.startsWith('---') || stripped.startsWith('===')) {
+      continue;
+    }
+
+    // Alias redirect lines (`/tp -> teleport`) describe an alias, not a
+    // root command in their own right.
+    const redirect = parseAliasRedirect(stripped);
+    if (redirect) {
+      aliases.push(redirect);
+      continue;
+    }
+
+    const patterns = [
+      /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
+      /^([a-zA-Z0-9_:-]+):\s/,          // command: or command-with-hyphens:
+      /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
+      /^([a-zA-Z0-9_:-]+)\s+[-<[(]/     // command followed by args
+    ];
+
+    for (const pattern of patterns) {
+      const match = stripped.match(pattern);
+      if (!match) {
+        continue;
+      }
+      const commandName = match[1];
+
+      // Skip common non-command words that appear in descriptions
+      if (['usage', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
+        continue;
+      }
+
+      const summary = parseHelpLines(stripped, commandName);
+      commands.push({ name: commandName, isPlaceholder: !hasRealUsage(summary) });
+      break;
+    }
+  }
+
+  return { commands, aliases };
+}
+
+/**
  * True iff `response` is the Brigadier "unknown namespace" syntax error
  * returned for `minecraft:help` on servers where the `minecraft:` command
  * namespace prefix isn't registered (vanilla/fabric) — distinct from the

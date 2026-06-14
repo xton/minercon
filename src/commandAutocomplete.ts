@@ -8,7 +8,8 @@ import {
   HelpLinesResult,
   VariantInfo,
   parseHelpLines,
-  parseAliasRedirect,
+  parseHelpResponse,
+  hasRealUsage,
   splitConcatenatedHelpLines,
   looksLikeBukkitHelpPage,
   isGenericArgsPlaceholder,
@@ -188,7 +189,7 @@ export class CommandAutocomplete {
         if (!response || response.length === 0) {
           throw new Error('Unable to fetch command list from server');
         }
-        this.parseHelpResponse(response, pendingAliases);
+        this.ingestHelpResponse(response, pendingAliases);
         return;
       }
 
@@ -201,12 +202,12 @@ export class CommandAutocomplete {
         const altResponse = await this.sendCommand('?');
         if (altResponse && altResponse.length > 0) {
           this.logger.info('Using alternative help command (?)');
-          this.parseHelpResponse(altResponse, pendingAliases);
+          this.ingestHelpResponse(altResponse, pendingAliases);
         } else {
           throw new Error('Unable to fetch command list from server');
         }
       } else {
-        this.parseHelpResponse(mcResponse, pendingAliases);
+        this.ingestHelpResponse(mcResponse, pendingAliases);
       }
 
     } catch (error) {
@@ -218,83 +219,27 @@ export class CommandAutocomplete {
   }
 
   /**
-   * Parse help response to extract commands
+   * Parse a help response and merge the commands/aliases it describes into
+   * `rootCommands`, `rootSummaryIsPlaceholder`, and `pendingAliases`.
    */
-  private parseHelpResponse(response: string, pendingAliases: Map<string, string>): void {
-    const modified = splitConcatenatedHelpLines(response);
-    const lines = modified.split('\n');
-    this.logger.info(`Processing ${lines.length} lines from help response`);
+  private ingestHelpResponse(response: string, pendingAliases: Map<string, string>): void {
+    const { commands, aliases } = parseHelpResponse(response);
 
-    let commandCount = 0;
-    for (const line of lines) {
-      const stripped = stripColors(line).trim();
+    for (const { alias, target } of aliases) {
+      pendingAliases.set(alias, target);
+    }
 
-      // Skip empty lines and headers
-      if (!stripped || stripped.startsWith('---') || stripped.startsWith('===')) {
-        continue;
-      }
-
-      // Alias redirect lines (`/tp -> teleport`) describe an alias, not a
-      // root command in their own right - record the mapping and move on
-      // rather than creating a wasteful incomplete rootCommands entry.
-      const redirect = parseAliasRedirect(stripped);
-      if (redirect) {
-        pendingAliases.set(redirect.alias, redirect.target);
-        continue;
-      }
-
-      // Try multiple patterns to match commands. Namespace prefixes
-      // (`minecraft:`, `bukkit:`, ...) are part of the command name - per
-      // "ingest everything", `minecraft:advancement` is its own root command,
-      // not just `minecraft`, so `:` is included in every char class below.
-      // Pattern 1: /command (with or without namespace/hyphens/underscores)
-      // Pattern 2: command: (with or without hyphens/underscores)
-      // Pattern 3: - command or * command
-      // Pattern 4: just the command name at start of line
-      const patterns = [
-        /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
-        /^([a-zA-Z0-9_:-]+):\s/,          // command: or command-with-hyphens:
-        /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
-        /^([a-zA-Z0-9_:-]+)\s+[-<[(]/     // command followed by args
-      ];
-
-      let matched = false;
-      for (const pattern of patterns) {
-        const match = stripped.match(pattern);
-        if (match) {
-          const commandName = match[1];
-
-          // Skip common non-command words that appear in descriptions
-          if (['usage', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
-            continue;
-          }
-
-          // Create root command node
-          this.rootCommands.set(commandName, {
-            name: commandName,
-            parameters: [],
-            isComplete: false
-          });
-
-          // Record whether this command's root summary line already carries
-          // real syntax info, so loadCommandDetails can decide which help
-          // source to try first.
-          const summary = parseHelpLines(stripped, commandName);
-          this.rootSummaryIsPlaceholder.set(commandName, !this.hasRealUsage(summary));
-
-          commandCount++;
-          matched = true;
-          break;
-        }
-      }
+    for (const { name, isPlaceholder } of commands) {
+      this.rootCommands.set(name, { name, parameters: [], isComplete: false });
+      this.rootSummaryIsPlaceholder.set(name, isPlaceholder);
     }
 
     this.logger.info(`Found ${this.rootCommands.size} root commands`);
 
-    if (commandCount === 0) {
+    if (commands.length === 0) {
       this.logger.warning('Warning: No commands found in help response');
       this.logger.info('First few lines of response:');
-      lines.slice(0, 10).forEach(line => {
+      splitConcatenatedHelpLines(response).split('\n').slice(0, 10).forEach(line => {
         this.logger.info(`  > ${stripColors(line)}`);
       });
 
@@ -351,19 +296,6 @@ export class CommandAutocomplete {
       }
     }
     return undefined;
-  }
-
-  /**
-   * True iff `result` carries real, usable syntax info - a non-generic
-   * `direct` list or at least one variant - as opposed to nothing or just
-   * the generic `[<args>]` placeholder. Mirrors the condition
-   * `mergeHelpSources` uses to let `minecraft:help` win outright over
-   * Bukkit's `help`; used by `loadCommandDetails` to decide whether a
-   * help source's result is good enough on its own, or whether the other
-   * source is worth fetching too.
-   */
-  private hasRealUsage(result: HelpLinesResult): boolean {
-    return (result.direct !== null && !isGenericArgsPlaceholder(result.direct)) || result.variants.size > 0;
   }
 
   /**
@@ -448,7 +380,7 @@ export class CommandAutocomplete {
         const fromHelp = looksLikeBukkitHelpPage(helpResponse)
           ? parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath)
           : parseHelpLines(splitConcatenatedHelpLines(helpResponse), commandPath);
-        if (!this.hasRealUsage(fromHelp)) {
+        if (!hasRealUsage(fromHelp)) {
           mcResponse = await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`);
         }
       } else {
@@ -457,7 +389,7 @@ export class CommandAutocomplete {
         // fall back to Bukkit's `help <commandPath>` if it doesn't pan out.
         mcResponse = await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`);
         const fromMc = parseHelpLines(splitConcatenatedHelpLines(mcResponse), commandPath);
-        if (!this.hasRealUsage(fromMc)) {
+        if (!hasRealUsage(fromMc)) {
           helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
         }
       }

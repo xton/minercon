@@ -10,6 +10,8 @@ import {
     buildParameterStructureFromVariants,
     parseHelpLines,
     parseAliasRedirect,
+    parseHelpResponse,
+    hasRealUsage,
     isGenericArgsPlaceholder,
     hasUsableArguments,
     isUnsupportedNamespaceError,
@@ -327,6 +329,81 @@ suite('hasUsableArguments', () => {
         assert.ok(!hasUsableArguments([
             { type: ParameterType.ARGUMENT, name: 'args', optional: false, position: 0 },
         ]));
+    });
+});
+
+suite('hasRealUsage', () => {
+    test('true for a direct parameter list that is not the generic "[<args>]" placeholder', () => {
+        assert.ok(hasRealUsage({
+            direct: [{ type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 }],
+            variants: new Map(),
+        }));
+    });
+
+    test('false for the generic "[<args>]" placeholder with no variants', () => {
+        assert.ok(!hasRealUsage({
+            direct: [{ type: ParameterType.ARGUMENT, name: 'args', optional: true, position: 0 }],
+            variants: new Map(),
+        }));
+    });
+
+    test('true with no direct list but at least one subcommand variant', () => {
+        assert.ok(hasRealUsage({
+            direct: null,
+            variants: new Map([['list', { optional: false, members: [] }]]),
+        }));
+    });
+
+    test('false with neither a direct list nor variants', () => {
+        assert.ok(!hasRealUsage({ direct: null, variants: new Map() }));
+    });
+});
+
+suite('parseHelpResponse', () => {
+    test('extracts root commands with full <args> syntax from a concatenated minecraft:help blob', () => {
+        const blob = [
+            '/gamemode <gamemode> [<target>]',
+            '/gamerule announceAdvancements [<value>]',
+            '/version [<args>]',
+        ].join('');
+        const { commands, aliases } = parseHelpResponse(blob);
+        assert.deepStrictEqual(commands.map(c => c.name), ['gamemode', 'gamerule', 'version']);
+        assert.deepStrictEqual(aliases, []);
+    });
+
+    test('isPlaceholder is false when the summary line carries real syntax, true for the generic "[<args>]" placeholder', () => {
+        const blob = '/gamemode <gamemode> [<target>]/version [<args>]';
+        const { commands } = parseHelpResponse(blob);
+        assert.deepStrictEqual(commands.map(c => [c.name, c.isPlaceholder]), [
+            ['gamemode', false],
+            ['version', true],
+        ]);
+    });
+
+    test('alias redirect lines are returned as aliases, not commands', () => {
+        const text = '/tp -> teleport\n/minecraft:xp -> experience\n/gamemode <gamemode> [<target>]';
+        const { commands, aliases } = parseHelpResponse(text);
+        assert.deepStrictEqual(commands.map(c => c.name), ['gamemode']);
+        assert.deepStrictEqual(aliases, [
+            { alias: 'tp', target: 'teleport' },
+            { alias: 'minecraft:xp', target: 'experience' },
+        ]);
+    });
+
+    test('namespace prefixes are preserved as part of the command name ("ingest everything")', () => {
+        const { commands } = parseHelpResponse('/minecraft:advancement (grant|revoke) <targets>');
+        assert.deepStrictEqual(commands.map(c => c.name), ['minecraft:advancement']);
+    });
+
+    test('header/separator and blank lines are skipped', () => {
+        const text = '§e--------- §fHelp: Index §e-----------------\n\n/gamemode <gamemode> [<target>]\n=== end ===';
+        const { commands } = parseHelpResponse(text);
+        assert.deepStrictEqual(commands.map(c => c.name), ['gamemode']);
+    });
+
+    test('lines starting with a non-command word like "Usage" are not treated as commands', () => {
+        const { commands } = parseHelpResponse('Usage <foo>\n/gamemode <gamemode> [<target>]');
+        assert.deepStrictEqual(commands.map(c => c.name), ['gamemode']);
     });
 });
 
