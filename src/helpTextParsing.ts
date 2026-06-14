@@ -1,9 +1,16 @@
 // src/helpTextParsing.ts
 //
-// Pure parsing of Minecraft `/help` output into a `Parameter` tree. No
-// state, no IO — every export here is a deterministic function of its
-// arguments, which is what makes them directly unit-testable without
-// constructing a `LocalCommandTree`.
+// Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat
+// `/cmd <args>` blobs, as returned by `minecraft:help` and vanilla's plain
+// `help`) into a `Parameter` tree, plus the root-listing parser
+// (`parseHelpResponse`) and the one-time namespace-support probe
+// (`isUnsupportedNamespaceError`). No state, no IO — every export here is a
+// deterministic function of its arguments, which is what makes them directly
+// unit-testable without constructing a `LocalCommandTree`.
+//
+// Bukkit's hand-written `Description:`/`Usage:`/`Aliases:` `/help <command>`
+// pages are a different grammar entirely - their extraction lives in
+// `bukkitHelpParsing.ts`.
 //
 // `stripColors` (used throughout to normalize input before parsing) and the
 // `formatMinecraftColors`/ANSI rendering side live in ansi.ts.
@@ -271,25 +278,6 @@ export interface HelpLinesResult {
 }
 
 /**
- * True iff `helpText` looks like a Bukkit `/help <command>` page - a
- * "§e--------- §fHelp: /<cmd> ----...§e" banner line, typically followed by
- * Description:/Usage:/Aliases: lines - rather than a flat Brigadier blob
- * (`minecraft:help`, or vanilla's `help <path>`) that packs multiple
- * `/cmd ...` entries with no separators.
- *
- * This distinguishes which normalizer to apply: concatenated Brigadier blobs
- * never contain a `---` banner line and are safe to re-split on `/`
- * (`splitConcatenatedHelpLines`), but Bukkit's hand-written Usage strings are
- * inconsistent across commands/plugins and occasionally use `/` inside
- * argument brackets (e.g. `[foo/bar]`) - re-splitting those would corrupt
- * them, so Bukkit pages must go through `extractBukkitUsageLines` instead,
- * which extracts the Usage line(s) verbatim.
- */
-export function looksLikeBukkitHelpPage(helpText: string): boolean {
-  return helpText.split('\n').some(line => stripColors(line).trim().startsWith('---'));
-}
-
-/**
  * Re-split a help response that packs multiple `/cmd ...` entries onto one
  * line with no separators (e.g. a `minecraft:help` blob, or vanilla's `help
  * <path>` for a multi-variant command like `gamerule`/`team`/`debug`) into
@@ -520,53 +508,6 @@ export function parseHelpResponse(response: string): ParsedHelpResponse {
  */
 export function isUnsupportedNamespaceError(response: string): boolean {
   return /^Unknown or incomplete command/i.test(stripColors(response).trim());
-}
-
-/**
- * Extract the `Usage: ...` line(s) from a Bukkit-style `/help <command>`
- * response (e.g. "Description: ...\nUsage: /version [plugin name]\nAliases:
- * ..."), normalized so each reads as `<commandPath> ...` for `parseHelpLines`.
- * Returns `[]` if there's no Usage line, or if its content is just the bare
- * command name with nothing after it — the generic response Bukkit gives for
- * Brigadier-backed (vanilla) commands ("Description: A Mojang provided
- * command.\nUsage: <name>"), which carries no argument info.
- */
-export function extractBukkitUsageLines(helpText: string, commandPath: string): string[] {
-  const lines = stripColors(helpText).split('\n').map(line => line.trim());
-  const usageIndex = lines.findIndex(line => /^Usage:\s*/i.test(line));
-  if (usageIndex === -1) {
-    return [];
-  }
-
-  const result: string[] = [lines[usageIndex].replace(/^Usage:\s*/i, '')];
-  for (let i = usageIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line || /^[A-Za-z][A-Za-z ]*:/.test(line) || line.startsWith('---')) {
-      break;
-    }
-    result.push(line);
-  }
-
-  const normalizedPath = commandPath.toLowerCase();
-  return result.filter(line => line.replace(/^\//, '').toLowerCase() !== normalizedPath);
-}
-
-/**
- * Extract alias names from a Bukkit-style `/help <command>` response's
- * `Aliases: a, b, c` line (e.g. "Description: ...\nUsage: ...\nAliases: ver,
- * about"). Returns `[]` if there's no Aliases line.
- */
-export function extractBukkitAliases(helpText: string): string[] {
-  const lines = stripColors(helpText).split('\n').map(line => line.trim());
-  const aliasesLine = lines.find(line => /^Aliases:\s*/i.test(line));
-  if (!aliasesLine) {
-    return [];
-  }
-
-  return aliasesLine.replace(/^Aliases:\s*/i, '')
-    .split(',')
-    .map(alias => alias.trim())
-    .filter(alias => alias.length > 0);
 }
 
 /**

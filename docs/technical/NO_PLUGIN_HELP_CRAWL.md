@@ -165,10 +165,15 @@ Apply the same merge in `loadSubcommandDetails` (e.g. `minecraft:help team
 list` → `/team list [<team>]` where `help team list` → `No help for team
 list`).
 
-### New pure helpers (`helpTextParsing.ts`)
+### New pure helpers
 
+`helpTextParsing.ts`:
 - `isGenericArgsPlaceholder(parameters: Parameter[]): boolean` — true iff
   exactly one parameter, `ARGUMENT`, optional, `name === 'args'`.
+- `isUnsupportedNamespaceError(response: string): boolean` — true iff
+  (stripColors'd) response matches `/^Unknown or incomplete command/i`.
+
+`bukkitHelpParsing.ts`:
 - `extractBukkitUsageLines(helpText: string, commandPath: string): string[]`
   — given `stripColors`'d `help <path>` output, find the `Usage:` section and
   return each usage line with the label stripped and re-prefixed so it reads
@@ -176,13 +181,13 @@ list`).
   vanilla's generic `Description: A Mojang provided command. / Usage:
   <bare-name>` (no args after the bare name) and for `No help for ...`
   responses.
-- `isUnsupportedNamespaceError(response: string): boolean` — true iff
-  (stripColors'd) response matches `/^Unknown or incomplete command/i`.
+- `extractBukkitAliases(helpText: string): string[]` — extracts alias names
+  from the `Aliases: a, b, c` line.
 
 ## Test plan
 
 ### Unit tests (new `src/test/localCommandTree.test.ts`, plus additions to
-`helpTextParsing.test.ts`)
+`helpTextParsing.test.ts` and `bukkitHelpParsing.test.ts`)
 
 `LocalCommandTree` takes `sendCommand: (command: string) => Promise<string>`
 as a constructor argument — perfect seam for a fake keyed by exact command
@@ -212,9 +217,10 @@ Cases:
   `help team list` is useless but `minecraft:help team list` works)
 
 `helpTextParsing.test.ts` additions: `isGenericArgsPlaceholder`,
+`isUnsupportedNamespaceError`. `bukkitHelpParsing.test.ts`:
 `extractBukkitUsageLines` (generic vanilla → `[]`, `version`/`reload`/
-`plugins` Usage lines → normalized lines, `No help for X` → `[]`),
-`isUnsupportedNamespaceError`.
+`plugins` Usage lines → normalized lines, `No help for X` → `[]`) and
+`extractBukkitAliases`.
 
 ### Functional tests (`src/test/functional/`, all four `nonPluginVariants`)
 

@@ -21,14 +21,12 @@ import {
   parseHelpResponse,
   hasRealUsage,
   splitConcatenatedHelpLines,
-  looksLikeBukkitHelpPage,
   isGenericArgsPlaceholder,
   isUnsupportedNamespaceError,
-  extractBukkitUsageLines,
-  extractBukkitAliases,
   buildParameterStructureFromVariants,
   hasUsableArguments,
 } from './helpTextParsing';
+import { extractBukkitUsageLines, extractBukkitAliases } from './bukkitHelpParsing';
 import { CommandTreeCache } from './commandTreeCache';
 import { getSuggestions, SuggestionResult } from './commandSuggestions';
 
@@ -311,12 +309,19 @@ export class LocalCommandTree {
   /**
    * Merge the two help sources for `commandPath`'s syntax into one
    * `HelpLinesResult`. `mcResponse` (from `minecraft:help <commandPath>`,
-   * only present when `supportsMinecraftNamespace`) wins unless it's empty
-   * or the generic `[<args>]` placeholder Bukkit emits for non-Brigadier
-   * commands, in which case `helpResponse` (from `help <commandPath>`) is
-   * used instead — via `extractBukkitUsageLines` if it's a Bukkit help page,
-   * or re-split as a concatenated Brigadier blob otherwise (see
-   * `looksLikeBukkitHelpPage`). See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+   * only fetched when `supportsMinecraftNamespace`, and sometimes skipped
+   * even then as an optimization - see `loadCommandDetails`) wins unless
+   * it's empty or the generic `[<args>]` placeholder Bukkit emits for
+   * non-Brigadier commands, in which case `helpResponse` (from `help
+   * <commandPath>`) is used instead.
+   *
+   * Which shape `helpResponse` is in follows directly from
+   * `this.supportsMinecraftNamespace`, not from sniffing its content: when
+   * `minecraft:` is supported, Paper/Spigot's `help <path>` is *always* a
+   * Bukkit `Description:`/`Usage:`/`Aliases:` page (even for vanilla-backed
+   * commands), extracted via `extractBukkitUsageLines`; when it isn't,
+   * vanilla/fabric's `help <path>` is *always* a flat Brigadier blob. See
+   * docs/technical/NO_PLUGIN_HELP_CRAWL.md.
    */
   private mergeHelpSources(helpResponse: string, mcResponse: string | null, commandPath: string): HelpLinesResult {
     // mcResponse is always a flat Brigadier blob - never a Bukkit help page.
@@ -329,12 +334,15 @@ export class LocalCommandTree {
       result = { variants: new Map(), direct: mc.direct };
     } else if (mc.variants.size > 0) {
       result = { variants: mc.variants, direct: null };
-    } else if (looksLikeBukkitHelpPage(helpResponse)) {
+    } else if (this.supportsMinecraftNamespace) {
+      // helpResponse is always a Bukkit Description:/Usage:/Aliases: page -
+      // extract its Usage line(s).
       result = parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath);
     } else {
-      // Like `mcResponse`, vanilla's `help <path>` responses for commands
-      // with multiple variants (team, gamerule, debug, ...) pack each
-      // `/path ...` onto one line with no separators - re-split the same way.
+      // helpResponse is always a flat Brigadier blob. Like `mcResponse`,
+      // vanilla's `help <path>` responses for commands with multiple
+      // variants (team, gamerule, debug, ...) pack each `/path ...` onto one
+      // line with no separators - re-split the same way.
       result = parseHelpLines(splitConcatenatedHelpLines(helpResponse), commandPath);
     }
 
@@ -387,9 +395,7 @@ export class LocalCommandTree {
         // unlikely to do better, so try Bukkit's `help <commandPath>` first
         // and only fall back to `minecraft:help` if it doesn't pan out.
         helpResponse = await this.fetchPaginatedCommand(`help ${commandPath}`);
-        const fromHelp = looksLikeBukkitHelpPage(helpResponse)
-          ? parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath)
-          : parseHelpLines(splitConcatenatedHelpLines(helpResponse), commandPath);
+        const fromHelp = parseHelpLines(extractBukkitUsageLines(helpResponse, commandPath).join('\n'), commandPath);
         if (!hasRealUsage(fromHelp)) {
           mcResponse = await this.fetchPaginatedCommand(`minecraft:help ${commandPath}`);
         }

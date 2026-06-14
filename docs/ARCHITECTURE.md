@@ -113,6 +113,7 @@ graph TD
         commandSuggestions[commandSuggestions.ts]
         commandTreeCache[commandTreeCache.ts]
         helpTextParsing[helpTextParsing.ts]
+        bukkitHelpParsing[bukkitHelpParsing.ts]
     end
 
     subgraph Connection["RCON connection"]
@@ -147,6 +148,7 @@ graph TD
     localCommandTree --> commandSuggestions
     localCommandTree --> commandTreeCache
     localCommandTree --> helpTextParsing
+    localCommandTree --> bukkitHelpParsing
     commandSuggestions -.-> localCommandTree
     commandTreeCache -.-> localCommandTree
     commandSuggestions --> helpTextParsing
@@ -190,11 +192,20 @@ This layer answers "what can the user type, and what does it mean" — built
 once per server, either from a server-side plugin or by crawling `/help`.
 
 ### `helpTextParsing.ts`
-Pure parsing of Minecraft `/help` output into a `Parameter` tree — vanilla
-Brigadier syntax (`<arg>`/`[arg]`) and Bukkit-style `Usage:`/`Aliases:` lines,
+Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat `/cmd
+<args>` blobs, as returned by `minecraft:help` and vanilla's plain `help`)
+into a `Parameter` tree, plus the root-listing parser (`parseHelpResponse`)
+and the one-time namespace-support probe (`isUnsupportedNamespaceError`),
 including the quirks documented in `docs/technical/` (concatenated help
 lines, hyphenated literals, namespace differences between `/help` and
 `minecraft:help`). Every export is a deterministic function — no IO.
+
+### `bukkitHelpParsing.ts`
+Pure parsing of Bukkit's hand-written `Description:`/`Usage:`/`Aliases:`
+`/help <command>` pages — a different grammar from `helpTextParsing.ts`'s
+flat Brigadier blobs, used only when `supportsMinecraftNamespace` (Paper/
+Spigot). No shape-sniffing needed: which grammar applies follows directly
+from `supportsMinecraftNamespace`, not from the response's content.
 
 ### `commandTreeCache.ts`
 On-disk persistence for the command tree, server-scoped and versioned, aged
@@ -205,8 +216,8 @@ Mirrors the pattern later reused by `historyStore.ts`.
 `LocalCommandTree` is the orchestrator for this layer: on `initialize()`
 it either loads a cached tree (`commandTreeCache.ts`) or crawls `/help`
 recursively (root commands, then subcommands/arguments), using
-`helpTextParsing.ts` to interpret each response. Produces the `CommandNode`
-tree that `commandSuggestions.ts` queries.
+`helpTextParsing.ts` and `bukkitHelpParsing.ts` to interpret each response.
+Produces the `CommandNode` tree that `commandSuggestions.ts` queries.
 
 ### `commandSuggestions.ts`
 Pure suggestion generation: given the `CommandNode` tree and the user's

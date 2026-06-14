@@ -46,7 +46,8 @@ minercon/
 │   ├── localCommandTree.ts     # /help-crawl orchestration, command tree
 │   ├── commandSuggestions.ts   # Pure suggestion generation from the tree
 │   ├── commandTreeCache.ts     # On-disk command tree cache
-│   ├── helpTextParsing.ts      # Pure /help text → Parameter tree parsing
+│   ├── helpTextParsing.ts      # Pure Brigadier /help text → Parameter tree parsing
+│   ├── bukkitHelpParsing.ts    # Pure Bukkit Description:/Usage:/Aliases: page parsing
 │   ├── completionEngine.ts     # Pure tab-completion state machine
 │   ├── completionsBackend.ts   # Plugin-mode vs local-mode completions seam
 │   ├── argumentHint.ts         # Argument-hint formatting

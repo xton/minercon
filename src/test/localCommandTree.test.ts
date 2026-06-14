@@ -496,9 +496,10 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
   suite('Bukkit "Usage:" line with a literal "/" inside brackets (e.g. "[home/away]")', () => {
     // Plugin-added commands' Usage lines are hand-written and inconsistent -
     // a "/" can appear inside an optional-argument bracket, not just as a
-    // separator between concatenated entries. The "---" banner line (caught
-    // by looksLikeBukkitHelpPage) routes this through extractBukkitUsageLines,
-    // which extracts the Usage line verbatim instead of re-splitting on "/".
+    // separator between concatenated entries. Since `minecraft:help warp`
+    // here is just the generic `[<args>]` placeholder with no real usage,
+    // mergeHelpSources falls back to extractBukkitUsageLines, which extracts
+    // the Bukkit "Usage:" line verbatim instead of re-splitting on "/".
     const WARP_HELP =
       '§e--------- §fHelp: /warp §e-------------------------\n'
       + '§6Description: §fTeleport to a warp\n'
