@@ -837,6 +837,8 @@ access control doesn't even apply).
   and remaining `RconTabComplete` comments for the new
   `paper-plugin`/`spigot-plugin`/`fabric-mod` naming.
 
+All items complete — section closed.
+
 ## 13. Progress-bar/log interleaving regression from the consola migration
 
 Adopting consola directly (dropping `TerminalWriter`/`createCliLogger`)
@@ -848,10 +850,19 @@ reconnect/error message) is printed to the console while that redraw is
 in-progress and `--log-file` is *not* given, the two interleave and can
 visually corrupt the line.
 
-- [ ] Decide on a fix: e.g. have `rconSession.ts` pause/clear the progress bar
-  around points where logging might occur, or have the CLI default to
-  `--log-file` style buffering when a progress bar is active, or accept this
-  as a `--log-level debug`-only cosmetic issue and document it.
+- [x] Fixed (`fd1bceb`, `6f94d3b`): the hand-rolled `\r\x1b[K...` bar is gone —
+  `rconSession.ts`'s `initializeCommands` now uses `@clack/prompts`'s
+  `progress()`. `LocalCommandTree`/`CommandTreeCache` no longer call
+  `logger.info` for per-step narration; they call a `report()`/`onMessage`
+  callback that either updates the progress bar's message (console mode) or
+  logs to the file (`--log-file` mode), so the bar's own redraws can't
+  collide with that narration. The cache-hit path skips the progress bar
+  entirely (just a one-line "Commands loaded from cache!").
+- Residual, narrower risk: other consola log calls (e.g. a `warn`/`debug` from
+  `--log-level debug`, or a reconnect message) printed *during* the bar's
+  active window can still interleave with its redraw — same as any spinner
+  library. Accepted as a `--log-level debug`-only cosmetic edge case; not
+  worth its own item unless it proves disruptive in practice.
 - Not a regression when `--log-file`/`MCRCON_LOG_FILE` is used — log output
   and progress-bar output are on separate streams in that case.
 
