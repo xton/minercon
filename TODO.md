@@ -837,6 +837,24 @@ access control doesn't even apply).
   and remaining `RconTabComplete` comments for the new
   `paper-plugin`/`spigot-plugin`/`fabric-mod` naming.
 
+## 13. Progress-bar/log interleaving regression from the consola migration
+
+Adopting consola directly (dropping `TerminalWriter`/`createCliLogger`)
+removed the redraw-coordination that previously kept log lines from
+corrupting an in-progress status line. `rconSession.ts`'s command-tree-loading
+progress bar redraws in place via `\r\x1b[K...` through `sessionHost.write`;
+if a consola log line (e.g. a `debug`/`warn` from `--log-level debug`, or any
+reconnect/error message) is printed to the console while that redraw is
+in-progress and `--log-file` is *not* given, the two interleave and can
+visually corrupt the line.
+
+- [ ] Decide on a fix: e.g. have `rconSession.ts` pause/clear the progress bar
+  around points where logging might occur, or have the CLI default to
+  `--log-file` style buffering when a progress bar is active, or accept this
+  as a `--log-level debug`-only cosmetic issue and document it.
+- Not a regression when `--log-file`/`MCRCON_LOG_FILE` is used — log output
+  and progress-bar output are on separate streams in that case.
+
 ## How to record a live RCON fixture
 
 ```

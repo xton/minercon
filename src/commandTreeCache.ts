@@ -6,7 +6,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Logger } from './logger';
+import type { ConsolaInstance } from 'consola';
 import { CommandNode } from './localCommandTree';
 
 interface CommandCache {
@@ -26,7 +26,7 @@ export class CommandTreeCache {
     cacheDir: string,
     serverHost: string,
     serverPort: number,
-    private logger: Logger
+    private logger: ConsolaInstance
   ) {
     this.serverIdentifier = `${serverHost}:${serverPort}`;
     this.cacheDir = cacheDir;

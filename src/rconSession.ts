@@ -18,8 +18,9 @@ import {
 import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
 import { LineEditor } from './lineEditor';
 import { SuggestionDisplay } from './suggestionDisplay';
+import type { ConsolaInstance } from 'consola';
 import { ConnectionManager, ControllerFactory } from './connectionManager';
-import { Logger, errorMessage } from './logger';
+import { errorMessage } from './logger';
 import { HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historySearch';
 import { HistoryStore } from './historyStore';
 import * as ansi from './ansi';
@@ -75,7 +76,7 @@ export class RconSession {
     host: string,
     port: number,
     password: string,
-    logger: Logger,
+    logger: ConsolaInstance,
     private readonly sessionHost: RconSessionHost,
     controllerFactory?: ControllerFactory
   ) {

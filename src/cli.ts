@@ -2,15 +2,15 @@
 // src/cli.ts — standalone CLI entry point for the Minercon terminal.
 // Compiles to out/cli.js; the build script copies it to out/minercon.
 
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
 import { parseArgs } from 'util';
+import { createConsola } from 'consola';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize, resolveLogLevel } from './cliConfig';
-import { createTerminalWriter, createCliLogger } from './terminalOutput';
-import * as ansi from './ansi';
 
 // ── Config file ──────────────────────────────────────────────────────────────
 
@@ -95,8 +95,8 @@ async function main(): Promise<void> {
       'Options:',
       '  -p, --password <pw>   RCON password (also: MCRCON_PASSWORD env var)',
       '  --save                Save host/port/history-size to ~/.config/minercon/config.json',
-      '  --log-file <path>     Append log output to a file instead of stderr',
-      '  --log-level <level>   One of: debug, info, warning, error (default: info)',
+      '  --log-file <path>     Write log output to a file instead of the console',
+      '  --log-level <level>   consola log level, e.g. debug, info, warn, error (default: info)',
       '  --history-size <n>    Number of commands to remember in history (default: 100)',
       '  --no-plugin           Skip the server-side tab-complete plugin probe (manual testing only;',
       '                        not persisted to config)',
@@ -118,8 +118,14 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const terminal = createTerminalWriter((text) => process.stdout.write(text));
-  const logger = createCliLogger(terminal, (values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE'], logLevelResolution.logLevel);
+  const logFilePath = (values['log-file'] as string | undefined) ?? process.env['MCRCON_LOG_FILE'];
+  const logStream = logFilePath
+    ? (fs.createWriteStream(logFilePath, { flags: 'a' }) as unknown as NodeJS.WriteStream)
+    : undefined;
+  const logger = createConsola({
+    level: logLevelResolution.level,
+    ...(logStream ? { stdout: logStream, stderr: logStream } : {}),
+  });
   const savedConfig = readConfig(CONFIG_FILE);
 
   // Resolve host
@@ -170,18 +176,18 @@ async function main(): Promise<void> {
 
   if (values.save) {
     writeConfig(CONFIG_FILE, { host, port, historySize });
-    process.stderr.write(`${ansi.cyan('INFO')} Saved ${host}:${port} (history size ${historySize}) to ${CONFIG_FILE}\n`);
+    logger.info(`Saved ${host}:${port} (history size ${historySize}) to ${CONFIG_FILE}`);
   }
 
   // ── Establish connection ──────────────────────────────────────────────────
 
   const controller = new RconController(host, port, password, logger);
-  process.stderr.write(`${ansi.cyan('INFO')} Connecting to ${host}:${port}...\n`);
+  logger.info(`Connecting to ${host}:${port}...`);
 
   try {
     await controller.connect();
   } catch (err) {
-    process.stderr.write(`${ansi.red('ERROR')} Failed to connect: ${err}\n`);
+    logger.error(`Failed to connect: ${err}`);
     process.exit(1);
   }
 
@@ -193,7 +199,7 @@ async function main(): Promise<void> {
   const cacheDir = CONFIG_DIR;
 
   const sessionHost: RconSessionHost = {
-    write: (text) => terminal.write(text),
+    write: (text) => process.stdout.write(text),
     close: (code) => {
       teardown();
       process.exit(code);
@@ -246,6 +252,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  process.stderr.write(`${ansi.red('ERROR')} ${err}\n`);
+  process.stderr.write(`Error: ${err}\n`);
   process.exit(1);
 });

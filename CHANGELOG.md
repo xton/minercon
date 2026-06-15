@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🔧 Changed
+- Logging now goes directly through [consola](https://github.com/unjs/consola)
+  instead of a custom `Logger`/`TerminalWriter` layer — output (CLI and VS
+  Code extension) is now formatted by consola's default reporters.
+- `--log-level`/`MCRCON_LOG_LEVEL` now accept any consola log level (e.g.
+  `warn`, `log`, `trace`, `verbose`) instead of the old `debug|info|warning|error`
+  set — note `warning` is now spelled `warn`.
+- `--log-file`/`MCRCON_LOG_FILE` are reimplemented on top of consola's
+  `stdout`/`stderr` options, writing to the given file instead of the console.
+- The extension and CLI are now bundled with esbuild (`dist/extension.js`,
+  `dist/minercon.js`) for packaging, so runtime dependencies like consola
+  ship in the VSIX without including `node_modules`.
+
+### ⚠️ Known issue
+- When `--log-file` is not used, log lines printed during an in-progress
+  command (e.g. the local-mode command-tree-loading progress bar) can
+  interleave/corrupt the progress bar's in-place redraw — see TODO.md.
+
+---
+
 ## [2.2.0] - 2025-10-03
 
 ### 🐛 Fixed

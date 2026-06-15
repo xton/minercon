@@ -12,8 +12,9 @@
 // the live controller through this class, and is notified via `onReconnected`
 // when it should reload the command tree.
 
+import type { ConsolaInstance } from 'consola';
 import { RconController } from './rconClient';
-import { Logger, errorMessage } from './logger';
+import { errorMessage } from './logger';
 import * as ansi from './ansi';
 
 export interface ConnectionManagerHost {
@@ -23,7 +24,7 @@ export interface ConnectionManagerHost {
 }
 
 /** Builds the `RconController` used for a (re)connection attempt — overridable in tests so `attemptReconnect()` doesn't open a real socket. */
-export type ControllerFactory = (host: string, port: number, password: string, logger: Logger) => RconController;
+export type ControllerFactory = (host: string, port: number, password: string, logger: ConsolaInstance) => RconController;
 
 const defaultControllerFactory: ControllerFactory = (host, port, password, logger) =>
   new RconController(host, port, password, logger);
@@ -41,7 +42,7 @@ export class ConnectionManager {
     private readonly serverHost: string,
     private readonly serverPort: number,
     private readonly password: string,
-    private readonly logger: Logger,
+    private readonly logger: ConsolaInstance,
     controller: RconController,
     private readonly host: ConnectionManagerHost,
     private readonly controllerFactory: ControllerFactory = defaultControllerFactory,

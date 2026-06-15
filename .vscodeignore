@@ -17,12 +17,15 @@ src/**
 **/*.map
 !**/*.d.ts
 
-# Dependencies (bundled separately)
+# Dev/test build output (superseded by dist/ for packaging)
+out/**
+
+# Dependencies (bundled into dist/ by esbuild)
 node_modules/**
 
 # Build configurations
 tsconfig.json
-webpack.config.js
+esbuild.js
 
 # Documentation
 docs/**

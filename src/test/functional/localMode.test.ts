@@ -8,11 +8,11 @@ import * as fs from 'fs';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
 import { LocalCommandTree } from '../../localCommandTree';
-import { Logger } from '../../logger';
+import { silentLogger } from '../support/testLogger';
 import { nonPluginVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
+const silent = silentLogger();
 
 // Commands present on every Minecraft server regardless of variant.
 const UNIVERSAL_COMMANDS = ['list', 'help', 'gamemode', 'time', 'weather'];

@@ -20,15 +20,11 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../logger';
 import { RconController } from '../rconClient';
 import { RconSession, RconSessionHost } from '../rconSession';
 import { ControllerFactory } from '../connectionManager';
 import { FakeController, PLUGIN_PROBE_RESPONSE, SendImpl, defaultSend, waitUntil } from './support/fakeController';
-
-function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
-}
+import { silentLogger } from './support/testLogger';
 
 interface Harness {
     session: RconSession;

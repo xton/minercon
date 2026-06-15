@@ -2,12 +2,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../logger';
+import { silentLogger } from './support/testLogger';
 import { HistoryStore } from '../historyStore';
-
-function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
-}
 
 suite('HistoryStore', () => {
     let cacheDir: string;

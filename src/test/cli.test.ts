@@ -11,8 +11,8 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { LogLevels } from 'consola';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, parseHistorySize, resolveHistorySize, resolveLogLevel } from '../cliConfig';
-import { createTerminalWriter, createCliLogger } from '../terminalOutput';
 
 suite('CLI config', () => {
     let tmpDir: string;
@@ -178,138 +178,19 @@ suite('CLI resolveHistorySize', () => {
 
 suite('CLI resolveLogLevel', () => {
     test('prefers the --log-level flag over the env var', () => {
-        assert.deepStrictEqual(resolveLogLevel('debug', 'warning'), { logLevel: 'debug' });
+        assert.deepStrictEqual(resolveLogLevel('debug', 'warn'), { level: LogLevels.debug });
     });
 
     test('falls back to the env var when no flag is given', () => {
-        assert.deepStrictEqual(resolveLogLevel(undefined, 'error'), { logLevel: 'error' });
+        assert.deepStrictEqual(resolveLogLevel(undefined, 'error'), { level: LogLevels.error });
     });
 
     test('defaults to "info" when neither is set', () => {
-        assert.deepStrictEqual(resolveLogLevel(undefined, undefined), { logLevel: 'info' });
+        assert.deepStrictEqual(resolveLogLevel(undefined, undefined), { level: LogLevels.info });
     });
 
     test('returns an error for an invalid value', () => {
-        assert.deepStrictEqual(
-            resolveLogLevel('verbose', undefined),
-            { error: 'invalid log level: verbose (expected one of: debug, info, warning, error)' },
-        );
-    });
-});
-
-suite('terminal output coordination', () => {
-    let written: string[];
-    let terminal: ReturnType<typeof createTerminalWriter>;
-
-    setup(() => {
-        written = [];
-        terminal = createTerminalWriter((text) => written.push(text));
-    });
-
-    test('a log line is written as-is when there is no in-progress redraw', () => {
-        terminal.writeLogLine('INFO hello\n');
-        assert.deepStrictEqual(written, ['INFO hello\n']);
-    });
-
-    test('a log line clears and redraws an in-progress status line (progress bar) beneath it', () => {
-        // Simulates rconSession's progress bar: '\r\x1b[K' followed by the bar text, with no trailing newline.
-        terminal.write('\r\x1b[K');
-        terminal.write('[####] 50%');
-
-        terminal.writeLogLine('INFO loading minecraft:advancement\n');
-
-        assert.deepStrictEqual(written, [
-            '\r\x1b[K',
-            '[####] 50%',
-            '\r\x1b[KINFO loading minecraft:advancement\n\x1b[K[####] 50%',
-        ]);
-    });
-
-    test('a completed line (ending in \\n) is not redrawn by a later log line', () => {
-        terminal.write('Connected to host:port\r\n\r\n');
-
-        terminal.writeLogLine('INFO ready\n');
-
-        assert.deepStrictEqual(written, [
-            'Connected to host:port\r\n\r\n',
-            'INFO ready\n',
-        ]);
-    });
-});
-
-suite('createCliLogger', () => {
-    test('writes colored, level-prefixed lines through the terminal writer by default', () => {
-        const written: string[] = [];
-        const terminal = createTerminalWriter((text) => written.push(text));
-        const logger = createCliLogger(terminal);
-
-        logger.info('hello');
-
-        assert.strictEqual(written.length, 1);
-        assert.match(written[0], /INFO/);
-        assert.match(written[0], /hello\n$/);
-    });
-
-    test('writes plain lines to a log file instead, when given', async () => {
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-cli-logfile-test-'));
-        const logFile = path.join(tmpDir, 'cli.log');
-        try {
-            const written: string[] = [];
-            const terminal = createTerminalWriter((text) => written.push(text));
-            const logger = createCliLogger(terminal, logFile);
-
-            logger.warning('careful');
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
-            assert.deepStrictEqual(written, []);
-            assert.strictEqual(fs.readFileSync(logFile, 'utf8'), 'WARN careful\n');
-        } finally {
-            fs.rmSync(tmpDir, { recursive: true, force: true });
-        }
-    });
-
-    test('debug messages are dropped at the default ("info") log level', () => {
-        const written: string[] = [];
-        const terminal = createTerminalWriter((text) => written.push(text));
-        const logger = createCliLogger(terminal);
-
-        logger.debug('verbose detail');
-
-        assert.deepStrictEqual(written, []);
-    });
-
-    test('debug messages are written, with a millisecond-resolution timestamp, at the "debug" log level', () => {
-        const written: string[] = [];
-        const terminal = createTerminalWriter((text) => written.push(text));
-        const logger = createCliLogger(terminal, undefined, 'debug');
-
-        logger.debug('verbose detail');
-
-        assert.strictEqual(written.length, 1);
-        assert.match(written[0], /\d{2}:\d{2}:\d{2}\.\d{3} .*DEBUG/);
-        assert.match(written[0], /verbose detail\n$/);
-    });
-
-    test('info messages are still written at the "debug" log level', () => {
-        const written: string[] = [];
-        const terminal = createTerminalWriter((text) => written.push(text));
-        const logger = createCliLogger(terminal, undefined, 'debug');
-
-        logger.info('hello');
-
-        assert.strictEqual(written.length, 1);
-        assert.match(written[0], /INFO/);
-    });
-
-    test('info messages are dropped at the "warning" log level', () => {
-        const written: string[] = [];
-        const terminal = createTerminalWriter((text) => written.push(text));
-        const logger = createCliLogger(terminal, undefined, 'warning');
-
-        logger.info('hello');
-        logger.warning('careful');
-
-        assert.strictEqual(written.length, 1);
-        assert.match(written[0], /WARN/);
+        const result = resolveLogLevel('bogus', undefined);
+        assert.ok('error' in result && result.error.includes('invalid log level: bogus'));
     });
 });

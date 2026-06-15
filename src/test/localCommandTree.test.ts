@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../logger';
+import { silentLogger } from './support/testLogger';
 import { LocalCommandTree, CommandNode } from '../localCommandTree';
 import { ParameterType, Parameter, isGenericArgsPlaceholder } from '../helpTextParsing';
 
@@ -39,10 +39,6 @@ const GENERIC_VANILLA_HELP = (cmd: string) =>
   `§e--------- §fHelp: /${cmd} §e-----------------------\n`
   + '§6Description: §fA Mojang provided command.\n'
   + `§f§6Usage: §f${cmd}`;
-
-function silentLogger(): Logger {
-  return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
-}
 
 /**
  * Build a `sendCommand` fake from an exact-match response table, recording

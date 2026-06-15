@@ -5,11 +5,11 @@
 import * as assert from 'assert';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
-import { Logger } from '../../logger';
+import { silentLogger } from '../support/testLogger';
 import { variants, PASSWORD } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
+const silent = silentLogger();
 
 for (const variant of variants) {
   suite(`[${variant.name}] connection`, function () {

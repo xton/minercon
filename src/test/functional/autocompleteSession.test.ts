@@ -19,11 +19,11 @@ import * as path from 'path';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
 import { RconSession, RconSessionHost } from '../../rconSession';
-import { Logger } from '../../logger';
+import { silentLogger } from '../support/testLogger';
 import { addonVariants, PASSWORD } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
+const silent = silentLogger();
 
 // Game modes available in every vanilla-compatible server (1.21.4).
 const GAME_MODES = ['survival', 'creative', 'adventure', 'spectator'];

@@ -2,14 +2,10 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../logger';
+import { silentLogger } from './support/testLogger';
 import { CommandTreeCache } from '../commandTreeCache';
 import { CommandNode } from '../localCommandTree';
 import { ParameterType } from '../helpTextParsing';
-
-function silentLogger(): Logger {
-    return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
-}
 
 function sampleCommands(): Map<string, CommandNode> {
     return new Map([

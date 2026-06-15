@@ -1,25 +1,15 @@
 // src/extension.ts
 import * as vscode from 'vscode';
-import { Logger, errorMessage } from './logger';
+import { createConsola, type ConsolaInstance } from 'consola';
+import { errorMessage } from './logger';
 import * as path from 'path';
 
-/** Wraps a VS Code output channel as a `Logger` — the one place that bridges the two. */
-function createOutputChannelLogger(channel: vscode.OutputChannel): Logger {
-  return {
-    error: (message) => channel.appendLine(`[error] ${message}`),
-    warning: (message) => channel.appendLine(`[warning] ${message}`),
-    info: (message) => channel.appendLine(message),
-    debug: (message) => channel.appendLine(`[debug] ${message}`),
-  };
-}
-
 export function activate(context: vscode.ExtensionContext) {
-  const output = vscode.window.createOutputChannel('Minercon');
-  const logger = createOutputChannelLogger(output);
+  const logger = createConsola({});
   let currentConnection: { host: string; port: number; password: string } | null = null;
 
   migratePasswordToSecureStorage(context).catch(err => {
-    logger.warning(`Password migration warning: ${err}`);
+    logger.warn(`Password migration warning: ${err}`);
   });
 
   // Register the terminal profile provider
@@ -66,7 +56,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   context.subscriptions.push(
-    connectCommand, connectNewCommand, saveDefaultsCommand, output
+    connectCommand, connectNewCommand, saveDefaultsCommand
   );
 }
 
@@ -120,7 +110,7 @@ async function createRconTerminalProfile(
     password = passwordInput;
   }
 
-  const minerconPath = context.asAbsolutePath(path.join('out', 'minercon'));
+  const minerconPath = context.asAbsolutePath(path.join('dist', 'minercon.js'));
 
   const profile = new vscode.TerminalProfile({
     name: `RCON: ${host}:${port}`,
@@ -145,7 +135,7 @@ async function createRconTerminalProfile(
 }
 
 async function connectToRcon(
-  logger: Logger,
+  logger: ConsolaInstance,
   context: vscode.ExtensionContext,
   useDefaults: boolean = true
 ): Promise<{ host: string; port: number; password: string } | undefined> {

@@ -1,7 +1,7 @@
 // src/rconProtocol.ts
 import * as net from 'net';
 import { EventEmitter } from 'events';
-import { Logger } from './logger';
+import type { ConsolaInstance } from 'consola';
 
 // RCON packet types
 enum PacketType {
@@ -37,7 +37,7 @@ export class RconProtocol extends EventEmitter {
   private host: string;
   private port: number;
   private password: string;
-  private logger: Logger;
+  private logger: ConsolaInstance;
   private readonly createSocket: () => SocketLike;
 
   private authenticated: boolean = false;
@@ -61,7 +61,7 @@ export class RconProtocol extends EventEmitter {
     host: string,
     port: number,
     password: string,
-    logger: Logger,
+    logger: ConsolaInstance,
     // Defaults to a real socket; tests substitute a `SocketLike` fake here
     // (record/replay harness — see src/test/rconProtocol.test.ts) so the
     // wire protocol can be exercised without a live server.
@@ -115,7 +115,7 @@ export class RconProtocol extends EventEmitter {
       
       // Handle timeout (shouldn't happen now that we removed setTimeout)
       this.socket.on('timeout', () => {
-        this.logger.warning('Socket timeout — calling disconnect()');
+        this.logger.warn('Socket timeout — calling disconnect()');
         const error = new Error('Connection timeout');
         this.emit('error', error);
         this.disconnect();
@@ -328,7 +328,7 @@ export class RconProtocol extends EventEmitter {
         }
       }
       
-      this.logger.warning(`Received packet with unknown request ID: ${packet.id}`);
+      this.logger.warn(`Received packet with unknown request ID: ${packet.id}`);
       return;
     }
     

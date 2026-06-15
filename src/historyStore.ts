@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Logger } from './logger';
+import type { ConsolaInstance } from 'consola';
 
 interface HistoryFile {
   version: number;
@@ -20,7 +20,7 @@ export class HistoryStore {
   private readonly file: string;
 
   /** `maxEntries` mirrors LineEditor's in-memory cap — no point persisting more than it'll ever hold. */
-  constructor(cacheDir: string, serverHost: string, serverPort: number, private logger: Logger, private readonly maxEntries: number = 100) {
+  constructor(cacheDir: string, serverHost: string, serverPort: number, private logger: ConsolaInstance, private readonly maxEntries: number = 100) {
     this.file = path.join(cacheDir, `${serverHost}_${serverPort}_history.json`);
   }
 

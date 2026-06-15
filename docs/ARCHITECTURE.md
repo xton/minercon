@@ -21,6 +21,8 @@ The codebase is organized in layers, bottom-up:
 
 Two small **shared utilities** (`ansi.ts`, `logger.ts`) are used throughout
 and are omitted from the diagram below for clarity — see their own section.
+Logging itself goes directly through [consola](https://github.com/unjs/consola)'s
+`ConsolaInstance` — there is no wrapper interface.
 
 ## Terminology
 
@@ -160,10 +162,10 @@ a small, intentional cluster of mutually-referencing modules around the
 command-tree data structure).
 
 Note: `extension.ts` has no import-level dependency on `rconSession.ts` or
-any module below it — at runtime it runs the built `out/minercon` binary
-(i.e. `cli.ts`'s compiled output) as the terminal's process, via
-`shellPath`/`shellArgs`. That process-spawn relationship isn't a module
-dependency, so it isn't shown as an edge above.
+any module below it — at runtime it runs the bundled `dist/minercon.js`
+(esbuild's bundle of `cli.ts` and its dependencies) as the terminal's
+process, via `shellPath`/`shellArgs`. That process-spawn relationship isn't a
+module dependency, so it isn't shown as an edge above.
 
 ## RCON connection
 
@@ -304,8 +306,8 @@ the live connection, `LineEditor`/`SuggestionDisplay` for rendering,
 VS Code extension entry point (`activate`): registers commands and the
 terminal profile provider, manages secrets (RCON password migration to
 secure storage), and gathers connection details (saved settings/secrets or
-prompts). Builds a `vscode.TerminalProfile` that runs the built
-`out/minercon` CLI directly as the terminal's process — `shellPath:
+prompts). Builds a `vscode.TerminalProfile` that runs the bundled
+`dist/minercon.js` directly as the terminal's process — `shellPath:
 process.execPath` (the Node runtime bundled with VS Code, run as plain node
 via `ELECTRON_RUN_AS_NODE=1`) with `shellArgs: [minerconPath, host, port]`
 and `env: { MCRCON_PASSWORD, MCRCON_HISTORY_SIZE }`. VS Code's own terminal
@@ -313,13 +315,15 @@ backend provides the pty; the extension has no pty code or `RconSession`
 dependency of its own.
 
 ### `cli.ts`
-Standalone CLI entry point (compiles to `out/cli.js`, packaged as
-`out/minercon`). Parses argv, resolves host/port/password/history-size
-(via `cliConfig.ts`), establishes the `RconController` connection, builds a
-`RconSessionHost` over `process.stdout`/raw-mode `stdin`, and wires up
-signal handling for clean teardown. The sole `RconSessionHost`
-implementation — run directly for the terminal CLI, or as the VS Code
-extension's integrated-terminal process (`extension.ts`).
+Standalone CLI entry point. `tsc` compiles it to `out/cli.js`, packaged as
+`out/minercon` for `npm`; esbuild (`esbuild.js`) separately bundles it, with
+all dependencies (e.g. consola), to `dist/minercon.js` for the VS Code
+extension's VSIX. Parses argv, resolves host/port/password/history-size (via
+`cliConfig.ts`), establishes the `RconController` connection, builds a
+`RconSessionHost` over `process.stdout`/raw-mode `stdin`, and wires up signal
+handling for clean teardown. The sole `RconSessionHost` implementation — run
+directly for the terminal CLI, or as the VS Code extension's
+integrated-terminal process (`extension.ts`).
 
 ### `cliConfig.ts`
 Pure helpers for the CLI's config resolution — the saved
@@ -337,10 +341,12 @@ Named ANSI SGR escape codes and `style`/color helpers, centralizing the raw
 Minecraft `§`-color-code alphabet to/from ANSI.
 
 ### `logger.ts`
-A small, level-aware `Logger` interface (`error`/`warning`/`info`) that
-decouples everything else from `vscode.OutputChannel`. `createOutputChannelLogger`
-is the only VS-Code-specific piece; the CLI and tests supply their own
-implementations (stderr/file, or a silent no-op).
+Just `errorMessage(err: unknown): string`, for rendering a caught value as a
+display string. Logging itself is consola's `ConsolaInstance`, passed
+directly to every class that needs it (`import type { ConsolaInstance } from
+'consola'`) — `cli.ts` and `extension.ts` each construct one with
+`createConsola(...)`, and tests use the `silentLogger`/`recordingLogger`
+helpers in `src/test/support/testLogger.ts`.
 
 ## Where to start reading
 

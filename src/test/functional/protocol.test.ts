@@ -6,11 +6,11 @@
 import * as assert from 'assert';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
-import { Logger } from '../../logger';
+import { silentLogger } from '../support/testLogger';
 import { nonPluginVariants, PASSWORD } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
+const silent = silentLogger();
 
 // The plugin variant changes 'help' output so large-response and content
 // assertions don't hold there; protocol tests run against non-plugin variants.

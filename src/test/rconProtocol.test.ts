@@ -14,17 +14,13 @@
 // generated src/test/fixtures/rcon/<name>.ts, then add it to FIXTURES below.
 
 import * as assert from 'assert';
-import { Logger } from '../logger';
 import { RconProtocol } from '../rconProtocol';
 import { FakeSocket, RconFixture, RconFrame } from './support/fakeSocket';
 import { RconPacketType, encodeRconPacket, splitIntoChunks } from './support/rconWireFormat';
 import { RCON_CONVERSATION_SCRIPT } from './fixtures/rcon/script';
 import * as synthetic from './fixtures/rcon/synthetic';
 import * as xton from './fixtures/rcon/xton';
-
-function silentLogger(): Logger {
-  return { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
-}
+import { silentLogger, recordingLogger } from './support/testLogger';
 
 interface NamedFixture {
   name: string;
@@ -121,8 +117,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
 
   test('a packet with an implausibly small declared size is logged and skipped without disrupting the packets around it', async () => {
     const password = 'fixture-password';
-    const errors: string[] = [];
-    const logger: Logger = { info: () => {}, warning: () => {}, error: (msg) => errors.push(msg), debug: () => {} };
+    const { logger, calls } = recordingLogger();
 
     // Declares a 1-byte packet (size + 4 = 5 bytes total) — too small for
     // parsePacket's 14-byte minimum, so handleData's catch block fires.
@@ -143,7 +138,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
     await protocol.connect();
     const response = await protocol.send('list');
     assert.strictEqual(response, 'ok', 'the real response is still parsed correctly after the malformed packet');
-    assert.ok(errors.some(e => e.includes('Packet too small')), 'the malformed packet is logged as an error');
+    assert.ok(calls.error.some(([msg]) => String(msg).includes('Packet too small')), 'the malformed packet is logged as an error');
 
     socket.assertSatisfied();
     await protocol.disconnect();
@@ -151,8 +146,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
 
   test('an unsolicited response packet with an unknown request ID is logged and ignored', async () => {
     const password = 'fixture-password';
-    const warnings: string[] = [];
-    const logger: Logger = { info: () => {}, warning: (msg) => warnings.push(msg), error: () => {}, debug: () => {} };
+    const { logger, calls } = recordingLogger();
 
     const socket = new FakeSocket([
       ...authFrames(password),
@@ -171,7 +165,7 @@ suite('rconProtocol: adversarial / malformed packets', () => {
     await protocol.connect();
     const response = await protocol.send('list');
     assert.strictEqual(response, 'ok', 'the real response is still delivered despite the stray packet');
-    assert.ok(warnings.some(w => w.includes('999')), 'the stray packet is logged with its unknown request ID');
+    assert.ok(calls.warn.some(([msg]) => String(msg).includes('999')), 'the stray packet is logged with its unknown request ID');
 
     socket.assertSatisfied();
     await protocol.disconnect();

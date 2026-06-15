@@ -9,11 +9,11 @@ import * as assert from 'assert';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
 import { RconCompletionsBackend } from '../../completionsBackend';
-import { Logger } from '../../logger';
+import { silentLogger } from '../support/testLogger';
 import { addonVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
 
-const silent: Logger = { info: () => {}, warning: () => {}, error: () => {}, debug: () => {} };
+const silent = silentLogger();
 
 // Game modes available in every vanilla-compatible server (1.21.4).
 const GAME_MODES = ['survival', 'creative', 'adventure', 'spectator'];

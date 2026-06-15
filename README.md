@@ -115,8 +115,8 @@ minercon [host] [port] [options]
 Options:
   -p, --password <pw>   RCON password
   --save                Save host/port/history-size to ~/.config/minercon/config.json
-  --log-file <path>     Append log output to a file instead of stderr
-  --log-level <level>   One of: debug, info, warning, error (default: info)
+  --log-file <path>     Write log output to a file instead of the console
+  --log-level <level>   consola log level, e.g. debug, info, warn, error (default: info)
   --history-size <n>    Number of commands to remember in history (default: 100)
   --no-plugin           Skip the server-side tab-complete plugin probe (manual
                          testing only; not persisted to config)
@@ -142,10 +142,12 @@ arguments.
 Ctrl+Y yanks it back). The kill ring is not connected to the system clipboard.
 Ctrl+X / Ctrl+C-with-selection do the same within the session.
 
-**Log output:** diagnostic messages go to stderr by default, colored by level.
-Use `--log-file` to redirect them to a file (useful when stderr would
-interfere with piped output). Use `--log-level debug` for verbose per-command
-RCON send/receive logging.
+**Log output:** diagnostic messages are printed via
+[consola](https://github.com/unjs/consola), colored and leveled by default.
+Use `--log-file` to redirect that output to a file instead (useful when
+console output would interfere with piped output or the interactive
+session). Use `--log-level debug` for verbose per-command RCON send/receive
+logging.
 
 **History size:** `--history-size` controls how many commands are remembered
 for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `/history` command, and (with

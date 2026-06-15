@@ -20,7 +20,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Logger } from '../logger';
+import { createConsola } from 'consola';
 import { RconProtocol } from '../rconProtocol';
 import { RecordingSocket } from './support/recordingSocket';
 import { RconFrame, encodeFrames } from './support/fakeSocket';
@@ -45,15 +45,6 @@ function redactPassword(frames: readonly RconFrame[]): RconFrame[] {
     { direction: 'sent', data: encodeRconPacket(1, RconPacketType.AUTH, FIXTURE_PASSWORD_PLACEHOLDER) },
     ...rest,
   ];
-}
-
-function consoleLogger(): Logger {
-  return {
-    info: (message) => console.log(`[info] ${message}`),
-    warning: (message) => console.warn(`[warning] ${message}`),
-    error: (message) => console.error(`[error] ${message}`),
-    debug: (message) => console.debug(`[debug] ${message}`),
-  };
 }
 
 function renderFixtureModule(args: {
@@ -97,7 +88,7 @@ async function main(): Promise<void> {
   const port = Number(portArg);
   const name = fixtureName || 'recorded';
 
-  const logger = consoleLogger();
+  const logger = createConsola({});
   const socket = new RecordingSocket();
   const protocol = new RconProtocol(host, port, password, logger, () => socket);
 

@@ -16,13 +16,13 @@
     "Other"
   ],
   "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "bin": {
     "minercon": "./out/minercon"
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && cp out/cli.js out/minercon && chmod +x out/minercon",
+    "vscode:prepublish": "npm run compile && node esbuild.js --production",
+    "compile": "tsc -p ./ && node esbuild.js && cp out/cli.js out/minercon && chmod +x out/minercon",
     "watch": "tsc -w -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
@@ -42,6 +42,7 @@
     "@vscode/test-cli": "^0.0.11",
     "@vscode/test-electron": "^2.5.2",
     "@xterm/headless": "^6.0.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.34.0",
     "testcontainers": "^12.0.1",
     "typescript": "^5.9.2"
@@ -96,5 +97,8 @@
         }
       }
     }
+  },
+  "dependencies": {
+    "consola": "^3.4.2"
   }
 }

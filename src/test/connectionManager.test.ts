@@ -15,13 +15,9 @@
 // whole backoff sequence can be driven instantly.
 
 import * as assert from 'assert';
-import { Logger } from '../logger';
+import { silentLogger } from './support/testLogger';
 import { RconController } from '../rconClient';
 import { ConnectionManager, ConnectionManagerHost, ControllerFactory } from '../connectionManager';
-
-function silentLogger(): Logger {
-  return { error: () => undefined, warning: () => undefined, info: () => undefined, debug: () => undefined };
-}
 
 class FakeController {
   connectCalls = 0;

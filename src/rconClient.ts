@@ -1,13 +1,14 @@
 // src/rconClient.ts
+import type { ConsolaInstance } from 'consola';
 import { RconProtocol } from './rconProtocol';
-import { Logger, errorMessage } from './logger';
+import { errorMessage } from './logger';
 
 export class RconController {
   private host: string;
   private port: number;
   private password: string;
   private client: RconProtocol | null = null;
-  private logger: Logger;
+  private logger: ConsolaInstance;
 
   // Serializes every `send` through this controller — completions/usage
   // fetches and actual command execution all funnel through here (see
@@ -20,17 +21,17 @@ export class RconController {
   // guarantees at most one command is ever outstanding at a time.
   private sendQueue: Promise<unknown> = Promise.resolve();
 
-  private readonly createProtocol: (host: string, port: number, password: string, logger: Logger) => RconProtocol;
+  private readonly createProtocol: (host: string, port: number, password: string, logger: ConsolaInstance) => RconProtocol;
 
   constructor(
     host: string,
     port: number,
     password: string,
-    logger: Logger,
+    logger: ConsolaInstance,
     // Defaults to a real RconProtocol; tests substitute a fake here so the
     // queue-serialization/error-handling logic can be exercised without a
     // live server (mirrors RconProtocol's own `createSocket` seam).
-    createProtocol: (host: string, port: number, password: string, logger: Logger) => RconProtocol
+    createProtocol: (host: string, port: number, password: string, logger: ConsolaInstance) => RconProtocol
       = (h, p, pw, l) => new RconProtocol(h, p, pw, l),
   ) {
     this.host = host;
@@ -73,7 +74,7 @@ export class RconController {
       const elapsedMs = Date.now() - sentAt;
 
       if (typeof res !== 'string' && res !== undefined) {
-        this.logger.warning(`Received non-string response: ${JSON.stringify(res)}`);
+        this.logger.warn(`Received non-string response: ${JSON.stringify(res)}`);
       }
 
       // JSON.stringify(undefined) is undefined, not a string — fall back to

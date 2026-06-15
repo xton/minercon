@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogLevel, LOG_LEVELS, isLogLevel } from './logger';
+import { LogLevels, type LogType } from 'consola';
 
 export interface Config {
   host?: string;
@@ -97,17 +97,21 @@ export function resolveHistorySize(flagValue: string | undefined, envValue: stri
   return { historySize: 100 };
 }
 
-export type LogLevelResolution = { logLevel: LogLevel } | { error: string };
+export type LogLevelResolution = { level: number } | { error: string };
 
 /**
- * Resolves the log level from the --log-level flag or MCRCON_LOG_LEVEL env
- * var, in that order, falling back to "info" if neither is set. Returns
- * `{ error }` if a value was given but isn't one of LOG_LEVELS.
+ * Resolves the consola log level from the --log-level flag or
+ * MCRCON_LOG_LEVEL env var, in that order, falling back to "info" if neither
+ * is set. Returns `{ error }` if a value was given but isn't one of
+ * consola's LogTypes.
  */
 export function resolveLogLevel(flagValue: string | undefined, envValue: string | undefined): LogLevelResolution {
   const raw = flagValue || envValue;
   if (raw === undefined) {
-    return { logLevel: 'info' };
+    return { level: LogLevels.info };
   }
-  return isLogLevel(raw) ? { logLevel: raw } : { error: `invalid log level: ${raw} (expected one of: ${LOG_LEVELS.join(', ')})` };
+  if (raw in LogLevels) {
+    return { level: LogLevels[raw as LogType] };
+  }
+  return { error: `invalid log level: ${raw} (expected one of: ${Object.keys(LogLevels).join(', ')})` };
 }

@@ -12,9 +12,9 @@
 
 import * as assert from 'assert';
 import { EventEmitter } from 'events';
-import { Logger } from '../logger';
 import { RconController } from '../rconClient';
 import { RconProtocol } from '../rconProtocol';
+import { recordingLogger } from './support/testLogger';
 
 class FakeProtocol extends EventEmitter {
     connected = false;
@@ -41,15 +41,7 @@ class FakeProtocol extends EventEmitter {
 }
 
 function setup(sendImpl: (cmd: string) => Promise<string> = async (cmd) => `done:${cmd}`) {
-    const warnings: string[] = [];
-    const errors: string[] = [];
-    const debugLines: string[] = [];
-    const logger: Logger = {
-        info: () => {},
-        warning: (m: string) => warnings.push(m),
-        error: (m: string) => errors.push(m),
-        debug: (m: string) => debugLines.push(m),
-    };
+    const { logger, calls } = recordingLogger();
 
     let lastProtocol: FakeProtocol | undefined;
     const controller = new RconController('host', 25575, 'pw', logger, () => {
@@ -57,7 +49,7 @@ function setup(sendImpl: (cmd: string) => Promise<string> = async (cmd) => `done
         return lastProtocol as unknown as RconProtocol;
     });
 
-    return { controller, warnings, errors, debugLines, protocol: () => lastProtocol! };
+    return { controller, calls, protocol: () => lastProtocol! };
 }
 
 suite('RconController: connection lifecycle', () => {
@@ -76,12 +68,12 @@ suite('RconController: connection lifecycle', () => {
     });
 
     test('connect wires up an error handler that logs protocol errors', async () => {
-        const { controller, protocol, errors } = setup();
+        const { controller, protocol, calls } = setup();
         await controller.connect();
 
         protocol().emit('error', new Error('socket exploded'));
 
-        assert.ok(errors.some(m => m.includes('socket exploded')), `expected an error log mentioning the failure, got: ${JSON.stringify(errors)}`);
+        assert.ok(calls.error.some(([m]) => String(m).includes('socket exploded')), `expected an error log mentioning the failure, got: ${JSON.stringify(calls.error)}`);
     });
 
     test('a "close" event from the protocol clears the client, so isConnected goes false and sends are rejected', async () => {
@@ -140,14 +132,14 @@ suite('RconController: send', () => {
     });
 
     test('a rejected command is reported but does not wedge the queue for subsequent sends', async () => {
-        const { controller, errors } = setup(async (cmd) => {
+        const { controller, calls } = setup(async (cmd) => {
             if (cmd === 'boom') { throw new Error('kaboom'); }
             return `done:${cmd}`;
         });
         await controller.connect();
 
         await assert.rejects(controller.send('boom'), /kaboom/);
-        assert.ok(errors.some(m => m.includes('kaboom')), `expected an error log mentioning the failure, got: ${JSON.stringify(errors)}`);
+        assert.ok(calls.error.some(([m]) => String(m).includes('kaboom')), `expected an error log mentioning the failure, got: ${JSON.stringify(calls.error)}`);
 
         assert.strictEqual(await controller.send('after'), 'done:after');
     });
@@ -156,23 +148,23 @@ suite('RconController: send', () => {
         // RconProtocol.send is typed Promise<string>, but the defensive
         // non-string path used to evaluate JSON.stringify(undefined).length —
         // a TypeError. Drive it directly to pin the fallback down.
-        const { controller, warnings } = setup(async () => undefined as unknown as string);
+        const { controller, calls } = setup(async () => undefined as unknown as string);
         await controller.connect();
 
         assert.strictEqual(await controller.send('list'), '');
-        assert.strictEqual(warnings.length, 0, 'undefined is the "no response" shape, not a warning-worthy non-string');
+        assert.strictEqual(calls.warn.length, 0, 'undefined is the "no response" shape, not a warning-worthy non-string');
     });
 
     test('logs a debug line for the send and a debug line for the recv, with the elapsed time', async () => {
-        const { controller, debugLines } = setup(async (cmd) => `done:${cmd}`);
+        const { controller, calls } = setup(async (cmd) => `done:${cmd}`);
         await controller.connect();
 
         await controller.send('list');
 
-        assert.ok(debugLines.some(m => m === 'send: list'), `expected a "send: list" debug line, got: ${JSON.stringify(debugLines)}`);
+        assert.ok(calls.debug.some(([m]) => m === 'send: list'), `expected a "send: list" debug line, got: ${JSON.stringify(calls.debug)}`);
         assert.ok(
-            debugLines.some(m => /^recv \(\+\d+ms\): list -> \d+ chars$/.test(m)),
-            `expected a "recv (+Nms): list -> N chars" debug line, got: ${JSON.stringify(debugLines)}`,
+            calls.debug.some(([m]) => typeof m === 'string' && /^recv \(\+\d+ms\): list -> \d+ chars$/.test(m)),
+            `expected a "recv (+Nms): list -> N chars" debug line, got: ${JSON.stringify(calls.debug)}`,
         );
     });
 });

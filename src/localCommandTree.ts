@@ -10,7 +10,7 @@
 // store the results. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
 
 import * as path from 'path';
-import { Logger } from './logger';
+import type { ConsolaInstance } from 'consola';
 import { stripColors } from './ansi';
 import {
   ParameterType,
@@ -69,7 +69,7 @@ export class LocalCommandTree {
 
   constructor(
     private sendCommand: (command: string) => Promise<string>,
-    private logger: Logger,
+    private logger: ConsolaInstance,
     cacheDir: string,
     serverHost: string,
     serverPort: number
@@ -127,7 +127,7 @@ export class LocalCommandTree {
         try {
           await this.loadCommandDetails(node, node.parameters, pendingAliases);
         } catch (error) {
-          this.logger.warning(`Warning: Failed to load details for ${commands[i]}: ${error}`);
+          this.logger.warn(`Warning: Failed to load details for ${commands[i]}: ${error}`);
           // Continue with other commands even if one fails
         }
       }
@@ -205,7 +205,7 @@ export class LocalCommandTree {
       this.logger.info(`Help response received: ${mcResponse.length} bytes`);
 
       if (!mcResponse || mcResponse.length === 0) {
-        this.logger.warning('Warning: Empty response from help command');
+        this.logger.warn('Warning: Empty response from help command');
         // Try alternative help format
         const altResponse = await this.sendCommand('?');
         if (altResponse && altResponse.length > 0) {
@@ -245,7 +245,7 @@ export class LocalCommandTree {
     this.logger.info(`Found ${this.rootCommands.size} root commands`);
 
     if (commands.length === 0) {
-      this.logger.warning('Warning: No commands found in help response');
+      this.logger.warn('Warning: No commands found in help response');
       this.logger.info('First few lines of response:');
       splitConcatenatedHelpLines(response).split('\n').slice(0, 10).forEach(line => {
         this.logger.info(`  > ${stripColors(line)}`);
@@ -412,7 +412,7 @@ export class LocalCommandTree {
 
       // Check if we got a valid response from at least one source
       if (!helpResponse && !mcResponse) {
-        this.logger.warning(`Empty help response for: ${commandPath}`);
+        this.logger.warn(`Empty help response for: ${commandPath}`);
         return;
       }
 
