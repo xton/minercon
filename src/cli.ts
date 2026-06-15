@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parseArgs } from 'util';
 import { createConsola } from 'consola';
-import { text, password as passwordPrompt, isCancel, cancel } from '@clack/prompts';
+import { text, password as passwordPrompt, isCancel, cancel, updateSettings } from '@clack/prompts';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize, resolveLogLevel } from './cliConfig';
@@ -85,6 +85,8 @@ async function main(): Promise<void> {
   const logStream = logFilePath
     ? (fs.createWriteStream(logFilePath, { flags: 'a' }) as unknown as NodeJS.WriteStream)
     : undefined;
+
+  updateSettings({ withGuide: false });
   const logger = createConsola({
     level: logLevelResolution.level,
     ...(logStream ? { stdout: logStream, stderr: logStream } : {}),
