@@ -5,8 +5,7 @@
 // and what argument-help text to show. No state, no IO — a deterministic
 // function of the tree and the input.
 
-import { ParameterType, Parameter } from './helpTextParsing';
-import { CommandNode } from './localCommandTree';
+import { ParameterType, Parameter, CommandNode } from './commandTree';
 
 export interface SuggestionResult {
   suggestions: string[];
@@ -59,7 +58,7 @@ export function getSuggestions(
   }
 
   // Navigate through the parameter tree
-  let currentParameters = rootNode.parameters;
+  let currentParameters = rootNode.members || [];
   let paramIndex = 1; // Start after the command name
 
   // The command path consumed so far (root command + any literal/subcommand
@@ -220,7 +219,7 @@ function buildArgumentHelp(parameters: Parameter[]): string {
     if (param.type === ParameterType.ARGUMENT) {
       return param.optional ? `[<${param.name}>]` : `<${param.name}>`;
     } else if (param.type === ParameterType.CHOICE_LIST && param.choices) {
-      const choices = param.choices.map(c => c.literal).join('|');
+      const choices = param.choices.map((c: Parameter) => c.literal).join('|');
       return `(${choices})`;
     } else if (param.type === ParameterType.LITERAL) {
       return param.literal;

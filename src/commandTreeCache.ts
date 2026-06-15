@@ -7,7 +7,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { ConsolaInstance } from 'consola';
-import { CommandNode } from './localCommandTree';
+import { CommandNode } from './commandTree';
 
 interface CommandCache {
   version: string;
@@ -19,7 +19,7 @@ interface CommandCache {
 export class CommandTreeCache {
   private cacheDir: string;
   private cacheFile: string;
-  private cacheVersion: string = '2.2.0'; // Bumped: dropped rawHelp; aliases are now expanded into commands
+  private cacheVersion: string = '2.3.0'; // Bumped: unified CommandNode/Parameter tree shape (parameters -> members)
   private serverIdentifier: string;
 
   constructor(

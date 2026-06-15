@@ -4,14 +4,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { silentLogger } from './support/testLogger';
 import { CommandTreeCache } from '../commandTreeCache';
-import { CommandNode } from '../localCommandTree';
-import { ParameterType } from '../helpTextParsing';
+import { ParameterType, CommandNode, newCommandNode } from '../commandTree';
 
 function sampleCommands(): Map<string, CommandNode> {
     return new Map([
         ['gamemode', {
-            name: 'gamemode',
-            parameters: [{ type: ParameterType.ARGUMENT, name: 'mode', optional: false, position: 0 }],
+            ...newCommandNode('gamemode'),
+            members: [{ type: ParameterType.ARGUMENT, name: 'mode', optional: false, position: 0 }],
             isComplete: true,
         }],
     ]);

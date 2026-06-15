@@ -1,7 +1,6 @@
 import * as assert from 'assert';
 import { getSuggestions } from '../commandSuggestions';
-import { CommandNode } from '../localCommandTree';
-import { ParameterType, Parameter } from '../helpTextParsing';
+import { ParameterType, Parameter, CommandNode, newCommandNode } from '../commandTree';
 
 function arg(name: string, optional = false): Parameter {
     return { type: ParameterType.ARGUMENT, name, optional, position: 0 };
@@ -15,11 +14,11 @@ function subcommand(name: string, members: Parameter[] = []): Parameter {
 function choiceList(...choices: Parameter[]): Parameter {
     return { type: ParameterType.CHOICE_LIST, choices, optional: false, position: 0 };
 }
-function node(name: string, parameters: Parameter[]): CommandNode {
-    return { name, parameters, isComplete: true };
+function node(name: string, members: Parameter[]): CommandNode {
+    return { ...newCommandNode(name), members, isComplete: true };
 }
 function tree(...nodes: CommandNode[]): Map<string, CommandNode> {
-    return new Map(nodes.map(n => [n.name, n]));
+    return new Map(nodes.map(n => [n.name!, n]));
 }
 
 suite('commandSuggestions: getSuggestions', () => {

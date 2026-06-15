@@ -14,27 +14,12 @@
 //
 // `stripColors` (used throughout to normalize input before parsing) and the
 // `formatMinecraftColors`/ANSI rendering side live in ansi.ts.
+//
+// The `Parameter`/`ParameterType` tree this file builds is defined in
+// `commandTree.ts`.
 
 import { stripColors } from './ansi';
-
-// Parameter types
-export enum ParameterType {
-  ARGUMENT = 'argument',          // <n>
-  LITERAL = 'literal',            // literal text
-  CHOICE_LIST = 'choice_list',    // (option1|option2)
-  SUBCOMMAND = 'subcommand'        // subcommand with its own members
-}
-
-export interface Parameter {
-  type: ParameterType;
-  name?: string;                  // For arguments and subcommands
-  literal?: string;                // For literal text
-  optional: boolean;
-  choices?: Parameter[];           // For choice lists
-  position: number;                // Order in parameter list
-  members?: Parameter[];           // For subcommand's parameters
-  isComplete?: boolean;            // For subcommands - whether we've fetched all its members
-}
+import { ParameterType, Parameter } from './commandTree';
 
 /**
  * Tokenize parameter string handling nested structures

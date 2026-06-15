@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { silentLogger } from './support/testLogger';
-import { LocalCommandTree, CommandNode } from '../localCommandTree';
-import { ParameterType, Parameter, isGenericArgsPlaceholder } from '../helpTextParsing';
+import { LocalCommandTree } from '../localCommandTree';
+import { ParameterType, Parameter, CommandNode } from '../commandTree';
+import { isGenericArgsPlaceholder } from '../helpTextParsing';
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
 // Vanilla/Fabric 1.21.4 server, see docs/technical/NO_PLUGIN_HELP_CRAWL.md and
@@ -127,7 +128,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('gamemode gets full <gamemode>/[<target>] syntax from /help', () => {
-      const params = nodes.get('gamemode')!.parameters;
+      const params = nodes.get('gamemode')!.members!;
       assert.deepStrictEqual(params, [
         { type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 },
         { type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 1 },
@@ -135,7 +136,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('gamerule gets all rule variants, each with a [<value>] parameter', () => {
-      const params = nodes.get('gamerule')!.parameters;
+      const params = nodes.get('gamerule')!.members!;
       const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
       assert.ok(choiceList, 'expected gamerule to be a CHOICE_LIST of rule variants');
       const names = choiceList!.choices!.map(c => c.name);
@@ -148,7 +149,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('team list has a [<team>] parameter, trusted from "help" without a depth-2 fetch', () => {
-      const teamParams = nodes.get('team')!.parameters;
+      const teamParams = nodes.get('team')!.members!;
       const list = findChoice(teamParams, 'list');
       assert.deepStrictEqual(list.members, [
         { type: ParameterType.ARGUMENT, name: 'team', optional: true, position: 0 },
@@ -228,7 +229,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('gamemode gets <gamemode>/[<target>] from minecraft:help, not the generic placeholder', () => {
-      const params = nodes.get('gamemode')!.parameters;
+      const params = nodes.get('gamemode')!.members!;
       assert.deepStrictEqual(params, [
         { type: ParameterType.ARGUMENT, name: 'gamemode', optional: false, position: 0 },
         { type: ParameterType.ARGUMENT, name: 'target', optional: true, position: 1 },
@@ -236,7 +237,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('gamerule gets all rule variants from minecraft:help, each retaining its [<value>] parameter', () => {
-      const params = nodes.get('gamerule')!.parameters;
+      const params = nodes.get('gamerule')!.members!;
       const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
       assert.ok(choiceList, 'expected gamerule to be a CHOICE_LIST of rule variants');
       const names = choiceList!.choices!.map(c => c.name);
@@ -252,7 +253,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('team list/add get full parameters from minecraft:help, trusted without a depth-2 fetch', () => {
-      const teamParams = nodes.get('team')!.parameters;
+      const teamParams = nodes.get('team')!.members!;
       const list = findChoice(teamParams, 'list');
       assert.deepStrictEqual(list.members, [
         { type: ParameterType.ARGUMENT, name: 'team', optional: true, position: 0 },
@@ -267,20 +268,20 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('version falls back to its Bukkit "Usage: [plugin name]" line, not the generic args placeholder', () => {
-      const params = nodes.get('version')!.parameters;
+      const params = nodes.get('version')!.members!;
       assert.strictEqual(params.length, 1);
       assert.strictEqual(params[0].type, ParameterType.SUBCOMMAND);
       assert.strictEqual(params[0].name, 'plugin name');
     });
 
     test('reload falls back to its Bukkit "Usage: [permissions|commands|confirm]" line, not the generic args placeholder', () => {
-      const params = nodes.get('reload')!.parameters;
+      const params = nodes.get('reload')!.members!;
       assert.strictEqual(params.length, 1);
       assert.ok(!isGenericArgsPlaceholder(params), 'reload should not end up with the generic "args" placeholder');
     });
 
     test('plugins ends up with no parameters (bare command, no Usage args)', () => {
-      assert.deepStrictEqual(nodes.get('plugins')!.parameters, []);
+      assert.deepStrictEqual(nodes.get('plugins')!.members!, []);
     });
 
     test('Bukkit "Aliases:" lines are expanded into rootCommands, sharing the canonical node', () => {
@@ -331,7 +332,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('a variant with a real parameter is trusted without a per-subcommand help fetch', () => {
-      const bar = findChoice(nodes.get('foo')!.parameters, 'bar');
+      const bar = findChoice(nodes.get('foo')!.members!, 'bar');
       assert.deepStrictEqual(bar.members, [
         { type: ParameterType.ARGUMENT, name: 'baz', optional: false, position: 0 },
       ]);
@@ -339,7 +340,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('a bare-literal variant (no usable arguments) falls back to a per-subcommand help fetch', () => {
-      const qux = findChoice(nodes.get('foo')!.parameters, 'qux');
+      const qux = findChoice(nodes.get('foo')!.members!, 'qux');
       assert.deepStrictEqual(qux.members, [
         { type: ParameterType.ARGUMENT, name: 'detail', optional: false, position: 0 },
       ]);
@@ -387,7 +388,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
 
     test('both gamerule and minecraft:gamerule list each rule with usable [<value>] members', () => {
       for (const cmd of ['gamerule', 'minecraft:gamerule']) {
-        const params = nodes.get(cmd)!.parameters;
+        const params = nodes.get(cmd)!.members!;
         const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
         assert.ok(choiceList, `expected ${cmd} to be a CHOICE_LIST of rule variants`);
         const names = choiceList!.choices!.map(c => c.name);
@@ -437,7 +438,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('minecraft:difficulty becomes a CHOICE_LIST of complete, argument-free value variants', () => {
-      const params = nodes.get('minecraft:difficulty')!.parameters;
+      const params = nodes.get('minecraft:difficulty')!.members!;
       const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
       assert.ok(choiceList, 'expected minecraft:difficulty to be a CHOICE_LIST of value variants');
       const names = choiceList!.choices!.map(c => c.name);
@@ -483,7 +484,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
 
     test('"tp" shares teleport\'s fully-loaded node', () => {
       assert.strictEqual(nodes.get('tp'), nodes.get('teleport'));
-      assert.deepStrictEqual(nodes.get('tp')!.parameters, [
+      assert.deepStrictEqual(nodes.get('tp')!.members!, [
         { type: ParameterType.ARGUMENT, name: 'targets', optional: false, position: 0 },
       ]);
     });
@@ -517,7 +518,7 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('the "/" inside "[home/away]" is preserved as one literal, not split into separate entries', () => {
-      const params = nodes.get('warp')!.parameters;
+      const params = nodes.get('warp')!.members!;
       assert.deepStrictEqual(params, [
         { type: ParameterType.ARGUMENT, name: 'name', optional: false, position: 0 },
         { type: ParameterType.LITERAL, literal: 'home/away', optional: true, position: 1 },
@@ -587,8 +588,8 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
     });
 
     test('bare commands reuse their namespaced sibling\'s parameters without re-fetching', () => {
-      const advancement = nodes.get('advancement')!.parameters;
-      const minecraftAdvancement = nodes.get('minecraft:advancement')!.parameters;
+      const advancement = nodes.get('advancement')!.members!;
+      const minecraftAdvancement = nodes.get('minecraft:advancement')!.members!;
       assert.deepStrictEqual(advancement, minecraftAdvancement);
       assert.deepStrictEqual(advancement, [
         {
@@ -602,8 +603,8 @@ suite('LocalCommandTree - no-plugin help crawl', () => {
         },
       ]);
 
-      assert.deepStrictEqual(nodes.get('msg')!.parameters, nodes.get('minecraft:msg')!.parameters);
-      assert.deepStrictEqual(nodes.get('msg')!.parameters, [
+      assert.deepStrictEqual(nodes.get('msg')!.members!, nodes.get('minecraft:msg')!.members!);
+      assert.deepStrictEqual(nodes.get('msg')!.members!, [
         { type: ParameterType.ARGUMENT, name: 'targets', optional: false, position: 0 },
         { type: ParameterType.ARGUMENT, name: 'message', optional: false, position: 1 },
       ]);

@@ -108,6 +108,7 @@ graph TD
     end
 
     subgraph Knowledge["Command knowledge"]
+        commandTree[commandTree.ts]
         localCommandTree[localCommandTree.ts]
         commandSuggestions[commandSuggestions.ts]
         commandTreeCache[commandTreeCache.ts]
@@ -144,20 +145,16 @@ graph TD
     localCommandTree --> commandTreeCache
     localCommandTree --> helpTextParsing
     localCommandTree --> bukkitHelpParsing
-    commandSuggestions -.-> localCommandTree
-    commandTreeCache -.-> localCommandTree
+    localCommandTree --> commandTree
+    commandSuggestions --> commandTree
+    commandTreeCache --> commandTree
+    helpTextParsing --> commandTree
     commandSuggestions --> helpTextParsing
     commandTreeCache --> helpTextParsing
 
     connectionManager --> rconClient
     rconClient --> rconProtocol
 ```
-
-Dashed arrows are type-only back-references (`commandSuggestions.ts` and
-`commandTreeCache.ts` both import the `CommandNode` type from
-`localCommandTree.ts`, which in turn imports the *value* exports of both —
-a small, intentional cluster of mutually-referencing modules around the
-command-tree data structure).
 
 Note: `extension.ts` has no import-level dependency on `rconSession.ts` or
 any module below it — at runtime it runs the bundled `dist/minercon.js`
@@ -192,10 +189,18 @@ can reload the command tree after a drop.
 This layer answers "what can the user type, and what does it mean" — built
 once per server, either from a server-side plugin or by crawling `/help`.
 
+### `commandTree.ts`
+The command tree model: one recursive `Parameter` type (and the `CommandNode`
+alias for its root-node use), shared by everything else in this layer.
+`helpTextParsing.ts`/`bukkitHelpParsing.ts` construct `Parameter` trees,
+`commandSuggestions.ts`/`argumentHint.ts` read them, and `localCommandTree.ts`
+ties construction and the cache together. This file is just the shape — no
+parsing, no IO.
+
 ### `helpTextParsing.ts`
 Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat `/cmd
 <args>` blobs, as returned by `minecraft:help` and vanilla's plain `help`)
-into a `Parameter` tree, plus the root-listing parser (`parseHelpResponse`)
+into a `Parameter` tree (`commandTree.ts`), plus the root-listing parser (`parseHelpResponse`)
 and the one-time namespace-support probe (`isUnsupportedNamespaceError`),
 including the quirks documented in `docs/technical/` (concatenated help
 lines, hyphenated literals, namespace differences between `/help` and

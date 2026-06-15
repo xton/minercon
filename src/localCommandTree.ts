@@ -12,9 +12,8 @@
 import * as path from 'path';
 import type { ConsolaInstance } from 'consola';
 import { stripColors } from './ansi';
+import { ParameterType, Parameter, CommandNode, newCommandNode } from './commandTree';
 import {
-  ParameterType,
-  Parameter,
   HelpLinesResult,
   VariantInfo,
   parseHelpLines,
@@ -30,11 +29,7 @@ import { extractBukkitUsageLines, extractBukkitAliases } from './bukkitHelpParsi
 import { CommandTreeCache } from './commandTreeCache';
 import { getSuggestions, SuggestionResult } from './commandSuggestions';
 
-export interface CommandNode {
-  name: string;
-  parameters: Parameter[];         // includes subcommands as parameters
-  isComplete: boolean;
-}
+export { CommandNode } from './commandTree';
 
 /** Coarse-grained stage of `initialize()`'s progress, for UI phase labels. */
 export type ProgressPhase = 'cache-hit' | 'fetching' | 'loading' | 'complete';
@@ -142,7 +137,7 @@ export class LocalCommandTree {
 
         const node = this.rootCommands.get(commands[i])!;
         try {
-          await this.loadCommandDetails(node, node.parameters, pendingAliases);
+          await this.loadCommandDetails(node, node.members!, pendingAliases);
         } catch (error) {
           this.logger.warn(`Warning: Failed to load details for ${commands[i]}: ${error}`);
           // Continue with other commands even if one fails
@@ -255,7 +250,7 @@ export class LocalCommandTree {
     }
 
     for (const { name, isPlaceholder } of commands) {
-      this.rootCommands.set(name, { name, parameters: [], isComplete: false });
+      this.rootCommands.set(name, newCommandNode(name));
       this.rootSummaryIsPlaceholder.set(name, isPlaceholder);
     }
 
@@ -294,11 +289,7 @@ export class LocalCommandTree {
 
     for (const cmd of commonCommands) {
       if (!this.rootCommands.has(cmd)) {
-        this.rootCommands.set(cmd, {
-          name: cmd,
-          parameters: [],
-          isComplete: false
-        });
+        this.rootCommands.set(cmd, newCommandNode(cmd));
       }
     }
 
@@ -374,14 +365,8 @@ export class LocalCommandTree {
   /**
    * Load details for a command or subcommand
    */
-  private async loadCommandDetails(parent: CommandNode | Parameter, parameters: Parameter[], pendingAliases: Map<string, string>): Promise<void> {
-    // Build the command path
-    let commandPath = '';
-    if ('name' in parent && parent.name) {
-      commandPath = parent.name;
-    } else if ('literal' in parent && parent.literal) {
-      commandPath = parent.literal;
-    }
+  private async loadCommandDetails(parent: Parameter, parameters: Parameter[], pendingAliases: Map<string, string>): Promise<void> {
+    const commandPath = parent.name || parent.literal || '';
 
     // A bare command (e.g. "version") and its namespaced counterparts (e.g.
     // "bukkit:version", "minecraft:version") describe the same underlying
@@ -392,10 +377,8 @@ export class LocalCommandTree {
     const sibling = this.findNamespacedSibling(commandPath);
     if (sibling) {
       parameters.length = 0;
-      parameters.push(...sibling.parameters);
-      if ('isComplete' in parent) {
-        parent.isComplete = true;
-      }
+      parameters.push(...(sibling.members ?? []));
+      parent.isComplete = true;
       this.report(`Reusing ${sibling.name}'s details for ${commandPath}`);
       return;
     }
@@ -456,9 +439,7 @@ export class LocalCommandTree {
       this.report(`Loaded ${parameters.length} parameter(s) for ${commandPath}`);
 
       // Mark as complete
-      if ('isComplete' in parent) {
-        parent.isComplete = true;
-      }
+      parent.isComplete = true;
 
       // Recursively load details for all subcommands
       await this.loadSubcommandsIn(commandPath, parameters);
@@ -466,9 +447,7 @@ export class LocalCommandTree {
     } catch (error) {
       this.logger.error(`Error loading details for ${commandPath}: ${error}`);
       // Mark as complete even on error to avoid infinite loops
-      if ('isComplete' in parent) {
-        parent.isComplete = true;
-      }
+      parent.isComplete = true;
     }
   }
 

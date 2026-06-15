@@ -43,6 +43,7 @@ minercon/
 │   ├── connectionManager.ts    # Connect/reconnect lifecycle, backoff
 │   ├── rconClient.ts           # RconController — send queue over RconProtocol
 │   ├── rconProtocol.ts         # RCON wire protocol, framing, fence packet
+│   ├── commandTree.ts           # Command tree model (Parameter/CommandNode shape)
 │   ├── localCommandTree.ts     # /help-crawl orchestration, command tree
 │   ├── commandSuggestions.ts   # Pure suggestion generation from the tree
 │   ├── commandTreeCache.ts     # On-disk command tree cache

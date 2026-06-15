@@ -1,8 +1,7 @@
 import * as assert from 'assert';
 import { stripColors } from '../ansi';
+import { ParameterType, Parameter } from '../commandTree';
 import {
-    ParameterType,
-    Parameter,
     tokenizeParameterString,
     parseParameter,
     parseCommandHelp,
