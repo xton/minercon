@@ -26,7 +26,8 @@ export class CommandTreeCache {
     cacheDir: string,
     serverHost: string,
     serverPort: number,
-    private logger: ConsolaInstance
+    private logger: ConsolaInstance,
+    private report: (message: string) => void
   ) {
     this.serverIdentifier = `${serverHost}:${serverPort}`;
     this.cacheDir = cacheDir;
@@ -54,7 +55,7 @@ export class CommandTreeCache {
       });
 
       fs.writeFileSync(this.cacheFile, JSON.stringify(cache, null, 2));
-      this.logger.info(`Command cache saved to ${this.cacheFile}`);
+      this.report(`Command cache saved to ${this.cacheFile}`);
     } catch (error) {
       this.logger.error(`Error saving cache: ${error}`);
     }
@@ -76,7 +77,7 @@ export class CommandTreeCache {
       // Check cache validity
       if (cache.version !== this.cacheVersion ||
         cache.serverIdentifier !== this.serverIdentifier) {
-        this.logger.info('Cache version or server mismatch, will refresh');
+        this.report('Cache version or server mismatch, will refresh');
         return null;
       }
 
@@ -84,7 +85,7 @@ export class CommandTreeCache {
       const cacheAge = Date.now() - new Date(cache.lastUpdated).getTime();
       const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
       if (cacheAge > maxAge) {
-        this.logger.info('Cache too old, will refresh');
+        this.report('Cache too old, will refresh');
         return null;
       }
 
@@ -93,7 +94,7 @@ export class CommandTreeCache {
         rootCommands.set(name, node);
       });
 
-      this.logger.info(`Commands loaded from cache (${rootCommands.size} commands)`);
+      this.report(`Commands loaded from cache (${rootCommands.size} commands)`);
       return rootCommands;
 
     } catch (error) {
@@ -142,7 +143,7 @@ export class CommandTreeCache {
     try {
       if (fs.existsSync(this.cacheFile)) {
         fs.unlinkSync(this.cacheFile);
-        this.logger.info('Command cache cleared');
+        this.report('Command cache cleared');
       }
     } catch (error) {
       this.logger.error(`Error clearing cache: ${error}`);

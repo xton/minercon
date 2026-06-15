@@ -67,6 +67,12 @@ export class LocalCommandTree {
 
   private readonly cache: CommandTreeCache;
 
+  // Set for the duration of `initialize()`: receives the crawl's blow-by-blow
+  // narration ("Loading details for command: X", ...). When provided (no log
+  // file - the narration would otherwise corrupt the console's progress bar),
+  // narration is routed here instead of to `this.logger`. See `report()`.
+  private onMessage?: (message: string) => void;
+
   constructor(
     private sendCommand: (command: string) => Promise<string>,
     private logger: ConsolaInstance,
@@ -74,7 +80,16 @@ export class LocalCommandTree {
     serverHost: string,
     serverPort: number
   ) {
-    this.cache = new CommandTreeCache(path.join(cacheDir, 'command-cache'), serverHost, serverPort, logger);
+    this.cache = new CommandTreeCache(path.join(cacheDir, 'command-cache'), serverHost, serverPort, logger, (message) => this.report(message));
+  }
+
+  /** Reports crawl narration: to `onMessage` (e.g. a progress bar's message) if set, else logged. */
+  private report(message: string): void {
+    if (this.onMessage) {
+      this.onMessage(message);
+    } else {
+      this.logger.info(message);
+    }
   }
 
   /**
@@ -82,12 +97,14 @@ export class LocalCommandTree {
    */
   async initialize(
     onProgress?: (progress: number, phase: ProgressPhase) => void,
+    onMessage?: (message: string) => void,
     forceRefresh: boolean = false
   ): Promise<void> {
     if (this.isLoading) { return; }
 
     this.isLoading = true;
     this.loadingProgress = 0;
+    this.onMessage = onMessage;
 
     try {
       // Try to load from cache first
@@ -117,7 +134,7 @@ export class LocalCommandTree {
       // (see loadCommandDetails).
       const commands = Array.from(this.rootCommands.keys())
         .sort((a, b) => Number(b.includes(':')) - Number(a.includes(':')));
-      this.logger.info(`Loading details for ${commands.length} commands...`);
+      this.report(`Loading details for ${commands.length} commands...`);
 
       for (let i = 0; i < commands.length; i++) {
         const progress = 10 + (80 * (i / commands.length));
@@ -164,12 +181,12 @@ export class LocalCommandTree {
       return output; // No pagination info, return original output
     } else {
       const pageCount = parseInt(match[2]);
-      this.logger.info(`Detected paginated output: ${pageCount} pages total`);
+      this.report(`Detected paginated output: ${pageCount} pages total`);
 
       for (let page = 2; page <= pageCount; page++) {
         const pageOutput = await this.sendCommand(`${command} ${page}`);
         if (pageOutput) {
-          this.logger.info(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
+          this.report(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
           output += pageOutput;
         }
       }
@@ -182,18 +199,18 @@ export class LocalCommandTree {
    */
   private async fetchRootCommands(pendingAliases: Map<string, string>): Promise<void> {
     try {
-      this.logger.info('Fetching root commands with /help...');
+      this.report('Fetching root commands with /help...');
       const mcResponse = await this.sendCommand('minecraft:help');
 
       if (isUnsupportedNamespaceError(mcResponse)) {
         // Vanilla/Fabric: the `minecraft:` namespace prefix isn't
         // registered. Plain `/help` (paginated) already gives a complete,
         // accurate, one-shot command list with full <args> syntax.
-        this.logger.info('minecraft: namespace not supported; using /help for root commands');
+        this.report('minecraft: namespace not supported; using /help for root commands');
         this.supportsMinecraftNamespace = false;
 
         const response = await this.fetchPaginatedCommand('help');
-        this.logger.info(`Help response received: ${response.length} bytes`);
+        this.report(`Help response received: ${response.length} bytes`);
         if (!response || response.length === 0) {
           throw new Error('Unable to fetch command list from server');
         }
@@ -202,14 +219,14 @@ export class LocalCommandTree {
       }
 
       this.supportsMinecraftNamespace = true;
-      this.logger.info(`Help response received: ${mcResponse.length} bytes`);
+      this.report(`Help response received: ${mcResponse.length} bytes`);
 
       if (!mcResponse || mcResponse.length === 0) {
         this.logger.warn('Warning: Empty response from help command');
         // Try alternative help format
         const altResponse = await this.sendCommand('?');
         if (altResponse && altResponse.length > 0) {
-          this.logger.info('Using alternative help command (?)');
+          this.report('Using alternative help command (?)');
           this.ingestHelpResponse(altResponse, pendingAliases);
         } else {
           throw new Error('Unable to fetch command list from server');
@@ -242,13 +259,13 @@ export class LocalCommandTree {
       this.rootSummaryIsPlaceholder.set(name, isPlaceholder);
     }
 
-    this.logger.info(`Found ${this.rootCommands.size} root commands`);
+    this.report(`Found ${this.rootCommands.size} root commands`);
 
     if (commands.length === 0) {
       this.logger.warn('Warning: No commands found in help response');
-      this.logger.info('First few lines of response:');
+      this.report('First few lines of response:');
       splitConcatenatedHelpLines(response).split('\n').slice(0, 10).forEach(line => {
-        this.logger.info(`  > ${stripColors(line)}`);
+        this.report(`  > ${stripColors(line)}`);
       });
 
       // Add fallback commands
@@ -260,7 +277,7 @@ export class LocalCommandTree {
    * Add fallback commands if help parsing fails
    */
   private addFallbackCommands(): void {
-    this.logger.info('Adding common Minecraft commands as fallback...');
+    this.report('Adding common Minecraft commands as fallback...');
 
     const commonCommands = [
       'gamemode', 'give', 'tp', 'teleport', 'kill', 'kick', 'ban', 'pardon',
@@ -285,7 +302,7 @@ export class LocalCommandTree {
       }
     }
 
-    this.logger.info(`Added ${commonCommands.length} fallback commands`);
+    this.report(`Added ${commonCommands.length} fallback commands`);
   }
 
   /**
@@ -379,9 +396,14 @@ export class LocalCommandTree {
       if ('isComplete' in parent) {
         parent.isComplete = true;
       }
-      this.logger.info(`Reusing ${sibling.name}'s details for ${commandPath}`);
+      this.report(`Reusing ${sibling.name}'s details for ${commandPath}`);
       return;
     }
+
+    // Reported before the round trips below (rather than after) so it's
+    // visible while they're in flight, instead of being instantly
+    // overwritten by the next command's report.
+    this.report(`Loading details for command: ${commandPath}`);
 
     try {
       let helpResponse = '';
@@ -416,8 +438,6 @@ export class LocalCommandTree {
         return;
       }
 
-      this.logger.info(`Loading details for command: ${commandPath}`);
-
       // Bukkit `/help <command>` pages list aliases on their own
       // `Aliases: a, b, c` line - returns [] for Brigadier blobs, which
       // have no such line.
@@ -433,7 +453,7 @@ export class LocalCommandTree {
         parameters.push(...buildParameterStructureFromVariants(variants));
       }
 
-      this.logger.info(`Loaded ${parameters.length} parameter(s) for ${commandPath}`);
+      this.report(`Loaded ${parameters.length} parameter(s) for ${commandPath}`);
 
       // Mark as complete
       if ('isComplete' in parent) {

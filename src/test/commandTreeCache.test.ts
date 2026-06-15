@@ -41,12 +41,12 @@ suite('CommandTreeCache', () => {
     });
 
     test('load returns null when no cache file exists yet', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         assert.strictEqual(cache.load(), null);
     });
 
     test('save then load round-trips the command tree', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         const rootCommands = sampleCommands();
 
         cache.save(rootCommands);
@@ -57,7 +57,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache written by a different protocol version', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         cache.save(sampleCommands());
 
         rewriteCacheFile(storageDir, raw => { raw.version = '0.0.0'; });
@@ -66,7 +66,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache written for a different server identifier', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         cache.save(sampleCommands());
 
         rewriteCacheFile(storageDir, raw => { raw.serverIdentifier = 'other-host:25575'; });
@@ -75,7 +75,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('rejects a cache older than the max age', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         cache.save(sampleCommands());
 
         const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
@@ -85,7 +85,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('getInfo reports no cache before saving, and an existing one after', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         assert.strictEqual(cache.getInfo().exists, false);
 
         cache.save(sampleCommands());
@@ -96,7 +96,7 @@ suite('CommandTreeCache', () => {
     });
 
     test('clear deletes the cache file so load and getInfo see it as gone', () => {
-        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger());
+        const cache = new CommandTreeCache(path.join(storageDir, 'command-cache'), 'host', 25575, silentLogger(), () => {});
         cache.save(sampleCommands());
         assert.strictEqual(cache.getInfo().exists, true);
 

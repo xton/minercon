@@ -184,6 +184,7 @@ async function main(): Promise<void> {
         : undefined,
     historySize,
     disablePlugin: values['no-plugin'] as boolean,
+    logToFile: logFilePath !== undefined,
   };
 
   const session = new RconSession(controller, host, port, password, logger, sessionHost);

@@ -90,6 +90,7 @@ for (const variant of addonVariants) {
         },
         cacheDir,
         dimensions: () => undefined,
+        logToFile: true,
       };
 
       const session = new RconSession(ctrl, host, port, PASSWORD, silent, sessionHost);

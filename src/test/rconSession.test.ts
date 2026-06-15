@@ -24,13 +24,15 @@ import { RconController } from '../rconClient';
 import { RconSession, RconSessionHost } from '../rconSession';
 import { ControllerFactory } from '../connectionManager';
 import { FakeController, PLUGIN_PROBE_RESPONSE, SendImpl, defaultSend, waitUntil } from './support/fakeController';
-import { silentLogger } from './support/testLogger';
+import { recordingLogger } from './support/testLogger';
+import type { LogType } from 'consola';
 
 interface Harness {
     session: RconSession;
     controller: FakeController;
     writes: string[];
     closes: number[];
+    calls: Record<LogType, unknown[][]>;
     output(): string;
 }
 
@@ -69,6 +71,8 @@ suite('RconSession', () => {
         const closes: number[] = [];
         let pasteboard = '';
 
+        const { logger, calls } = recordingLogger();
+
         const sessionHost: RconSessionHost = {
             write: (text) => writes.push(text),
             close: (code) => closes.push(code),
@@ -80,17 +84,18 @@ suite('RconSession', () => {
             dimensions,
             historySize,
             disablePlugin,
+            logToFile: true,
         };
 
         const session = new RconSession(
             controller as unknown as RconController,
             'localhost', 25575, 'pw',
-            silentLogger(),
+            logger,
             sessionHost,
             controllerFactory,
         );
         activeSession = session;
-        return { session, controller, writes, closes, output: () => writes.join('') };
+        return { session, controller, writes, closes, calls, output: () => writes.join('') };
     }
 
     test('open writes the welcome banner, probes for the tab-complete plugin, and switches to plugin mode', async () => {
@@ -109,7 +114,7 @@ suite('RconSession', () => {
         const h = createHarness(defaultSend, () => undefined, undefined, true);
         h.session.open();
 
-        await waitUntil(() => h.output().includes('Loading server commands'));
+        await waitUntil(() => h.calls.info.some(([msg]) => String(msg).includes('Loading server commands')));
 
         assert.ok(h.output().includes('plugin probe disabled'), 'reports that the probe was skipped');
         assert.ok(!h.controller.sendCalls.includes('tabcomplete'), 'never probes for the server-side plugin');
@@ -327,7 +332,7 @@ suite('RconSession', () => {
         await waitUntil(() => h.output().includes('Reconnected successfully'), 3000);
 
         assert.ok(reconnectController, 'controllerFactory built the replacement controller');
-        await waitUntil(() => h.output().includes('Failed to load commands'), 3000);
+        await waitUntil(() => h.calls.error.some(([msg]) => String(msg).includes('Failed to load commands')), 3000);
         assert.ok(
             reconnectController!.sendCalls.some(c => c.includes('help')),
             'onReconnected reloaded the command tree through the new controller'

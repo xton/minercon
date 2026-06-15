@@ -10,7 +10,7 @@
 // the built CLI as the terminal's process (see extension.ts).
 
 import { RconController } from './rconClient';
-import { LocalCommandTree } from './localCommandTree';
+import { LocalCommandTree, ProgressPhase } from './localCommandTree';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step, applySuggestion,
@@ -24,6 +24,7 @@ import { errorMessage } from './logger';
 import { HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historySearch';
 import { HistoryStore } from './historyStore';
 import * as ansi from './ansi';
+import { progress } from '@clack/prompts';
 
 export interface RconSessionHost {
   write(text: string): void;
@@ -35,6 +36,18 @@ export interface RconSessionHost {
   historySize?: number;
   /** Skips the server-side tab-complete plugin probe, forcing the help-crawl-based local completion path. For manual testing only. */
   disablePlugin?: boolean;
+  /** Diagnostic logs are going to a file rather than the console — report command-tree-loading progress via the logger instead of a clack progress bar. */
+  logToFile?: boolean;
+}
+
+/** Phase labels shown on the command-tree-loading progress bar / logged when `logToFile` is set. */
+function progressPhaseLabel(phase: ProgressPhase): string {
+  switch (phase) {
+    case 'fetching': return 'Fetching commands...';
+    case 'loading': return 'Processing subcommands...';
+    case 'complete': return 'Commands loaded and cached!';
+    case 'cache-hit': return 'Commands loaded from cache!';
+  }
 }
 
 /** A terminal-side `/` command: dispatched by name/alias, listed (by name only) in /help. */
@@ -76,7 +89,7 @@ export class RconSession {
     host: string,
     port: number,
     password: string,
-    logger: ConsolaInstance,
+    private readonly logger: ConsolaInstance,
     private readonly sessionHost: RconSessionHost,
     controllerFactory?: ControllerFactory
   ) {
@@ -180,56 +193,93 @@ export class RconSession {
   private async initializeCommands(forceRefresh: boolean = false): Promise<void> {
     const cacheInfo = this.commandTree.getCacheInfo();
     const willLoadFromCache = !forceRefresh && cacheInfo.exists;
+    const reason = forceRefresh ? 'Forcing refresh...' :
+      !cacheInfo.exists ? 'No cache found...' :
+        'Cache outdated...';
 
-    if (!willLoadFromCache) {
-      const reason = forceRefresh ? 'Forcing refresh...' :
-                     !cacheInfo.exists ? 'No cache found...' :
-                     'Cache outdated...';
-      this.sessionHost.write('\r\n' + ansi.yellow('Loading server commands (' + reason + ')') + '\r\n');
-    }
+    if (this.sessionHost.logToFile) {
+      if (!willLoadFromCache) {
+        this.logger.info(`Loading server commands (${reason})`);
+      }
+      try {
+        await this.commandTree.initialize((progressPct, phase) => {
+          if (willLoadFromCache) {
+            if (progressPct >= 100) {
+              this.logger.success('Commands loaded from cache!');
+              this.showPrompt();
+            }
+            return;
+          }
 
-    try {
-      await this.commandTree.initialize((progress, phase) => {
-        if (willLoadFromCache) {
-          if (progress >= 100) {
-            this.sessionHost.write('\r\n' + ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
+          this.logger.info(`${progressPhaseLabel(phase)} (${Math.round(progressPct)}%)`);
+
+          if (progressPct >= 100) {
+            this.logger.success('Commands loaded and cached!');
             this.showPrompt();
           }
-          return;
+        }, undefined, forceRefresh);
+      } catch (error) {
+        this.logger.error(`Failed to load commands: ${error}`);
+        this.logger.warn('Autocomplete will be limited.');
+        this.showPrompt();
+      }
+      return;
+    }
+
+    if (willLoadFromCache) {
+      // Cache hit resolves in a single synchronous step — no progress to
+      // show, so skip the progress bar entirely (and the raw-mode dance its
+      // start/stop incurs).
+      try {
+        await this.commandTree.initialize((progressPct) => {
+          if (progressPct >= 100) {
+            this.sessionHost.write(ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
+            this.showPrompt();
+          }
+        }, undefined, forceRefresh);
+      } catch (error) {
+        this.sessionHost.write(ansi.red(`✗ Failed to load commands: ${error}`) + '\r\n');
+        this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
+        this.showPrompt();
+      }
+      return;
+    }
+
+    const bar = progress({ style: 'block' });
+    bar.start(`Loading server commands (${reason})`);
+    let lastProgress = 0;
+
+    // clack's progress bar, on stop/error, closes the readline interface it
+    // created over stdin — which pauses stdin and puts it back into cooked
+    // mode. Undo both so the REPL keeps reading input a keystroke at a time.
+    const restoreStdin = (): void => {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+      }
+      process.stdin.resume();
+    };
+
+    try {
+      await this.commandTree.initialize((progressPct, phase) => {
+        // During 'loading', leave the message alone — `onMessage` (below)
+        // narrates per-command progress there, and immediately overwriting
+        // it with the phase label would make that narration flash by unseen.
+        if (phase === 'loading') {
+          bar.advance(progressPct - lastProgress);
+        } else {
+          bar.advance(progressPct - lastProgress, progressPhaseLabel(phase));
         }
+        lastProgress = progressPct;
 
-        this.sessionHost.write('\r\x1b[K');
-
-        const barWidth = 30;
-        const filled = Math.round((progress / 100) * barWidth);
-        const empty = barWidth - filled;
-
-        let progressBar = '[';
-        progressBar += '█'.repeat(filled);
-        progressBar += '░'.repeat(empty);
-        progressBar += '] ';
-        progressBar += Math.round(progress) + '%';
-
-        let phaseLabel = '';
-        if (phase === 'fetching') {
-          phaseLabel = ' Fetching commands...';
-        } else if (phase === 'loading') {
-          phaseLabel = ' Processing subcommands...';
-        } else if (phase === 'complete') {
-          phaseLabel = ' Complete!';
-        }
-
-        this.sessionHost.write(ansi.yellow(progressBar) + ansi.gray(phaseLabel));
-
-        if (progress >= 100) {
-          this.sessionHost.write('\r\n');
-          this.sessionHost.write(ansi.green('✓ Commands loaded and cached!') + '\r\n\r\n');
+        if (progressPct >= 100) {
+          bar.stop('Commands loaded and cached!');
+          restoreStdin();
           this.showPrompt();
         }
-      }, forceRefresh);
+      }, (message) => bar.message(message), forceRefresh);
     } catch (error) {
-      this.sessionHost.write('\r\n' + ansi.red('✗ Failed to load commands: ' + error) + '\r\n');
-      this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
+      bar.error(`Failed to load commands: ${error}`);
+      restoreStdin();
       this.showPrompt();
     }
   }
@@ -259,39 +309,39 @@ export class RconSession {
     // body assigns this.lineEditor — so handlers must look up this.lineEditor
     // lazily at call time, not capture it here.
     const bindings: { sequences: string[]; handler: () => void }[] = [
-      { sequences: ['\t'],                                handler: () => this.handleTabComplete() },
-      { sequences: ['\x1b[Z'],                            handler: () => this.handleShiftTab() },
-      { sequences: ['\x1b'],                              handler: () => this.handleEscape() },
-      { sequences: ['\x04'],                              handler: () => this.handleCtrlD() },
-      { sequences: ['\x03'],                              handler: () => this.handleCtrlC() },
-      { sequences: ['\x18'],                              handler: () => this.handleCut() },
-      { sequences: ['\x16', '\x19'],                      handler: () => this.handlePaste() },
-      { sequences: ['\x0c'],                              handler: () => this.handleClearScreen() },
-      { sequences: ['\x12'],                              handler: () => this.startHistorySearch() },
-      { sequences: ['\x1b[A', '\x10'],                    handler: () => this.handleHistoryOrSuggestionArrow('up') },
-      { sequences: ['\x1b[B', '\x0e'],                    handler: () => this.handleHistoryOrSuggestionArrow('down') },
-      { sequences: ['\x1b[5~'],                           handler: () => this.handlePagePrevious() },
-      { sequences: ['\x1b[6~'],                           handler: () => this.handlePageNext() },
-      { sequences: ['\x1b[1;2D'],                         handler: () => this.lineEditor.selectLeft() },
-      { sequences: ['\x1b[1;2C'],                         handler: () => this.lineEditor.selectRight() },
-      { sequences: ['\x1b[1;5D', '\x1b[5D', '\x1bb'],     handler: () => this.lineEditor.moveWordLeft() },
-      { sequences: ['\x1b[1;5C', '\x1b[5C', '\x1bf'],     handler: () => this.lineEditor.moveWordRight() },
-      { sequences: ['\x1b[1;6D'],                         handler: () => this.lineEditor.selectWordLeft() },
-      { sequences: ['\x1b[1;6C'],                         handler: () => this.lineEditor.selectWordRight() },
-      { sequences: ['\x1b[1;2H', '\x1b[1;2~'],            handler: () => this.lineEditor.selectToStart() },
-      { sequences: ['\x1b[1;2F', '\x1b[1;2$'],            handler: () => this.lineEditor.selectToEnd() },
-      { sequences: ['\x1b[D', '\x02'],                    handler: () => this.lineEditor.moveLeft() },
-      { sequences: ['\x1b[C', '\x06'],                    handler: () => this.lineEditor.moveRight() },
+      { sequences: ['\t'], handler: () => this.handleTabComplete() },
+      { sequences: ['\x1b[Z'], handler: () => this.handleShiftTab() },
+      { sequences: ['\x1b'], handler: () => this.handleEscape() },
+      { sequences: ['\x04'], handler: () => this.handleCtrlD() },
+      { sequences: ['\x03'], handler: () => this.handleCtrlC() },
+      { sequences: ['\x18'], handler: () => this.handleCut() },
+      { sequences: ['\x16', '\x19'], handler: () => this.handlePaste() },
+      { sequences: ['\x0c'], handler: () => this.handleClearScreen() },
+      { sequences: ['\x12'], handler: () => this.startHistorySearch() },
+      { sequences: ['\x1b[A', '\x10'], handler: () => this.handleHistoryOrSuggestionArrow('up') },
+      { sequences: ['\x1b[B', '\x0e'], handler: () => this.handleHistoryOrSuggestionArrow('down') },
+      { sequences: ['\x1b[5~'], handler: () => this.handlePagePrevious() },
+      { sequences: ['\x1b[6~'], handler: () => this.handlePageNext() },
+      { sequences: ['\x1b[1;2D'], handler: () => this.lineEditor.selectLeft() },
+      { sequences: ['\x1b[1;2C'], handler: () => this.lineEditor.selectRight() },
+      { sequences: ['\x1b[1;5D', '\x1b[5D', '\x1bb'], handler: () => this.lineEditor.moveWordLeft() },
+      { sequences: ['\x1b[1;5C', '\x1b[5C', '\x1bf'], handler: () => this.lineEditor.moveWordRight() },
+      { sequences: ['\x1b[1;6D'], handler: () => this.lineEditor.selectWordLeft() },
+      { sequences: ['\x1b[1;6C'], handler: () => this.lineEditor.selectWordRight() },
+      { sequences: ['\x1b[1;2H', '\x1b[1;2~'], handler: () => this.lineEditor.selectToStart() },
+      { sequences: ['\x1b[1;2F', '\x1b[1;2$'], handler: () => this.lineEditor.selectToEnd() },
+      { sequences: ['\x1b[D', '\x02'], handler: () => this.lineEditor.moveLeft() },
+      { sequences: ['\x1b[C', '\x06'], handler: () => this.lineEditor.moveRight() },
       { sequences: ['\x1b[H', '\x1bOH', '\x1b[1~', '\x01'], handler: () => this.lineEditor.moveToStart() },
       { sequences: ['\x1b[F', '\x1bOF', '\x1b[4~', '\x05'], handler: () => this.lineEditor.moveToEnd() },
-      { sequences: ['\x1b[3~'],                           handler: () => this.lineEditor.deleteForward() },
-      { sequences: ['\x0b'],                              handler: () => this.killAndStash(() => this.lineEditor.killToEnd()) },
-      { sequences: ['\x15'],                              handler: () => this.killAndStash(() => this.lineEditor.killToStart()) },
-      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'],        handler: () => this.killAndStash(() => this.lineEditor.killWordBack()) },
-      { sequences: ['\x1bd'],                             handler: () => this.killAndStash(() => this.lineEditor.killWordForward()) },
-      { sequences: ['\x14'],                              handler: () => this.lineEditor.transposeChars() },
-      { sequences: ['\r', '\n'],                          handler: () => this.handleEnter() },
-      { sequences: ['\x7f', '\b'],                        handler: () => this.lineEditor.handleBackspace() },
+      { sequences: ['\x1b[3~'], handler: () => this.lineEditor.deleteForward() },
+      { sequences: ['\x0b'], handler: () => this.killAndStash(() => this.lineEditor.killToEnd()) },
+      { sequences: ['\x15'], handler: () => this.killAndStash(() => this.lineEditor.killToStart()) },
+      { sequences: ['\x17', '\x1b\x7f', '\x1b\b'], handler: () => this.killAndStash(() => this.lineEditor.killWordBack()) },
+      { sequences: ['\x1bd'], handler: () => this.killAndStash(() => this.lineEditor.killWordForward()) },
+      { sequences: ['\x14'], handler: () => this.lineEditor.transposeChars() },
+      { sequences: ['\r', '\n'], handler: () => this.handleEnter() },
+      { sequences: ['\x7f', '\b'], handler: () => this.lineEditor.handleBackspace() },
     ];
 
     const map = new Map<string, () => void>();
