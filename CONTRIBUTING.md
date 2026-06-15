@@ -53,8 +53,7 @@ minercon/
 │   ├── argumentHint.ts         # Argument-hint formatting
 │   ├── lineEditor.ts           # Input line: editing, cursor, history
 │   ├── suggestionDisplay.ts    # Suggestion/argument-hint popup rendering
-│   ├── historySearch.ts        # Ctrl+R reverse history search state
-│   ├── historyStore.ts         # On-disk command history
+│   ├── historyStore.ts         # On-disk command history + Ctrl+R search state
 │   ├── ansi.ts                 # ANSI styling + § color code helpers
 │   └── logger.ts               # Logger interface (output channel/stderr/file)
 ├── src/test/                   # Unit tests (mocha, via vscode-test)

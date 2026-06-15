@@ -21,8 +21,7 @@ import { SuggestionDisplay } from './suggestionDisplay';
 import type { ConsolaInstance } from 'consola';
 import { ConnectionManager, ControllerFactory } from './connectionManager';
 import { errorMessage } from './logger';
-import { HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historySearch';
-import { HistoryStore } from './historyStore';
+import { HistoryStore, HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historyStore';
 import * as ansi from './ansi';
 import { progress } from '@clack/prompts';
 

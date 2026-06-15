@@ -99,7 +99,6 @@ graph TD
         lineEditor[lineEditor.ts]
         suggestionDisplay[suggestionDisplay.ts]
         argumentHint[argumentHint.ts]
-        historySearch[historySearch.ts]
         historyStore[historyStore.ts]
     end
 
@@ -132,7 +131,6 @@ graph TD
     rconSession --> completionEngine
     rconSession --> completionsBackend
     rconSession --> localCommandTree
-    rconSession --> historySearch
     rconSession --> historyStore
     rconSession --> rconClient
 
@@ -274,17 +272,16 @@ of the completion engine — `RconSession` is the only place that dispatches to
 it. Read-only `...Index()` queries return `number | null` ("nothing to do")
 for paging decisions. Reused as-is for the Ctrl+R history-search popup.
 
-### `historySearch.ts`
-Pure state and matching for Ctrl+R reverse history search — filtering,
-deduplicating, and cycling through in-memory history entries. Unlike
-`completionEngine.ts`, there's no network round trip, so this is plain
-synchronous state transitions with no reducer/effect machinery.
-
 ### `historyStore.ts`
 On-disk persistence for command history, server-scoped like
-`commandTreeCache.ts`. Loaded once at session start to seed `LineEditor`'s
-in-memory history, rewritten after each command. `maxEntries` (default 100,
-configurable via `RconSessionHost.historySize`) caps both load and save.
+`commandTreeCache.ts` (a plain text file, one entry per line). Loaded once at
+session start to seed `LineEditor`'s in-memory history, rewritten after each
+command. `maxEntries` (default 100, configurable via
+`RconSessionHost.historySize`) caps both load and save. Also holds the pure
+state/matching for Ctrl+R reverse history search — filtering, deduplicating,
+and cycling through in-memory history entries. Unlike `completionEngine.ts`,
+there's no network round trip, so this is plain synchronous state transitions
+with no reducer/effect machinery.
 
 ## Orchestration
 
@@ -360,4 +357,4 @@ helpers in `src/test/support/testLogger.ts`.
   `commandSuggestions.ts` → the `CommandNode` tree built by
   `localCommandTree.ts` from `helpTextParsing.ts`.
 - **Tracing Ctrl+R**: `rconSession.ts`'s `handleHistorySearchInput` →
-  `historySearch.ts` (pure state) → re-render via `suggestionDisplay.ts`.
+  `historyStore.ts` (pure state) → re-render via `suggestionDisplay.ts`.
