@@ -1,14 +1,15 @@
 // src/test/rconSession.test.ts
 //
-// Tests for RconSession — the host-agnostic RCON session orchestrator.
-// This is the source-of-truth for session behavior; rconTerminal.test.ts
-// is a thin smoke test of the VS Code Pseudoterminal adapter.
+// Tests for RconSession — the host-agnostic RCON session orchestrator and
+// the source-of-truth for session behavior. `cli.ts` is the only
+// `RconSessionHost` implementation (the VS Code extension runs the built CLI
+// as its terminal's process rather than driving a session in-process), so
+// this suite — driving RconSession through a FakeHost — is the primary
+// coverage for session behavior.
 //
 // The plugin-mode shortcut: a FakeController that answers 'tabcomplete' with
 // the magic probe string causes detectAndInitialize to skip the entire
-// command-tree-crawl and land immediately on the prompt — the same trick as
-// rconTerminal.test.ts, now driving RconSession through a FakeHost instead
-// of the vscode event-emitter wrapper.
+// command-tree-crawl and land immediately on the prompt.
 //
 // The auto-reconnect path is exercised by passing a `controllerFactory` to
 // `createHarness`/`RconSession`, so `ConnectionManager.attemptReconnect` gets

@@ -76,9 +76,8 @@ A few terms carry specific meaning throughout this codebase and its docs:
 
 - **`RconSessionHost`** — the narrow interface `RconSession` talks to instead
   of VS Code or stdio directly (`write`, `close`, `clipboard`, `cacheDir`,
-  `dimensions`, plus optional `historySize`/`disablePlugin`). Implemented by
-  `RconTerminal` (VS Code) and the CLI's host adapter — see "Host adapters"
-  below.
+  `dimensions`, plus optional `historySize`/`disablePlugin`). `cli.ts` is the
+  sole implementation — see "Host adapters" below.
 
 ## Module dependency diagram
 
@@ -86,7 +85,6 @@ A few terms carry specific meaning throughout this codebase and its docs:
 graph TD
     subgraph Adapters["Host adapters (entry points)"]
         extension[extension.ts]
-        rconTerminal[rconTerminal.ts]
         cli[cli.ts]
         cliConfig[cliConfig.ts]
     end
@@ -122,9 +120,6 @@ graph TD
         rconProtocol[rconProtocol.ts]
     end
 
-    extension --> rconTerminal
-    extension --> rconClient
-    rconTerminal --> rconSession
     cli --> rconSession
     cli --> cliConfig
     cli --> rconClient
@@ -163,6 +158,12 @@ Dashed arrows are type-only back-references (`commandSuggestions.ts` and
 `localCommandTree.ts`, which in turn imports the *value* exports of both —
 a small, intentional cluster of mutually-referencing modules around the
 command-tree data structure).
+
+Note: `extension.ts` has no import-level dependency on `rconSession.ts` or
+any module below it — at runtime it runs the built `out/minercon` binary
+(i.e. `cli.ts`'s compiled output) as the terminal's process, via
+`shellPath`/`shellArgs`. That process-spawn relationship isn't a module
+dependency, so it isn't shown as an edge above.
 
 ## RCON connection
 
@@ -299,25 +300,26 @@ the live connection, `LineEditor`/`SuggestionDisplay` for rendering,
 
 ## Host adapters
 
-### `rconTerminal.ts`
-Thin `vscode.Pseudoterminal` adapter over `RconSession` — wraps
-`vscode.EventEmitter`s for `onDidWrite`/`onDidClose`, supplies
-`vscode.env.clipboard`, derives `cacheDir` from `context.globalStorageUri`,
-and reads VS Code settings (`minercon.historySize`) into `RconSessionHost`.
-Forwards `open`/`close`/`handleInput`/`setDimensions` to the session.
-
 ### `extension.ts`
 VS Code extension entry point (`activate`): registers commands and the
 terminal profile provider, manages secrets (RCON password migration to
-secure storage), and constructs `RconController` + `RconTerminal` per
-connection.
+secure storage), and gathers connection details (saved settings/secrets or
+prompts). Builds a `vscode.TerminalProfile` that runs the built
+`out/minercon` CLI directly as the terminal's process — `shellPath:
+process.execPath` (the Node runtime bundled with VS Code, run as plain node
+via `ELECTRON_RUN_AS_NODE=1`) with `shellArgs: [minerconPath, host, port]`
+and `env: { MCRCON_PASSWORD, MCRCON_HISTORY_SIZE }`. VS Code's own terminal
+backend provides the pty; the extension has no pty code or `RconSession`
+dependency of its own.
 
 ### `cli.ts`
 Standalone CLI entry point (compiles to `out/cli.js`, packaged as
 `out/minercon`). Parses argv, resolves host/port/password/history-size
 (via `cliConfig.ts`), establishes the `RconController` connection, builds a
 `RconSessionHost` over `process.stdout`/raw-mode `stdin`, and wires up
-signal handling for clean teardown.
+signal handling for clean teardown. The sole `RconSessionHost`
+implementation — run directly for the terminal CLI, or as the VS Code
+extension's integrated-terminal process (`extension.ts`).
 
 ### `cliConfig.ts`
 Pure helpers for the CLI's config resolution — the saved

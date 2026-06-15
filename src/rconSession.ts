@@ -5,9 +5,9 @@
 // behind a narrow `RconSessionHost` seam whose only hard requirement is a
 // function that writes ANSI text to a terminal-shaped output stream.
 //
-// Two implementations of the host exist:
-//   - `RconTerminal` (rconTerminal.ts) — wraps vscode.Pseudoterminal
-//   - the CLI adapter (cli.ts) — wraps process.stdout / raw-mode stdin
+// `cli.ts` is the sole host adapter — it wraps process.stdout / raw-mode
+// stdin. The VS Code extension no longer runs a session in-process; it runs
+// the built CLI as the terminal's process (see extension.ts).
 
 import { RconController } from './rconClient';
 import { LocalCommandTree } from './localCommandTree';

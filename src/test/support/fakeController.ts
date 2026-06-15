@@ -1,9 +1,8 @@
 // src/test/support/fakeController.ts
 //
-// Shared RconController test double for rconSession.test.ts and
-// rconTerminal.test.ts. Both drive RconSession (directly, or via the
-// Pseudoterminal adapter) through a scripted `send()` implementation and
-// then inspect `sendCalls`/`disconnectCalls`/`connected`.
+// Shared RconController test double for rconSession.test.ts, which drives
+// RconSession through a scripted `send()` implementation and then inspects
+// `sendCalls`/`disconnectCalls`/`connected`.
 //
 // `defaultSend`/`PLUGIN_PROBE_RESPONSE` answer 'tabcomplete' with the magic
 // probe string that causes detectAndInitialize to skip the entire
