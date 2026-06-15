@@ -253,9 +253,7 @@ export class RconSession {
     // created over stdin — which pauses stdin and puts it back into cooked
     // mode. Undo both so the REPL keeps reading input a keystroke at a time.
     const restoreStdin = (): void => {
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(true);
-      }
+      process.stdin.setRawMode(true);
       process.stdin.resume();
     };
 
