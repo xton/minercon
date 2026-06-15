@@ -1,4 +1,4 @@
-// src/suggestionDisplay.ts
+// src/displaySuggestion.ts
 //
 // Owns the suggestion-list / argument-hint display: the items, the selected
 // index, paging state, and the ANSI rendering/clearing of whatever's drawn
@@ -12,7 +12,7 @@
 // `...Index()` queries, which return `number | null` — `null` meaning
 // "nothing to do" — and decide for themselves whether to dispatch.
 
-import { ArgumentHintDisplay, formatArgumentHint } from './argumentHint';
+import { ArgumentHintDisplay, formatArgumentHint } from './displayArgumentHint';
 import * as ansi from './ansi';
 
 export interface SuggestionDisplayHost {
@@ -201,7 +201,7 @@ export class SuggestionDisplay {
    * next), or "/gamemode cr" (one match left — "creative" — where seeing the
    * full usage helps confirm that's the right command to commit to). The
    * actual parsing of `usage`/`line` into positions and hint text is pure —
-   * see argumentHint.ts — this is just the ANSI rendering of that
+   * see displayArgumentHint.ts — this is just the ANSI rendering of that
    * already-computed structure.
    */
   private buildArgumentHintLines(display: ArgumentHintDisplay): string[] {

@@ -1,10 +1,10 @@
-// src/test/connectionManager.test.ts
+// src/test/rconConnectionManager.test.ts
 //
-// Tests for ConnectionManager's auto-reconnect/backoff state machine.
+// Tests for RconConnectionManager's auto-reconnect/backoff state machine.
 //
 // Previously a deliberate gap (see rconSession.test.ts): attemptReconnect()
 // constructed a real RconController directly, so exercising it would open a
-// live socket. ConnectionManager now accepts a `controllerFactory`, so tests
+// live socket. RconConnectionManager now accepts a `controllerFactory`, so tests
 // can supply fake controllers whose connect()/disconnect() behavior — and
 // timing — is fully controlled.
 //
@@ -17,7 +17,7 @@
 import * as assert from 'assert';
 import { silentLogger } from './support/testLogger';
 import { RconController } from '../rconClient';
-import { ConnectionManager, ConnectionManagerHost, ControllerFactory } from '../connectionManager';
+import { RconConnectionManager, RconConnectionManagerHost, ControllerFactory } from '../rconConnectionManager';
 
 class FakeController {
   connectCalls = 0;
@@ -87,7 +87,7 @@ async function flushMicrotasks(times = 10): Promise<void> {
 }
 
 interface Harness {
-  manager: ConnectionManager;
+  manager: RconConnectionManager;
   writes: string[];
   reconnectedCalls: number;
   controllers: FakeController[];
@@ -118,13 +118,13 @@ function createHarness(connectResults: ('ok' | 'fail')[]): Harness {
     return ctrl as unknown as RconController;
   };
 
-  const host: ConnectionManagerHost = {
+  const host: RconConnectionManagerHost = {
     write: (text) => writes.push(text),
     showPrompt: () => {},
     onReconnected: () => { reconnectedCalls++; },
   };
 
-  const manager = new ConnectionManager(
+  const manager = new RconConnectionManager(
     'localhost', 25575, 'pw', silentLogger(),
     initialController as unknown as RconController,
     host,
@@ -134,7 +134,7 @@ function createHarness(connectResults: ('ok' | 'fail')[]): Harness {
   return { manager, writes, get reconnectedCalls() { return reconnectedCalls; }, controllers };
 }
 
-suite('ConnectionManager auto-reconnect/backoff', () => {
+suite('RconConnectionManager auto-reconnect/backoff', () => {
   let timers: ReturnType<typeof installFakeTimers>;
 
   setup(() => {

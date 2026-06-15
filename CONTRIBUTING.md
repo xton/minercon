@@ -40,20 +40,20 @@ minercon/
 │   ├── cli.ts                  # Standalone CLI entry point
 │   ├── cliConfig.ts            # CLI config resolution (flags/env/saved config)
 │   ├── rconSession.ts          # Host-agnostic session orchestrator
-│   ├── connectionManager.ts    # Connect/reconnect lifecycle, backoff
+│   ├── rconConnectionManager.ts    # Connect/reconnect lifecycle, backoff
 │   ├── rconClient.ts           # RconController — send queue over RconProtocol
 │   ├── rconProtocol.ts         # RCON wire protocol, framing, fence packet
 │   ├── commandTree.ts           # Command tree model (Parameter/CommandNode shape)
-│   ├── localCommandTree.ts     # /help-crawl orchestration, command tree
-│   ├── commandSuggestions.ts   # Pure suggestion generation from the tree
+│   ├── commandTreeCrawler.ts     # /help-crawl orchestration, command tree
+│   ├── commandTreeSuggestions.ts   # Pure suggestion generation from the tree
 │   ├── commandTreeCache.ts     # On-disk command tree cache
-│   ├── helpTextParsing.ts      # Pure Brigadier /help text → Parameter tree parsing
-│   ├── bukkitHelpParsing.ts    # Pure Bukkit Description:/Usage:/Aliases: page parsing
+│   ├── commandTreeParsingBrigadier.ts      # Pure Brigadier /help text → Parameter tree parsing
+│   ├── commandTreeParsingBukkit.ts    # Pure Bukkit Description:/Usage:/Aliases: page parsing
 │   ├── completionEngine.ts     # Pure tab-completion state machine
-│   ├── completionsBackend.ts   # Plugin-mode vs local-mode completions seam
-│   ├── argumentHint.ts         # Argument-hint formatting
+│   ├── completionBackend.ts   # Plugin-mode vs local-mode completions seam
+│   ├── displayArgumentHint.ts         # Argument-hint formatting
 │   ├── lineEditor.ts           # Input line: editing, cursor, history
-│   ├── suggestionDisplay.ts    # Suggestion/argument-hint popup rendering
+│   ├── displaySuggestion.ts    # Suggestion/argument-hint popup rendering
 │   ├── historyStore.ts         # On-disk command history + Ctrl+R search state
 │   ├── ansi.ts                 # ANSI styling + § color code helpers
 │   └── logger.ts               # Logger interface (output channel/stderr/file)
@@ -128,7 +128,7 @@ handle:
 - Serializing all sends through `RconController`'s send queue
 
 Reconnection lifecycle (exponential backoff, recreating the controller) is
-`ConnectionManager`'s job (`connectionManager.ts`).
+`RconConnectionManager`'s job (`rconConnectionManager.ts`).
 
 ### Session Orchestration
 The `RconSession` class (`rconSession.ts`) provides:
@@ -138,9 +138,9 @@ The `RconSession` class (`rconSession.ts`) provides:
 - Reconnect handling
 
 ### Local Command Tree
-The `LocalCommandTree` class (`localCommandTree.ts`) manages:
-- Command discovery via `/help` crawling (`helpTextParsing.ts`)
-- Suggestion generation (`commandSuggestions.ts`)
+The `CommandTreeCrawler` class (`commandTreeCrawler.ts`) manages:
+- Command discovery via `/help` crawling (`commandTreeParsingBrigadier.ts`)
+- Suggestion generation (`commandTreeSuggestions.ts`)
 - Cache management (`commandTreeCache.ts`)
 
 ## Common Development Tasks
@@ -160,12 +160,12 @@ and the `/help` listing — no separate registration step needed. Use
 `/help`.
 
 ### Modifying Autocomplete Behavior
-See `helpTextParsing.ts` and `commandSuggestions.ts`:
+See `commandTreeParsingBrigadier.ts` and `commandTreeSuggestions.ts`:
 - `parseHelpLines()` / `parseCommandHelp()` - How help output is parsed
 - `getSuggestions()` - How suggestions are generated
 
 ### Changing Terminal Rendering
-Edit `suggestionDisplay.ts`:
+Edit `displaySuggestion.ts`:
 - `SuggestionDisplay.render()` - Suggestion list and argument-hint display
 
 ## Debugging Tips

@@ -1,6 +1,6 @@
-// src/commandSuggestions.ts
+// src/commandTreeSuggestions.ts
 //
-// Pure suggestion generation: given the command tree `LocalCommandTree`
+// Pure suggestion generation: given the command tree `CommandTreeCrawler`
 // builds and the user's current input line, work out what to suggest next
 // and what argument-help text to show. No state, no IO — a deterministic
 // function of the tree and the input.

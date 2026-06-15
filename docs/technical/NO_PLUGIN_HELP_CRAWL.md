@@ -4,7 +4,7 @@
 
 When no tab-complete plugin/mod is installed (`vanilla`, `paper`, `spigot`,
 `fabric` in `src/test/functional/variants.ts`'s `nonPluginVariants`),
-`LocalCommandTree` (`src/localCommandTree.ts`) builds its command tree
+`CommandTreeCrawler` (`src/commandTreeCrawler.ts`) builds its command tree
 purely from RCON `/help` text:
 
 1. `fetchRootCommands()` gets the list of root command names.
@@ -69,7 +69,7 @@ every recursion depth**, picking whichever side is non-generic.
 
 ## Current bugs this explains
 
-1. **`fetchRootCommands()` (localCommandTree.ts:130-157)** calls
+1. **`fetchRootCommands()` (commandTreeCrawler.ts:130-157)** calls
    `sendCommand('minecraft:help')` directly. On vanilla/fabric this returns
    the Brigadier syntax-error string above — non-empty, so the "empty
    response" fallback to `?` is never triggered, but `parseHelpResponse()`
@@ -94,7 +94,7 @@ every recursion depth**, picking whichever side is non-generic.
    parameters** in the tree. The rich `<args>` detail sitting in
    `minecraft:help <cmd>` is never fetched.
 
-3. **`loadSubcommandDetails` (localCommandTree.ts:378-463)** uses plain
+3. **`loadSubcommandDetails` (commandTreeCrawler.ts:378-463)** uses plain
    `sendCommand` instead of `fetchPaginatedCommand` — a latent gap (no
    pagination format was observed for single-command `help`, but it's
    inconsistent with `loadCommandDetails` and cheap to fix).
@@ -167,13 +167,13 @@ list`).
 
 ### New pure helpers
 
-`helpTextParsing.ts`:
+`commandTreeParsingBrigadier.ts`:
 - `isGenericArgsPlaceholder(parameters: Parameter[]): boolean` — true iff
   exactly one parameter, `ARGUMENT`, optional, `name === 'args'`.
 - `isUnsupportedNamespaceError(response: string): boolean` — true iff
   (stripColors'd) response matches `/^Unknown or incomplete command/i`.
 
-`bukkitHelpParsing.ts`:
+`commandTreeParsingBukkit.ts`:
 - `extractBukkitUsageLines(helpText: string, commandPath: string): string[]`
   — given `stripColors`'d `help <path>` output, find the `Usage:` section and
   return each usage line with the label stripped and re-prefixed so it reads
@@ -186,10 +186,10 @@ list`).
 
 ## Test plan
 
-### Unit tests (new `src/test/localCommandTree.test.ts`, plus additions to
-`helpTextParsing.test.ts` and `bukkitHelpParsing.test.ts`)
+### Unit tests (new `src/test/commandTreeCrawler.test.ts`, plus additions to
+`commandTreeParsingBrigadier.test.ts` and `commandTreeParsingBukkit.test.ts`)
 
-`LocalCommandTree` takes `sendCommand: (command: string) => Promise<string>`
+`CommandTreeCrawler` takes `sendCommand: (command: string) => Promise<string>`
 as a constructor argument — perfect seam for a fake keyed by exact command
 string, replaying the **real captured responses** above (verbatim, including
 `§`-color codes) for two fake servers:
@@ -216,8 +216,8 @@ Cases:
 - `team` → `list` subcommand ends up with `[<team>]` (paper-like, where
   `help team list` is useless but `minecraft:help team list` works)
 
-`helpTextParsing.test.ts` additions: `isGenericArgsPlaceholder`,
-`isUnsupportedNamespaceError`. `bukkitHelpParsing.test.ts`:
+`commandTreeParsingBrigadier.test.ts` additions: `isGenericArgsPlaceholder`,
+`isUnsupportedNamespaceError`. `commandTreeParsingBukkit.test.ts`:
 `extractBukkitUsageLines` (generic vanilla → `[]`, `version`/`reload`/
 `plugins` Usage lines → normalized lines, `No help for X` → `[]`) and
 `extractBukkitAliases`.
@@ -225,7 +225,7 @@ Cases:
 ### Functional tests (`src/test/functional/`, all four `nonPluginVariants`)
 
 Extend `localMode.test.ts` (or a new sibling file) — after a real
-`LocalCommandTree.initialize()` against a live container:
+`CommandTreeCrawler.initialize()` against a live container:
 
 - `gamemode`'s parameters include a required `<gamemode>` argument and an
   optional `<target>` argument (proves the merge works against a real server,

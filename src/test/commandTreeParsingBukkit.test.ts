@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import {
     extractBukkitUsageLines,
     extractBukkitAliases,
-} from '../bukkitHelpParsing';
+} from '../commandTreeParsingBukkit';
 
 suite('extractBukkitUsageLines', () => {
     test('extracts a real Bukkit-added command\'s usage line (version)', () => {

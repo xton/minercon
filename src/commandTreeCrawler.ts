@@ -1,13 +1,13 @@
-// src/localCommandTree.ts
+// src/commandTreeCrawler.ts
 //
 // The command tree for "local" (no-plugin) mode: built by crawling a
 // server's `/help` and `minecraft:help` output, cached to disk between runs
-// via `CommandTreeCache`, and consumed by `LocalCompletionsBackend` (which
-// turns it into completions/usage text via `commandSuggestions.ts`'s
+// via `CommandTreeCache`, and consumed by `LocalCompletionBackend` (which
+// turns it into completions/usage text via `commandTreeSuggestions.ts`'s
 // `getSuggestions`). All the text parsing this crawl relies on is in
-// `helpTextParsing.ts` as pure functions - this file is the stateful
-// orchestration: deciding what to fetch, in what order, and how to merge and
-// store the results. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+// `commandTreeParsingBrigadier.ts` as pure functions - this file is the
+// stateful orchestration: deciding what to fetch, in what order, and how to
+// merge and store the results. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
 
 import * as path from 'path';
 import type { ConsolaInstance } from 'consola';
@@ -24,17 +24,17 @@ import {
   isUnsupportedNamespaceError,
   buildParameterStructureFromVariants,
   hasUsableArguments,
-} from './helpTextParsing';
-import { extractBukkitUsageLines, extractBukkitAliases } from './bukkitHelpParsing';
+} from './commandTreeParsingBrigadier';
+import { extractBukkitUsageLines, extractBukkitAliases } from './commandTreeParsingBukkit';
 import { CommandTreeCache } from './commandTreeCache';
-import { getSuggestions, SuggestionResult } from './commandSuggestions';
+import { getSuggestions, SuggestionResult } from './commandTreeSuggestions';
 
 export { CommandNode } from './commandTree';
 
 /** Coarse-grained stage of `initialize()`'s progress, for UI phase labels. */
 export type ProgressPhase = 'cache-hit' | 'fetching' | 'loading' | 'complete';
 
-export class LocalCommandTree {
+export class CommandTreeCrawler {
   private rootCommands: Map<string, CommandNode> = new Map();
   private isLoading: boolean = false;
   private loadingProgress: number = 0;

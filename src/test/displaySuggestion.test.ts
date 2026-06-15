@@ -1,4 +1,4 @@
-// src/test/suggestionDisplay.test.ts
+// src/test/displaySuggestion.test.ts
 //
 // Tests for SuggestionDisplay's rendering/layout: the suggestion-list ANSI
 // output (selection highlighting, pagination indicators, footer), the
@@ -7,7 +7,7 @@
 // `needsClearOnNextRender`, cursor-column restoration).
 
 import * as assert from 'assert';
-import { SuggestionDisplay, SuggestionDisplayHost } from '../suggestionDisplay';
+import { SuggestionDisplay, SuggestionDisplayHost } from '../displaySuggestion';
 
 class FakeHost implements SuggestionDisplayHost {
     writes: string[] = [];

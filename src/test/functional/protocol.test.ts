@@ -117,7 +117,7 @@ for (const variant of nonPluginVariants) {
     });
 
     // After a controller is cleanly disconnected, the server should accept a
-    // new connection immediately. ConnectionManager handles reconnect by
+    // new connection immediately. RconConnectionManager handles reconnect by
     // constructing a fresh RconController — this test verifies the server-side
     // state is clean after a disconnect and the new controller authenticates
     // and operates correctly.

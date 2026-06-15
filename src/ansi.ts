@@ -3,13 +3,14 @@
 // Named ANSI SGR (Select Graphic Rendition) escape codes for terminal
 // output, plus small `style`/color helpers that wrap text and reset
 // afterward. Centralizes the raw `\x1b[...m` literals previously scattered
-// across rconSession.ts, suggestionDisplay.ts, lineEditor.ts,
-// connectionManager.ts, and cli.ts.
+// across rconSession.ts, displaySuggestion.ts, lineEditor.ts,
+// rconConnectionManager.ts, and cli.ts.
 //
 // Also home to `formatMinecraftColors`/`stripColors`, which translate the
 // server-controlled Minecraft `§`-color-code alphabet to/from ANSI - a
 // distinct input alphabet from the literals above, but the same output
-// format, so it lives alongside them rather than in helpTextParsing.ts.
+// format, so it lives alongside them rather than in
+// commandTreeParsingBrigadier.ts.
 
 export const RESET = '\x1b[0m';
 

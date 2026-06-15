@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { getSuggestions } from '../commandSuggestions';
+import { getSuggestions } from '../commandTreeSuggestions';
 import { ParameterType, Parameter, CommandNode, newCommandNode } from '../commandTree';
 
 function arg(name: string, optional = false): Parameter {
@@ -21,7 +21,7 @@ function tree(...nodes: CommandNode[]): Map<string, CommandNode> {
     return new Map(nodes.map(n => [n.name!, n]));
 }
 
-suite('commandSuggestions: getSuggestions', () => {
+suite('commandTreeSuggestions: getSuggestions', () => {
     test('not ready: returns nothing regardless of input', () => {
         const result = getSuggestions(tree(node('gamemode', [])), false, '/gam');
         assert.deepStrictEqual(result, { suggestions: [], argumentHelp: undefined });

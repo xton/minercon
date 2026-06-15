@@ -1,14 +1,14 @@
 // src/commandTree.ts
 //
 // The command tree model: one recursive `Parameter` type, used both for root
-// commands (the entries in `LocalCommandTree`'s `rootCommands` map, aliased
+// commands (the entries in `CommandTreeCrawler`'s `rootCommands` map, aliased
 // here as `CommandNode`) and for every argument/subcommand/choice nested
 // beneath them. This file is just the shape of that tree.
 //
-// Everything that builds it lives in helpTextParsing.ts/bukkitHelpParsing.ts;
-// everything that reads it lives in commandSuggestions.ts/argumentHint.ts;
-// `localCommandTree.ts` is the stateful orchestration that ties construction
-// and the cache together.
+// Everything that builds it lives in commandTreeParsingBrigadier.ts/
+// commandTreeParsingBukkit.ts; everything that reads it lives in
+// commandTreeSuggestions.ts/displayArgumentHint.ts; `commandTreeCrawler.ts` is the
+// stateful orchestration that ties construction and the cache together.
 
 export enum ParameterType {
   ARGUMENT = 'argument',          // <n>

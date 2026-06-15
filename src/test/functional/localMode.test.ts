@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
-import { LocalCommandTree } from '../../localCommandTree';
+import { CommandTreeCrawler } from '../../commandTreeCrawler';
 import { silentLogger } from '../support/testLogger';
 import { nonPluginVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
@@ -17,13 +17,13 @@ const silent = silentLogger();
 // Commands present on every Minecraft server regardless of variant.
 const UNIVERSAL_COMMANDS = ['list', 'help', 'gamemode', 'time', 'weather'];
 
-// Builds a `LocalCommandTree` against `cacheDir` - if an earlier test in
+// Builds a `CommandTreeCrawler` against `cacheDir` - if an earlier test in
 // this suite already populated the cache, this loads instantly with no RCON
 // calls; otherwise it performs the full /help crawl.
-async function loadCommandTree(host: string, port: number, cacheDir: string): Promise<LocalCommandTree> {
+async function loadCommandTree(host: string, port: number, cacheDir: string): Promise<CommandTreeCrawler> {
   const ctrl = new RconController(host, port, 'testpassword', silent);
   await ctrl.connect();
-  const commandTree = new LocalCommandTree(
+  const commandTree = new CommandTreeCrawler(
     (cmd) => ctrl.send(cmd).then(r => r ?? ''),
     silent,
     cacheDir,
@@ -65,12 +65,12 @@ for (const variant of nonPluginVariants) {
       await ctrl.disconnect();
     });
 
-    test('LocalCommandTree initializes without error', async function () {
+    test('CommandTreeCrawler initializes without error', async function () {
       // The crawl visits every command — budget extra time.
       this.timeout(180_000);
       const ctrl = new RconController(host, port, 'testpassword', silent);
       await ctrl.connect();
-      const commandTree = new LocalCommandTree(
+      const commandTree = new CommandTreeCrawler(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
@@ -86,7 +86,7 @@ for (const variant of nonPluginVariants) {
       this.timeout(180_000);
       const ctrl = new RconController(host, port, 'testpassword', silent);
       await ctrl.connect();
-      const commandTree = new LocalCommandTree(
+      const commandTree = new CommandTreeCrawler(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
@@ -170,7 +170,7 @@ for (const variant of nonPluginVariants) {
       await ctrl.connect();
 
       // First pass: populate cache
-      const first = new LocalCommandTree(
+      const first = new CommandTreeCrawler(
         (cmd) => ctrl.send(cmd).then(r => r ?? ''),
         silent,
         cacheDir,
@@ -182,7 +182,7 @@ for (const variant of nonPluginVariants) {
       // Second pass: new instance, same cacheDir — should load from cache.
       // We verify by substituting a sendCommand that throws, so any real
       // network call would fail the test.
-      const second = new LocalCommandTree(
+      const second = new CommandTreeCrawler(
         async (_cmd) => { throw new Error('should not make RCON calls when loading from cache'); },
         silent,
         cacheDir,

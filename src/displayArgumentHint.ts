@@ -1,4 +1,4 @@
-// src/argumentHint.ts
+// src/displayArgumentHint.ts
 //
 // Pure formatting for the "argument hint" display: given a command's usage
 // string (e.g. "gamemode <mode> [<target>]") and the line the user has typed

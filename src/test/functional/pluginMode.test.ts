@@ -8,7 +8,7 @@
 import * as assert from 'assert';
 import { StartedTestContainer } from 'testcontainers';
 import { RconController } from '../../rconClient';
-import { RconCompletionsBackend } from '../../completionsBackend';
+import { RconCompletionBackend } from '../../completionBackend';
 import { silentLogger } from '../support/testLogger';
 import { addonVariants } from './variants';
 import { startServer, stopServer, connectionParams } from './harness';
@@ -94,11 +94,11 @@ for (const variant of addonVariants) {
       await ctrl.disconnect().catch(() => {});
     });
 
-    // ── RconCompletionsBackend integration ────────────────────────────────────
+    // ── RconCompletionBackend integration ────────────────────────────────────
 
-    test('RconCompletionsBackend.fetchCompletions returns game modes for "/gamemode "', async () => {
+    test('RconCompletionBackend.fetchCompletions returns game modes for "/gamemode "', async () => {
       const ctrl = await connect();
-      const backend = new RconCompletionsBackend(() => ctrl);
+      const backend = new RconCompletionBackend(() => ctrl);
       const completions = await backend.fetchCompletions('/gamemode ');
       assert.ok(Array.isArray(completions), 'expected an array');
       assert.ok(completions.length > 0, `expected completions, got: ${JSON.stringify(completions)}`);
@@ -108,9 +108,9 @@ for (const variant of addonVariants) {
       await ctrl.disconnect().catch(() => {});
     });
 
-    test('RconCompletionsBackend.fetchUsage returns non-empty string for "/gamemode"', async () => {
+    test('RconCompletionBackend.fetchUsage returns non-empty string for "/gamemode"', async () => {
       const ctrl = await connect();
-      const backend = new RconCompletionsBackend(() => ctrl);
+      const backend = new RconCompletionBackend(() => ctrl);
       const usage = await backend.fetchUsage('/gamemode ');
       assert.ok(typeof usage === 'string', 'expected string');
       if (usage.length > 0) {
@@ -119,9 +119,9 @@ for (const variant of addonVariants) {
       await ctrl.disconnect().catch(() => {});
     });
 
-    test('RconCompletionsBackend returns empty array for non-command input', async () => {
+    test('RconCompletionBackend returns empty array for non-command input', async () => {
       const ctrl = await connect();
-      const backend = new RconCompletionsBackend(() => ctrl);
+      const backend = new RconCompletionBackend(() => ctrl);
       const completions = await backend.fetchCompletions('not a command');
       assert.deepStrictEqual(completions, []);
       await ctrl.disconnect().catch(() => {});

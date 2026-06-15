@@ -16,9 +16,9 @@ import {
     isUnsupportedNamespaceError,
     splitConcatenatedHelpLines,
     VariantInfo,
-} from '../helpTextParsing';
+} from '../commandTreeParsingBrigadier';
 
-suite('helpTextParsing', () => {
+suite('commandTreeParsingBrigadier', () => {
     test('tokenizeParameterString handles nested tokens', () => {
         const input = '<arg1> [opt] (a|b) subcmd <nested>';
         const tokens = tokenizeParameterString(input);
@@ -196,7 +196,7 @@ suite('classifyParameterTokens', () => {
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
 // Vanilla/Fabric 1.21.4 server, used throughout this suite and in
-// localCommandTree.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+// commandTreeCrawler.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
 suite('parseHelpLines', () => {
     test('vanilla "/help <cmd>" direct syntax (gamemode)', () => {
         const result = parseHelpLines('/gamemode <gamemode> [<target>]', 'gamemode');
@@ -259,7 +259,7 @@ suite('parseHelpLines', () => {
     test('a concatenated "minecraft:help" blob requires the caller to split on "/" first', () => {
         // Real minecraft:help responses pack consecutive commands onto one
         // line with no separator; callers must replace('/', '\n/') before
-        // calling parseHelpLines (see localCommandTree.ts).
+        // calling parseHelpLines (see commandTreeCrawler.ts).
         const blob = '/team list [<team>]/team add <team> [<displayName>]';
         const split = blob.replace(/\//g, '\n/');
         const result = parseHelpLines(split, 'team');

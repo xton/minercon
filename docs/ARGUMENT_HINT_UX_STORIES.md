@@ -131,7 +131,7 @@ Status: ✅ — implemented as "sticky" usage caching plus pause-point fetching:
   could plausibly have changed.
 - This generalizes the *old* local-mode backend's "sticky cached usage per
   command" behavior (`commandArgumentCache` / `cachedCommand`+`cachedHelp` in
-  `LocalCompletionsBackend`) to the engine, without keying on the literal
+  `LocalCompletionBackend`) to the engine, without keying on the literal
   command name — `usageCoversLine`'s word-prefix check naturally handles
   multi-word command paths like `mvp create` the same way.
 

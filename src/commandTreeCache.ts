@@ -1,6 +1,6 @@
 // src/commandTreeCache.ts
 //
-// On-disk persistence for the command tree `LocalCommandTree` builds by
+// On-disk persistence for the command tree `CommandTreeCrawler` builds by
 // crawling a server's `/help` output — versioned, server-scoped, and aged out
 // after a week so a stale tree doesn't outlive a server's command set.
 

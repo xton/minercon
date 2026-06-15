@@ -1,6 +1,6 @@
-// src/test/argumentHint.test.ts
+// src/test/displayArgumentHint.test.ts
 import * as assert from 'assert';
-import { formatArgumentHint } from '../argumentHint';
+import { formatArgumentHint } from '../displayArgumentHint';
 
 suite('formatArgumentHint', () => {
   test('returns null when there is no usage text', () => {

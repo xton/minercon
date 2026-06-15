@@ -10,16 +10,16 @@
 // the built CLI as the terminal's process (see extension.ts).
 
 import { RconController } from './rconClient';
-import { LocalCommandTree, ProgressPhase } from './localCommandTree';
+import { CommandTreeCrawler, ProgressPhase } from './commandTreeCrawler';
 import {
   Machine, Event as EngineEvent, Effect as EngineEffect,
   createMachine, step, applySuggestion,
 } from './completionEngine';
-import { CompletionsBackend, RconCompletionsBackend, LocalCompletionsBackend } from './completionsBackend';
+import { CompletionBackend, RconCompletionBackend, LocalCompletionBackend } from './completionBackend';
 import { LineEditor } from './lineEditor';
-import { SuggestionDisplay } from './suggestionDisplay';
+import { SuggestionDisplay } from './displaySuggestion';
 import type { ConsolaInstance } from 'consola';
-import { ConnectionManager, ControllerFactory } from './connectionManager';
+import { RconConnectionManager, ControllerFactory } from './rconConnectionManager';
 import { errorMessage } from './logger';
 import { HistoryStore, HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historyStore';
 import * as ansi from './ansi';
@@ -59,21 +59,21 @@ interface BuiltinCommand {
 }
 
 export class RconSession {
-  private connectionManager: ConnectionManager;
+  private connectionManager: RconConnectionManager;
   private lineEditor: LineEditor;
 
   private readonly serverHost: string;
   private readonly serverPort: number;
   private isExecutingCommand: boolean = false;
 
-  private commandTree: LocalCommandTree;
+  private commandTree: CommandTreeCrawler;
   private suggestionDisplay: SuggestionDisplay;
 
   private pluginMode: boolean = false;
   private engine: Machine = createMachine();
-  private rconBackend: CompletionsBackend;
-  private localBackend: CompletionsBackend;
-  private get completionsBackend(): CompletionsBackend {
+  private rconBackend: CompletionBackend;
+  private localBackend: CompletionBackend;
+  private get completionBackend(): CompletionBackend {
     return this.pluginMode ? this.rconBackend : this.localBackend;
   }
 
@@ -97,13 +97,13 @@ export class RconSession {
 
     const historySize = sessionHost.historySize ?? 100;
 
-    this.connectionManager = new ConnectionManager(host, port, password, logger, controller, {
+    this.connectionManager = new RconConnectionManager(host, port, password, logger, controller, {
       write: (text) => sessionHost.write(text),
       showPrompt: () => this.showPrompt(),
       onReconnected: () => this.initializeCommands(),
     }, controllerFactory);
 
-    this.commandTree = new LocalCommandTree(
+    this.commandTree = new CommandTreeCrawler(
       async (cmd) => {
         const result = await this.connectionManager.controller.send(cmd);
         return result ?? '';
@@ -114,8 +114,8 @@ export class RconSession {
       port
     );
 
-    this.rconBackend = new RconCompletionsBackend(() => this.connectionManager.controller);
-    this.localBackend = new LocalCompletionsBackend(this.commandTree);
+    this.rconBackend = new RconCompletionBackend(() => this.connectionManager.controller);
+    this.localBackend = new LocalCompletionBackend(this.commandTree);
 
     this.suggestionDisplay = new SuggestionDisplay({
       write: (text) => sessionHost.write(text),
@@ -571,7 +571,7 @@ export class RconSession {
     const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
     let items: string[] = [];
     try {
-      items = await this.completionsBackend.fetchCompletions(line);
+      items = await this.completionBackend.fetchCompletions(line);
     } catch {
       items = [];
     }
@@ -582,7 +582,7 @@ export class RconSession {
     const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
     let text = '';
     try {
-      text = await this.completionsBackend.fetchUsage(line);
+      text = await this.completionBackend.fetchUsage(line);
     } catch {
       text = '';
     }

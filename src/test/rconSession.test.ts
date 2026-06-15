@@ -12,7 +12,7 @@
 // command-tree-crawl and land immediately on the prompt.
 //
 // The auto-reconnect path is exercised by passing a `controllerFactory` to
-// `createHarness`/`RconSession`, so `ConnectionManager.attemptReconnect` gets
+// `createHarness`/`RconSession`, so `RconConnectionManager.attemptReconnect` gets
 // a fresh `FakeController` instead of constructing a real `RconController`
 // (see "connection lost → auto-reconnect → onReconnected reloads commands").
 
@@ -22,7 +22,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { RconController } from '../rconClient';
 import { RconSession, RconSessionHost } from '../rconSession';
-import { ControllerFactory } from '../connectionManager';
+import { ControllerFactory } from '../rconConnectionManager';
 import { FakeController, PLUGIN_PROBE_RESPONSE, SendImpl, defaultSend, waitUntil } from './support/fakeController';
 import { recordingLogger } from './support/testLogger';
 import type { LogType } from 'consola';

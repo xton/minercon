@@ -1,8 +1,8 @@
-// src/completionsBackend.ts
+// src/completionBackend.ts
 //
 // The completionEngine state machine knows it needs completions and usage
 // text for a given input line — it doesn't know or care whether those come
-// from a network round trip or an in-memory lookup. A CompletionsBackend is
+// from a network round trip or an in-memory lookup. A CompletionBackend is
 // that boundary: one implementation asks the server-side TabComplete
 // plugin over RCON, the other asks the locally-built command tree.
 //
@@ -12,10 +12,10 @@
 // not branched on at every call site.
 
 import { RconController } from './rconClient';
-import { LocalCommandTree } from './localCommandTree';
+import { CommandTreeCrawler } from './commandTreeCrawler';
 import { buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse } from './completionEngine';
 
-export interface CompletionsBackend {
+export interface CompletionBackend {
   fetchCompletions(line: string): Promise<string[]>;
   fetchUsage(line: string): Promise<string>;
 }
@@ -30,7 +30,7 @@ export interface CompletionsBackend {
  * throwing "Not connected" (swallowed by the caller as "no completions").
  * Looking it up fresh on each call always reaches whatever's live.
  */
-export class RconCompletionsBackend implements CompletionsBackend {
+export class RconCompletionBackend implements CompletionBackend {
   constructor(private getController: () => RconController) {}
 
   async fetchCompletions(line: string): Promise<string[]> {
@@ -49,14 +49,14 @@ export class RconCompletionsBackend implements CompletionsBackend {
 }
 
 /**
- * Local completions via the command tree LocalCommandTree builds at
+ * Local completions via the command tree CommandTreeCrawler builds at
  * startup — a synchronous in-memory lookup, wrapped in `async` so it flows
  * through exactly the same dispatch path as the RCON backend (the `await`
  * still yields to the microtask queue, so a `dispatchToEngine` call made from
  * here lands *after* the effect loop that triggered it has finished — same
  * ordering guarantee the real async backend gets for free from the network).
  */
-export class LocalCompletionsBackend implements CompletionsBackend {
+export class LocalCompletionBackend implements CompletionBackend {
   // getSuggestions sometimes returns incomplete argument help for inputs that
   // are mid-command (e.g. once the user is typing a free-form argument like a
   // player name, the locally-built tree may not have anything to say). Stick
@@ -65,7 +65,7 @@ export class LocalCompletionsBackend implements CompletionsBackend {
   private cachedCommand: string | null = null;
   private cachedHelp: string | null = null;
 
-  constructor(private commandTree: LocalCommandTree) {}
+  constructor(private commandTree: CommandTreeCrawler) {}
 
   async fetchCompletions(line: string): Promise<string[]> {
     return this.commandTree.getSuggestions(line).suggestions;

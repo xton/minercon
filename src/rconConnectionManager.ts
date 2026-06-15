@@ -1,9 +1,9 @@
-// src/connectionManager.ts
+// src/rconConnectionManager.ts
 //
 // Owns the RCON connection lifecycle: the live `RconController` (recreated on
 // each reconnect attempt), connection/reconnection status, and the
 // exponential-backoff retry loop. Pulled out of RconTerminal as part of the
-// mega-module split — see lineEditor.ts / suggestionDisplay.ts for the sibling
+// mega-module split — see lineEditor.ts / displaySuggestion.ts for the sibling
 // extractions and their rationale.
 //
 // `RconSession` keeps `detectAndInitialize`/`initializeCommands` (they're
@@ -17,7 +17,7 @@ import { RconController } from './rconClient';
 import { errorMessage } from './logger';
 import * as ansi from './ansi';
 
-export interface ConnectionManagerHost {
+export interface RconConnectionManagerHost {
   write(text: string): void;
   showPrompt(): void;
   onReconnected(): void;
@@ -29,7 +29,7 @@ export type ControllerFactory = (host: string, port: number, password: string, l
 const defaultControllerFactory: ControllerFactory = (host, port, password, logger) =>
   new RconController(host, port, password, logger);
 
-export class ConnectionManager {
+export class RconConnectionManager {
   private _controller: RconController;
   private _isConnected: boolean = true;
   private _isReconnecting: boolean = false;
@@ -44,7 +44,7 @@ export class ConnectionManager {
     private readonly password: string,
     private readonly logger: ConsolaInstance,
     controller: RconController,
-    private readonly host: ConnectionManagerHost,
+    private readonly host: RconConnectionManagerHost,
     private readonly controllerFactory: ControllerFactory = defaultControllerFactory,
   ) {
     this._controller = controller;

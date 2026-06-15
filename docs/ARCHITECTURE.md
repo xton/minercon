@@ -31,14 +31,14 @@ A few terms carry specific meaning throughout this codebase and its docs:
 - **Plugin mode** — `RconSession.pluginMode` is `true` when the server
   answers the `tabcomplete`/`cmdusage` probe commands, i.e. a server-side
   **TabComplete** addon (see below) is installed. In this mode
-  `RconCompletionsBackend` asks the server directly for completions and
+  `RconCompletionBackend` asks the server directly for completions and
   argument usage on every keystroke; no command tree is built or cached.
 
 - **Local mode** — the opposite of plugin mode: no TabComplete addon
   responded (vanilla servers, modded servers without the mod, or
-  `--no-plugin`/`disablePlugin` below). `LocalCommandTree` crawls `/help`
+  `--no-plugin`/`disablePlugin` below). `CommandTreeCrawler` crawls `/help`
   (and `minecraft:help`, where supported) once at startup to build a
-  **command tree**, which `LocalCompletionsBackend`/`commandSuggestions.ts`
+  **command tree**, which `LocalCompletionBackend`/`commandTreeSuggestions.ts`
   query thereafter. This is the path exercised by the "no-plugin" help-crawl
   work — see `docs/technical/NO_PLUGIN_HELP_CRAWL.md`.
 
@@ -54,9 +54,9 @@ A few terms carry specific meaning throughout this codebase and its docs:
   implement the `tabcomplete`/`cmdusage` RCON commands enabling plugin mode.
 
 - **Command tree** / `CommandNode` — the data structure built by
-  `localCommandTree.ts` in local mode: every root command, its
+  `commandTreeCrawler.ts` in local mode: every root command, its
   subcommands, and argument parameters, parsed from `/help` text by
-  `helpTextParsing.ts`. Persisted on disk by `commandTreeCache.ts`.
+  `commandTreeParsingBrigadier.ts`. Persisted on disk by `commandTreeCache.ts`.
 
 - **`minecraft:` namespace prefix** — on Paper/Spigot, prefixing a command
   with `minecraft:` (e.g. `minecraft:help`) surfaces Brigadier's full
@@ -97,27 +97,27 @@ graph TD
 
     subgraph UI["Terminal UI"]
         lineEditor[lineEditor.ts]
-        suggestionDisplay[suggestionDisplay.ts]
-        argumentHint[argumentHint.ts]
+        displaySuggestion[displaySuggestion.ts]
+        displayArgumentHint[displayArgumentHint.ts]
         historyStore[historyStore.ts]
     end
 
     subgraph Completion["Tab-completion engine"]
         completionEngine[completionEngine.ts]
-        completionsBackend[completionsBackend.ts]
+        completionBackend[completionBackend.ts]
     end
 
     subgraph Knowledge["Command knowledge"]
         commandTree[commandTree.ts]
-        localCommandTree[localCommandTree.ts]
-        commandSuggestions[commandSuggestions.ts]
+        commandTreeCrawler[commandTreeCrawler.ts]
+        commandTreeSuggestions[commandTreeSuggestions.ts]
         commandTreeCache[commandTreeCache.ts]
-        helpTextParsing[helpTextParsing.ts]
-        bukkitHelpParsing[bukkitHelpParsing.ts]
+        commandTreeParsingBrigadier[commandTreeParsingBrigadier.ts]
+        commandTreeParsingBukkit[commandTreeParsingBukkit.ts]
     end
 
     subgraph Connection["RCON connection"]
-        connectionManager[connectionManager.ts]
+        rconConnectionManager[rconConnectionManager.ts]
         rconClient[rconClient.ts]
         rconProtocol[rconProtocol.ts]
     end
@@ -126,33 +126,33 @@ graph TD
     cli --> cliConfig
     cli --> rconClient
 
-    rconSession --> connectionManager
+    rconSession --> rconConnectionManager
     rconSession --> lineEditor
-    rconSession --> suggestionDisplay
+    rconSession --> displaySuggestion
     rconSession --> completionEngine
-    rconSession --> completionsBackend
-    rconSession --> localCommandTree
+    rconSession --> completionBackend
+    rconSession --> commandTreeCrawler
     rconSession --> historyStore
     rconSession --> rconClient
 
-    suggestionDisplay --> argumentHint
+    displaySuggestion --> displayArgumentHint
 
-    completionsBackend --> completionEngine
-    completionsBackend --> localCommandTree
-    completionsBackend --> rconClient
+    completionBackend --> completionEngine
+    completionBackend --> commandTreeCrawler
+    completionBackend --> rconClient
 
-    localCommandTree --> commandSuggestions
-    localCommandTree --> commandTreeCache
-    localCommandTree --> helpTextParsing
-    localCommandTree --> bukkitHelpParsing
-    localCommandTree --> commandTree
-    commandSuggestions --> commandTree
+    commandTreeCrawler --> commandTreeSuggestions
+    commandTreeCrawler --> commandTreeCache
+    commandTreeCrawler --> commandTreeParsingBrigadier
+    commandTreeCrawler --> commandTreeParsingBukkit
+    commandTreeCrawler --> commandTree
+    commandTreeSuggestions --> commandTree
     commandTreeCache --> commandTree
-    helpTextParsing --> commandTree
-    commandSuggestions --> helpTextParsing
-    commandTreeCache --> helpTextParsing
+    commandTreeParsingBrigadier --> commandTree
+    commandTreeSuggestions --> commandTreeParsingBrigadier
+    commandTreeCache --> commandTreeParsingBrigadier
 
-    connectionManager --> rconClient
+    rconConnectionManager --> rconClient
     rconClient --> rconProtocol
 ```
 
@@ -177,7 +177,7 @@ is chained onto one promise so at most one RCON exchange is ever in flight on
 the socket at a time. This is load-bearing: concurrent sends make some
 servers close the connection.
 
-### `connectionManager.ts`
+### `rconConnectionManager.ts`
 Owns the *lifecycle* on top of `RconController`: connection/reconnection
 status and the exponential-backoff retry loop. Recreates the controller on
 each reconnect attempt. `RconSession` reads connection status and reaches the
@@ -192,12 +192,12 @@ once per server, either from a server-side plugin or by crawling `/help`.
 ### `commandTree.ts`
 The command tree model: one recursive `Parameter` type (and the `CommandNode`
 alias for its root-node use), shared by everything else in this layer.
-`helpTextParsing.ts`/`bukkitHelpParsing.ts` construct `Parameter` trees,
-`commandSuggestions.ts`/`argumentHint.ts` read them, and `localCommandTree.ts`
+`commandTreeParsingBrigadier.ts`/`commandTreeParsingBukkit.ts` construct `Parameter` trees,
+`commandTreeSuggestions.ts`/`displayArgumentHint.ts` read them, and `commandTreeCrawler.ts`
 ties construction and the cache together. This file is just the shape — no
 parsing, no IO.
 
-### `helpTextParsing.ts`
+### `commandTreeParsingBrigadier.ts`
 Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat `/cmd
 <args>` blobs, as returned by `minecraft:help` and vanilla's plain `help`)
 into a `Parameter` tree (`commandTree.ts`), plus the root-listing parser (`parseHelpResponse`)
@@ -206,9 +206,9 @@ including the quirks documented in `docs/technical/` (concatenated help
 lines, hyphenated literals, namespace differences between `/help` and
 `minecraft:help`). Every export is a deterministic function — no IO.
 
-### `bukkitHelpParsing.ts`
+### `commandTreeParsingBukkit.ts`
 Pure parsing of Bukkit's hand-written `Description:`/`Usage:`/`Aliases:`
-`/help <command>` pages — a different grammar from `helpTextParsing.ts`'s
+`/help <command>` pages — a different grammar from `commandTreeParsingBrigadier.ts`'s
 flat Brigadier blobs, used only when `supportsMinecraftNamespace` (Paper/
 Spigot). No shape-sniffing needed: which grammar applies follows directly
 from `supportsMinecraftNamespace`, not from the response's content.
@@ -218,18 +218,18 @@ On-disk persistence for the command tree, server-scoped and versioned, aged
 out after a week so a stale tree doesn't outlive a server's command set.
 Mirrors the pattern later reused by `historyStore.ts`.
 
-### `localCommandTree.ts`
-`LocalCommandTree` is the orchestrator for this layer: on `initialize()`
+### `commandTreeCrawler.ts`
+`CommandTreeCrawler` is the orchestrator for this layer: on `initialize()`
 it either loads a cached tree (`commandTreeCache.ts`) or crawls `/help`
 recursively (root commands, then subcommands/arguments), using
-`helpTextParsing.ts` and `bukkitHelpParsing.ts` to interpret each response.
-Produces the `CommandNode` tree that `commandSuggestions.ts` queries.
+`commandTreeParsingBrigadier.ts` and `commandTreeParsingBukkit.ts` to interpret each response.
+Produces the `CommandNode` tree that `commandTreeSuggestions.ts` queries.
 
-### `commandSuggestions.ts`
+### `commandTreeSuggestions.ts`
 Pure suggestion generation: given the `CommandNode` tree and the user's
 current input line, works out what to suggest next and what argument-help
 text to show. No state, no IO — a deterministic function of the tree and the
-input, which is what `LocalCompletionsBackend` calls into.
+input, which is what `LocalCompletionBackend` calls into.
 
 ## Tab-completion engine
 
@@ -243,17 +243,17 @@ Every async race — a fetch resolving after the user has already typed more,
 overlapping requests, etc. — is handled here as state transitions, so it's
 testable with scripted event sequences rather than against a live server.
 
-### `completionsBackend.ts`
+### `completionBackend.ts`
 The seam between the engine and *where completions come from*. The engine
-knows it needs completions/usage for a line; a `CompletionsBackend` is asked
-for them. `RconCompletionsBackend` asks the server-side TabComplete
-plugin over RCON (via `rconClient.ts`); `LocalCompletionsBackend` asks the
-locally-built tree (via `localCommandTree.ts`/`commandSuggestions.ts`).
+knows it needs completions/usage for a line; a `CompletionBackend` is asked
+for them. `RconCompletionBackend` asks the server-side TabComplete
+plugin over RCON (via `rconClient.ts`); `LocalCompletionBackend` asks the
+locally-built tree (via `commandTreeCrawler.ts`/`commandTreeSuggestions.ts`).
 Driving both modes through the same interface is what makes `RconSession`
 mode-blind — "which backend" is decided once (`pluginMode`), not branched on
 at every call site.
 
-### `argumentHint.ts`
+### `displayArgumentHint.ts`
 Pure formatting for the argument-hint display: given a command's usage string
 and the line typed so far, works out which argument position the user is at
 and which usage token corresponds to it (for highlighting). Presentation
@@ -270,7 +270,7 @@ nothing about RCON or completion — talks to its host via the small
 `LineEditorHost` interface (`write`, `promptText`, `onLineChanged`, ...).
 `maxHistorySize` (default 100) caps in-memory history.
 
-### `suggestionDisplay.ts`
+### `displaySuggestion.ts`
 Owns the suggestion-list / argument-hint popup rendered below the prompt: the
 items, selected index, paging, and the ANSI rendering/clearing. Has no notion
 of the completion engine — `RconSession` is the only place that dispatches to
@@ -297,9 +297,9 @@ commands) lives here, behind the narrow `RconSessionHost` interface (`write`,
 `close`, `clipboard`, `cacheDir`, `dimensions`, plus optional
 `historySize`/`disablePlugin`). It's the single place that constructs and
 talks to the completion engine (`dispatchToEngine` → `step()` → execute
-`Effect[]`), and wires together every module above: `ConnectionManager` for
+`Effect[]`), and wires together every module above: `RconConnectionManager` for
 the live connection, `LineEditor`/`SuggestionDisplay` for rendering,
-`LocalCommandTree`/backends for completions, `HistorySearchState`/
+`CommandTreeCrawler`/backends for completions, `HistorySearchState`/
 `HistoryStore` for Ctrl+R and persistence.
 
 ## Host adapters
@@ -355,11 +355,11 @@ helpers in `src/test/support/testLogger.ts`.
 - **Tracing a keypress**: `rconSession.ts`'s `handleInput` → `keyHandlers` /
   `lineEditor.insertText` → (if it changes the line) `dispatchToEngine` →
   `completionEngine.ts`'s `step()`.
-- **Tracing a connection drop**: `connectionManager.ts`'s retry loop →
+- **Tracing a connection drop**: `rconConnectionManager.ts`'s retry loop →
   `onReconnected` → `rconSession.ts`'s `initializeCommands()`.
 - **Tracing "what does Tab do without a plugin"**: `completionEngine.ts`
-  `step()` → `LocalCompletionsBackend` (`completionsBackend.ts`) →
-  `commandSuggestions.ts` → the `CommandNode` tree built by
-  `localCommandTree.ts` from `helpTextParsing.ts`.
+  `step()` → `LocalCompletionBackend` (`completionBackend.ts`) →
+  `commandTreeSuggestions.ts` → the `CommandNode` tree built by
+  `commandTreeCrawler.ts` from `commandTreeParsingBrigadier.ts`.
 - **Tracing Ctrl+R**: `rconSession.ts`'s `handleHistorySearchInput` →
-  `historyStore.ts` (pure state) → re-render via `suggestionDisplay.ts`.
+  `historyStore.ts` (pure state) → re-render via `displaySuggestion.ts`.

@@ -1,4 +1,4 @@
-// src/helpTextParsing.ts
+// src/commandTreeParsingBrigadier.ts
 //
 // Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat
 // `/cmd <args>` blobs, as returned by `minecraft:help` and vanilla's plain
@@ -6,11 +6,11 @@
 // (`parseHelpResponse`) and the one-time namespace-support probe
 // (`isUnsupportedNamespaceError`). No state, no IO — every export here is a
 // deterministic function of its arguments, which is what makes them directly
-// unit-testable without constructing a `LocalCommandTree`.
+// unit-testable without constructing a `CommandTreeCrawler`.
 //
 // Bukkit's hand-written `Description:`/`Usage:`/`Aliases:` `/help <command>`
 // pages are a different grammar entirely - their extraction lives in
-// `bukkitHelpParsing.ts`.
+// `commandTreeParsingBukkit.ts`.
 //
 // `stripColors` (used throughout to normalize input before parsing) and the
 // `formatMinecraftColors`/ANSI rendering side live in ansi.ts.
@@ -400,7 +400,7 @@ export interface ParsedHelpCommand {
   /**
    * True if this command's summary line in the response carries no real
    * Brigadier syntax info (empty, or the generic `[<args>]` placeholder) -
-   * see `LocalCommandTree.rootSummaryIsPlaceholder`.
+   * see `CommandTreeCrawler.rootSummaryIsPlaceholder`.
    */
   isPlaceholder: boolean;
 }

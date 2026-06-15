@@ -1,14 +1,14 @@
-// src/bukkitHelpParsing.ts
+// src/commandTreeParsingBukkit.ts
 //
 // Pure parsing of Bukkit's hand-written `/help <command>` pages - a
 // "§e--------- §fHelp: /<cmd> ----...§e" banner line followed by
 // `Description:`/`Usage:`/`Aliases:` lines. This is a different grammar from
-// the flat Brigadier `/cmd <args>` blobs `helpTextParsing.ts` handles
-// (`minecraft:help`, vanilla's plain `help`): on a server where the
+// the flat Brigadier `/cmd <args>` blobs `commandTreeParsingBrigadier.ts`
+// handles (`minecraft:help`, vanilla's plain `help`): on a server where the
 // `minecraft:` namespace is supported (Paper/Spigot), `help <path>` is
 // *always* one of these pages, for every command - vanilla-backed or
 // Bukkit-added alike - so no shape-sniffing is needed to decide which parser
-// applies, only `LocalCommandTree.supportsMinecraftNamespace`.
+// applies, only `CommandTreeCrawler.supportsMinecraftNamespace`.
 //
 // No state, no IO — every export here is a deterministic function of its
 // arguments.

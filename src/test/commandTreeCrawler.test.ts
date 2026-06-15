@@ -3,13 +3,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { silentLogger } from './support/testLogger';
-import { LocalCommandTree } from '../localCommandTree';
+import { CommandTreeCrawler } from '../commandTreeCrawler';
 import { ParameterType, Parameter, CommandNode } from '../commandTree';
-import { isGenericArgsPlaceholder } from '../helpTextParsing';
+import { isGenericArgsPlaceholder } from '../commandTreeParsingBrigadier';
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
 // Vanilla/Fabric 1.21.4 server, see docs/technical/NO_PLUGIN_HELP_CRAWL.md and
-// helpTextParsing.test.ts (same fixtures, used there to test the individual
+// commandTreeParsingBrigadier.test.ts (same fixtures, used there to test the individual
 // parsing helpers).
 
 const NAMESPACE_ERROR = 'Unknown or incomplete command, see below for errorminecraft:help<--[HERE]';
@@ -53,9 +53,9 @@ function fakeSendCommand(responses: Map<string, string>, calls: string[]): (comm
   };
 }
 
-function createCommandTree(sendCommand: (command: string) => Promise<string>): LocalCommandTree {
+function createCommandTree(sendCommand: (command: string) => Promise<string>): CommandTreeCrawler {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rcon-cmdauto-test-'));
-  return new LocalCommandTree(sendCommand, silentLogger(), cacheDir, 'host', 25575);
+  return new CommandTreeCrawler(sendCommand, silentLogger(), cacheDir, 'host', 25575);
 }
 
 function findChoice(parameters: Parameter[], name: string): Parameter {
@@ -67,7 +67,7 @@ function findChoice(parameters: Parameter[], name: string): Parameter {
   return choice!;
 }
 
-suite('LocalCommandTree - no-plugin help crawl', () => {
+suite('CommandTreeCrawler - no-plugin help crawl', () => {
   suite('vanilla/fabric (no minecraft: namespace)', () => {
     const responses = new Map<string, string>([
       ['minecraft:help', NAMESPACE_ERROR],

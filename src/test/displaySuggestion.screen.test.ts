@@ -1,15 +1,15 @@
-// src/test/suggestionDisplay.screen.test.ts
+// src/test/displaySuggestion.screen.test.ts
 //
 // Renders SuggestionDisplay's output into a real (headless) terminal emulator
 // and asserts on the resulting screen buffer. This is the only way to verify
 // the "scroll-safe return" cursor math in clear()/renderSuggestionArea(): that
 // \x1b[NA + \r + \x1b[NC correctly restores the cursor to the prompt line even
 // when the \r\n writes above it caused the terminal viewport to scroll, which
-// the raw-ANSI-string assertions in suggestionDisplay.test.ts can't observe.
+// the raw-ANSI-string assertions in displaySuggestion.test.ts can't observe.
 
 import * as assert from 'assert';
 import { Terminal } from '@xterm/headless';
-import { SuggestionDisplay, SuggestionDisplayHost } from '../suggestionDisplay';
+import { SuggestionDisplay, SuggestionDisplayHost } from '../displaySuggestion';
 
 /**
  * Buffers writes and applies them to an @xterm/headless Terminal on flush().
