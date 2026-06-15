@@ -5,9 +5,9 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import * as readline from 'readline';
 import { parseArgs } from 'util';
 import { createConsola } from 'consola';
+import { text, password as passwordPrompt, isCancel, cancel } from '@clack/prompts';
 import { RconController } from './rconClient';
 import { RconSession, RconSessionHost } from './rconSession';
 import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePassword, resolveHistorySize, resolveLogLevel } from './cliConfig';
@@ -17,57 +17,15 @@ import { readConfig, writeConfig, parsePort, resolveHost, resolvePort, resolvePa
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'minercon');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
-// ── TTY helpers ──────────────────────────────────────────────────────────────
+// ── Prompt cancellation ──────────────────────────────────────────────────────
 
-/** Toggles raw mode on stdin, if it's a TTY (a no-op otherwise, e.g. when piped). */
-function setRawMode(mode: boolean): void {
-  if (process.stdin.isTTY) {
-    (process.stdin as NodeJS.ReadStream & { setRawMode(mode: boolean): void }).setRawMode(mode);
+/** Unwraps a clack prompt result, exiting cleanly if the user cancelled (Ctrl+C/Esc). */
+function unwrap(result: string | symbol): string {
+  if (isCancel(result)) {
+    cancel('Cancelled.');
+    process.exit(0);
   }
-}
-
-// ── Masked password prompt ────────────────────────────────────────────────────
-
-function promptPassword(prompt: string): Promise<string> {
-  return new Promise((resolve) => {
-    process.stdout.write(prompt);
-    const rl = readline.createInterface({ input: process.stdin, output: undefined });
-    // Put stdin in non-echo mode for the duration of the prompt
-    setRawMode(true);
-    let password = '';
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-
-    const handler = (chunk: string) => {
-      for (const ch of chunk) {
-        if (ch === '\r' || ch === '\n') {
-          process.stdin.removeListener('data', handler);
-          rl.close();
-          setRawMode(false);
-          process.stdout.write('\n');
-          resolve(password);
-          return;
-        } else if (ch === '\x7f' || ch === '\b') {
-          password = password.slice(0, -1);
-        } else if (ch.charCodeAt(0) >= 32) {
-          password += ch;
-        }
-      }
-    };
-    process.stdin.on('data', handler);
-  });
-}
-
-// ── Arg prompt ───────────────────────────────────────────────────────────────
-
-function promptLine(prompt: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(prompt, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+  return result;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -77,12 +35,12 @@ async function main(): Promise<void> {
     args: process.argv.slice(2),
     options: {
       password: { type: 'string', short: 'p' },
-      save:     { type: 'boolean', default: false },
+      save: { type: 'boolean', default: false },
       'log-file': { type: 'string' },
       'log-level': { type: 'string' },
       'history-size': { type: 'string' },
       'no-plugin': { type: 'boolean', default: false },
-      help:     { type: 'boolean', short: 'h', default: false },
+      help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
     strict: false,
@@ -112,6 +70,11 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  if (!process.stdin.isTTY) {
+    process.stderr.write('Error: minercon is an interactive terminal and does not support piped input\n');
+    process.exit(1);
+  }
+
   const logLevelResolution = resolveLogLevel(values['log-level'] as string | undefined, process.env['MCRCON_LOG_LEVEL']);
   if ('error' in logLevelResolution) {
     process.stderr.write(`Error: ${logLevelResolution.error}\n`);
@@ -131,11 +94,12 @@ async function main(): Promise<void> {
   // Resolve host
   let host = resolveHost(positionals[0], savedConfig);
   if (!host) {
-    host = await promptLine('RCON host (e.g. 127.0.0.1): ');
-  }
-  if (!host) {
-    process.stderr.write('Error: host is required\n');
-    process.exit(1);
+    host = unwrap(await text({
+      message: 'RCON host (e.g. 127.0.0.1):',
+      validate: (value) => {
+        if (!value || value.trim() === '') { return 'host is required'; }
+      },
+    })).trim();
   }
 
   // Resolve port
@@ -147,23 +111,26 @@ async function main(): Promise<void> {
   } else if (portResolution) {
     port = portResolution.port;
   } else {
-    const raw = await promptLine('RCON port [25575]: ');
-    if (!raw) {
-      port = 25575;
-    } else {
-      const parsed = parsePort(raw);
-      if (parsed === null) {
-        process.stderr.write(`Error: invalid port: ${raw}\n`);
-        process.exit(1);
-      }
-      port = parsed;
+    const raw = unwrap(await text({
+      message: 'RCON port',
+      placeholder: '25575',
+      defaultValue: '25575',
+      validate: (value) => {
+        if (value && parsePort(value) === null) { return `invalid port: ${value}`; }
+      },
+    }));
+    const parsed = parsePort(raw);
+    if (parsed === null) {
+      process.stderr.write(`Error: invalid port: ${raw}\n`);
+      process.exit(1);
     }
+    port = parsed;
   }
 
   // Resolve password — never saved to disk
   let password = resolvePassword(values.password as string | undefined, process.env['MCRCON_PASSWORD']);
   if (!password) {
-    password = await promptPassword(`RCON password for ${host}:${port}: `);
+    password = unwrap(await passwordPrompt({ message: `RCON password for ${host}:${port}:` }));
   }
 
   // Resolve history size
@@ -205,7 +172,7 @@ async function main(): Promise<void> {
       process.exit(code);
     },
     clipboard: {
-      readText:  () => Promise.resolve(pasteboard),
+      readText: () => Promise.resolve(pasteboard),
       writeText: (text) => { pasteboard = text; return Promise.resolve(); },
     },
     cacheDir,
@@ -226,16 +193,16 @@ async function main(): Promise<void> {
   function teardown(): void {
     if (tornDown) { return; }
     tornDown = true;
-    setRawMode(false);
+    process.stdin.setRawMode(false);
     process.stdin.pause();
     session.close();
   }
 
   process.on('exit', teardown);
-  process.on('SIGINT',  () => { teardown(); process.exit(0); });
+  process.on('SIGINT', () => { teardown(); process.exit(0); });
   process.on('SIGTERM', () => { teardown(); process.exit(0); });
 
-  setRawMode(true);
+  process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding('utf8');
 

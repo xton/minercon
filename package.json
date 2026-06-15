@@ -99,6 +99,7 @@
     }
   },
   "dependencies": {
+    "@clack/prompts": "^1.5.1",
     "consola": "^3.4.2"
   }
 }
