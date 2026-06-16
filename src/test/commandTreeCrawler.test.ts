@@ -615,4 +615,50 @@ suite('CommandTreeCrawler - no-plugin help crawl', () => {
       assert.ok(!calls.includes('minecraft:help msg'), '"msg" should not be fetched - reused from "minecraft:msg"');
     });
   });
+
+  suite('namespaced sibling with no usage does not suppress the bare command\'s own fetch', () => {
+    // A plugin command registered under a namespace (e.g. multiverse-core:mvp)
+    // may have no useful help while the bare alias (mvp) has a rich "Showing
+    // help for X" page. The bare command must NOT inherit empty members from
+    // the namespaced sibling - it must fetch and parse its own help instead.
+    const MVP_SHOW_HELP =
+      '§e--------- §fHelp: /mvp (1/1) §e--------\n'
+      + '=== Showing help for mvp ===\n'
+      + 'mvp modify [portal] <property> <value> - Modify a portal property\n'
+      + 'mvp debug [on|off] - Toggle portal debug mode\n'
+      + 'mvp select <portal> - Select a portal\n';
+
+    const responses = new Map<string, string>([
+      ['minecraft:help', ['/multiverse-core:mvp [<args>]', '/mvp [<args>]'].join('')],
+      ['help multiverse-core:mvp', 'No help for multiverse-core:mvp'],
+      ['minecraft:help multiverse-core:mvp', '/multiverse-core:mvp [<args>]'],
+      ['help mvp', MVP_SHOW_HELP],
+    ]);
+
+    let calls: string[];
+    let nodes: Map<string, CommandNode>;
+
+    setup(async () => {
+      calls = [];
+      const commandTree = createCommandTree(fakeSendCommand(responses, calls));
+      await commandTree.initialize();
+      nodes = (commandTree as any).rootCommands as Map<string, CommandNode>;
+    });
+
+    test('mvp gets real subcommand parameters from its own "Showing help for" page', () => {
+      const params = nodes.get('mvp')!.members!;
+      const modify = findChoice(params, 'modify');
+      const select = findChoice(params, 'select');
+      assert.ok(modify.members!.length > 0, 'modify should have parameters');
+      assert.ok(select.members!.length > 0, 'select should have a parameter');
+    });
+
+    test('"help mvp" is fetched independently, not short-circuited by the namespaced sibling', () => {
+      assert.ok(calls.includes('help mvp'), `expected "help mvp" to be fetched, got: ${JSON.stringify(calls)}`);
+    });
+
+    test('multiverse-core:mvp ends up with empty members (no usable help available for it)', () => {
+      assert.deepStrictEqual(nodes.get('multiverse-core:mvp')!.members!, []);
+    });
+  });
 });

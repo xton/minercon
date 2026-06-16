@@ -350,7 +350,7 @@ export class CommandTreeCrawler {
     if (commandPath.includes(':')) { return undefined; }
 
     for (const [name, node] of this.rootCommands) {
-      if (node.isComplete && name.endsWith(`:${commandPath}`)) {
+      if (node.isComplete && name.endsWith(`:${commandPath}`) && node.members?.length) {
         return node;
       }
     }
