@@ -24,7 +24,7 @@ import { errorMessage } from './logger';
 import { HistoryStore, HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historyStore';
 import * as ansi from './ansi';
 import { progress } from '@clack/prompts';
-import { formatCommandTree } from './displayCommandTree';
+import { formatCommandTree, formatCommandLog } from './displayCommandTree';
 
 export interface RconSessionHost {
   write(text: string): void;
@@ -741,8 +741,16 @@ export class RconSession {
             this.showPrompt();
             return;
           }
-          const output = formatCommandTree(this.commandTree.commands, args || undefined);
+          const cmdArg = args || undefined;
+          const output = formatCommandTree(this.commandTree.commands, cmdArg);
           output.split('\n').forEach(line => this.sessionHost.write(line + '\r\n'));
+          if (cmdArg) {
+            const name = cmdArg.startsWith('/') ? cmdArg.slice(1) : cmdArg;
+            const logOutput = formatCommandLog(this.commandTree.getCommandLog(name));
+            if (logOutput) {
+              logOutput.split('\n').forEach(line => this.sessionHost.write(line + '\r\n'));
+            }
+          }
           this.showPrompt();
         },
       },

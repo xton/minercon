@@ -12,6 +12,7 @@
 // shown in brackets rather than expanded, so the line count stays bounded.
 
 import { Parameter, ParameterType, CommandNode } from './commandTree';
+import { cyan, gray, dim, stripColors } from './ansi';
 
 const MAX_LINES = 300;
 
@@ -66,6 +67,19 @@ function walkSequential(prefix: string, members: Parameter[], out: string[]): vo
     const token = paramToken(first);
     walkSequential(`${prefix} ${token}`, [...(first.members ?? []), ...rest], out);
   }
+}
+
+export function formatCommandLog(pairs: { send: string; recv: string }[]): string {
+  if (pairs.length === 0) { return ''; }
+  const lines: string[] = ['', dim('── send/recv log ─────────────────────────')];
+  for (const { send, recv } of pairs) {
+    lines.push(cyan(`> ${send}`));
+    const recvText = stripColors(recv).trimEnd();
+    for (const line of recvText.split('\n')) {
+      lines.push(gray(`  ${line}`));
+    }
+  }
+  return lines.join('\n') + '\n';
 }
 
 function paramToken(p: Parameter): string {

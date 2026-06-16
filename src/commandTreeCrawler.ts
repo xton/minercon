@@ -38,6 +38,12 @@ export class CommandTreeCrawler {
   private rootCommands: Map<string, CommandNode> = new Map();
 
   get commands(): Map<string, CommandNode> { return this.rootCommands; }
+
+  // Per-command send/recv log, populated during a fresh crawl (not cache hits).
+  // Keyed by root command name (no slash). Only recorded while currentLogKey is set.
+  private commandLogs: Map<string, { send: string; recv: string }[]> = new Map();
+  private currentLogKey: string | undefined = undefined;
+
   private isLoading: boolean = false;
   private loadingProgress: number = 0;
   private totalCommands: number = 0;
@@ -80,6 +86,32 @@ export class CommandTreeCrawler {
     this.cache = new CommandTreeCache(path.join(cacheDir, 'command-cache'), serverHost, serverPort, logger, (message) => this.report(message));
   }
 
+  /** Returns the send/recv pairs recorded while crawling `name`'s command details.
+   * Falls back to a namespaced sibling key (e.g. `minecraft:gamemode` for `gamemode`)
+   * since namespaced commands are crawled first and bare commands reuse their results. */
+  getCommandLog(name: string): { send: string; recv: string }[] {
+    const direct = this.commandLogs.get(name);
+    if (direct && direct.length > 0) { return direct; }
+    if (!name.includes(':')) {
+      const suffix = `:${name}`;
+      for (const [key, log] of this.commandLogs) {
+        if (key.endsWith(suffix) && log.length > 0) { return log; }
+      }
+    }
+    return [];
+  }
+
+  /** Calls `sendCommand` and records the pair under `currentLogKey` if set. */
+  private async loggedSend(command: string): Promise<string> {
+    const recv = await this.sendCommand(command);
+    if (this.currentLogKey !== undefined) {
+      let log = this.commandLogs.get(this.currentLogKey);
+      if (!log) { log = []; this.commandLogs.set(this.currentLogKey, log); }
+      log.push({ send: command, recv });
+    }
+    return recv;
+  }
+
   /** Reports crawl narration: to `onMessage` (e.g. a progress bar's message) if set, else logged. */
   private report(message: string): void {
     if (this.onMessage) {
@@ -115,6 +147,8 @@ export class CommandTreeCrawler {
         }
       }
 
+      this.commandLogs.clear();
+
       // Aliases discovered while crawling (`<alias> -> <target>` redirect
       // lines, Bukkit `Aliases:` lines) - resolved into rootCommands once
       // their targets have been fully loaded, below.
@@ -138,11 +172,13 @@ export class CommandTreeCrawler {
         onProgress?.(progress, 'loading');
 
         const node = this.rootCommands.get(commands[i])!;
+        this.currentLogKey = commands[i];
         try {
           await this.loadCommandDetails(node, node.members!, pendingAliases);
         } catch (error) {
           this.logger.warn(`Warning: Failed to load details for ${commands[i]}: ${error}`);
-          // Continue with other commands even if one fails
+        } finally {
+          this.currentLogKey = undefined;
         }
       }
 
@@ -152,6 +188,11 @@ export class CommandTreeCrawler {
         const targetNode = this.rootCommands.get(target);
         if (targetNode && !this.rootCommands.has(alias)) {
           this.rootCommands.set(alias, targetNode);
+          // Share the target's log so /tree <alias> shows the same send/recv pairs.
+          if (!this.commandLogs.has(alias)) {
+            const targetLog = this.getCommandLog(target);
+            if (targetLog.length > 0) { this.commandLogs.set(alias, targetLog); }
+          }
         }
       }
 
@@ -172,16 +213,16 @@ export class CommandTreeCrawler {
   }
 
   async fetchPaginatedCommand(command: string): Promise<string> {
-    let output = await this.sendCommand(command);
+    let output = await this.loggedSend(command);
     const match = output.match(/Help:\s+.*?\((\d+)\/(\d+)\)/i);
     if (!match) {
-      return output; // No pagination info, return original output
+      return output;
     } else {
       const pageCount = parseInt(match[2]);
       this.report(`Detected paginated output: ${pageCount} pages total`);
 
       for (let page = 2; page <= pageCount; page++) {
-        const pageOutput = await this.sendCommand(`${command} ${page}`);
+        const pageOutput = await this.loggedSend(`${command} ${page}`);
         if (pageOutput) {
           this.report(`Fetched page ${page}/${pageCount} (${pageOutput.length} bytes)`);
           output += pageOutput;
