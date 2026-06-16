@@ -42,6 +42,47 @@ suite('extractBukkitUsageLines', () => {
             + '§f§6Aliases: §fpl';
         assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'plugins'), []);
     });
+
+    test('extracts subcommand usages from a "Showing help for X" plugin page (mvp)', () => {
+        // Real Paper response for a multi-subcommand plugin that registers each
+        // subcommand as its own help topic instead of a single Usage: string.
+        const helpText =
+            '--------- Help: /mvp (1/3) ----------------------------\n'
+            + '=== Showing help for mvp ===\n'
+            + 'mvp modify [portal] <property> <value> - Allows you to modify all values\n'
+            + 'that can be set.\n'
+            + 'mvp debug [on|off] - Instead of teleporting you to a\n'
+            + 'place when you walk into a portal you will see the\n'
+            + 'details about it. This command toggles.\n'
+            + 'mvp select <portal> - Selects a portal so you can perform\n'
+            + 'multiple modifications on it.\n'
+            + 'mvp wand [enable|disable|toggle] - Gives you the wand';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'mvp'), [
+            'mvp modify [portal] <property> <value>',
+            'mvp debug [on|off]',
+            'mvp select <portal>',
+            'mvp wand [enable|disable|toggle]',
+        ]);
+    });
+
+    test('"Showing help for X" strips description at correct bracket depth', () => {
+        // ` - ` inside brackets (e.g. [a-b]) must not trigger early truncation.
+        const helpText =
+            '=== Showing help for test ===\n'
+            + 'test go <from-x> <to-x> - Moves from x to x\n'
+            + 'test list - Lists entries';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'test'), [
+            'test go <from-x> <to-x>',
+            'test list',
+        ]);
+    });
+
+    test('"Showing help for X" returns [] when no subcommand lines match', () => {
+        const helpText =
+            '=== Showing help for foo ===\n'
+            + 'foo - The foo plugin. Use /foo help for assistance.';
+        assert.deepStrictEqual(extractBukkitUsageLines(helpText, 'foo'), []);
+    });
 });
 
 suite('extractBukkitAliases', () => {
