@@ -389,6 +389,10 @@ export class RconSession {
   }
 
   private handleCtrlD(): void {
+    if (this.lineEditor.line.length > 0) {
+      this.lineEditor.deleteForward();
+      return;
+    }
     this.sessionHost.write('^D\r\n');
     this.sessionHost.write('Disconnecting...\r\n');
     this.sessionHost.close(0);
