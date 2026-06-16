@@ -147,13 +147,20 @@ function usageMatches(usage: Usage, line: string): boolean {
  * is still extending it). An empty-text usage (ambiguous prefix or "too
  * broad") never covers anything — there's nothing resolved to stick to, so
  * the next natural pause point should ask again.
+ *
+ * Exception: if the usage's first argument token is a `(choice|list)` — a
+ * subcommand branch point — and the user has typed beyond the cached query,
+ * they have navigated *into* one of those choices and the usage is stale;
+ * argument values (`<foo>`, `[<foo>]`) don't trigger this.
  */
 function usageCoversLine(usage: Usage, line: string): boolean {
   if (usage.kind !== 'ready' || usage.text === '') { return false; }
   const cachedWords = usage.forQuery.trim().split(/\s+/).filter(w => w.length > 0);
   const lineWords = line.trim().split(/\s+/).filter(w => w.length > 0);
   if (lineWords.length < cachedWords.length) { return false; }
-  return cachedWords.every((word, i) => word === lineWords[i]);
+  if (!cachedWords.every((word, i) => word === lineWords[i])) { return false; }
+  if (lineWords.length > cachedWords.length && /\([^)]+\)/.test(usage.text)) { return false; }
+  return true;
 }
 
 export type Mode =

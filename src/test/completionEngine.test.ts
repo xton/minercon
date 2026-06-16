@@ -578,6 +578,67 @@ suite('completionEngine: usage staleness', () => {
     const render = find(r.effects, 'render');
     assert.ok(!render || render.usage === null, 'stale usage must never reach the display');
   });
+
+  test('a choice-list usage is not carried forward once the user has typed into that choice', () => {
+    // Scenario: /mv has many subcommands shown as a choice list in the usage hint.
+    // Once the user types "/mv worldborder" they have navigated into one choice —
+    // the parent-level "(worldborder|generators|...)" hint must be discarded so a
+    // new, more-specific fetch can happen rather than showing the wrong usage.
+    let m = createMachine();
+    m = step(m, { kind: 'lineChanged', line: '/mv ' }).machine;
+    let fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+
+    // Completions arrive for "/mv " and kick off a usage fetch at this pause point.
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['worldborder', 'generators', 'gamerule'] });
+    m = r.machine;
+    const usageFetch = find(r.effects, 'fetchUsage')!;
+    assert.ok(usageFetch, 'engine must fetch usage at trailing-space pause point');
+
+    // Usage arrives with a choice-list — the parent-level "/mv" hub usage.
+    r = step(m, { kind: 'usageResult', requestId: usageFetch.requestId, text: 'mv (worldborder|generators|gamerule)' });
+    m = r.machine;
+    assert.strictEqual(m.phase.kind === 'open' ? (m.phase.usage.kind === 'ready' ? m.phase.usage.text : null) : null,
+      'mv (worldborder|generators|gamerule)');
+
+    // User types "worldborder" — navigating into one of those choices.
+    r = step(m, { kind: 'lineChanged', line: '/mv worldborder' });
+    m = r.machine;
+    fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['worldborder'] });
+    m = r.machine;
+
+    // The render must not carry the stale choice-list usage forward.
+    const render = find(r.effects, 'render')!;
+    assert.strictEqual(render.usage, null, 'choice-list usage must not be shown after the user has typed into that choice');
+  });
+
+  test('an argument-based usage IS carried forward as the user types argument values', () => {
+    // Scenario: "gamemode <mode> [<target>]" is valid for any line that starts
+    // with "/gamemode " — the user typing a mode value or target should keep
+    // showing the usage hint, just with a different highlighted token.
+    let m = createMachine();
+    m = step(m, { kind: 'lineChanged', line: '/gamemode ' }).machine;
+    let fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+
+    let r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['survival', 'creative'] });
+    m = r.machine;
+    const usageFetch = find(r.effects, 'fetchUsage')!;
+
+    r = step(m, { kind: 'usageResult', requestId: usageFetch.requestId, text: 'gamemode <mode> [<target>]' });
+    m = r.machine;
+
+    // User types "creative" — still on the same argument position.
+    r = step(m, { kind: 'lineChanged', line: '/gamemode creative' });
+    m = r.machine;
+    fetchId = (m.fetch.kind === 'busy') ? m.fetch.requestId : -1;
+    r = step(m, { kind: 'completionsResult', requestId: fetchId, items: ['creative'] });
+    m = r.machine;
+
+    // Argument-based usage must be carried forward — no new fetch needed.
+    const render = find(r.effects, 'render')!;
+    assert.strictEqual(render.usage, 'gamemode <mode> [<target>]', 'argument-based usage must persist across argument-value keystrokes');
+    assert.strictEqual(find(r.effects, 'fetchUsage'), undefined, 'must not re-fetch usage for a command already resolved');
+  });
 });
 
 suite('completionEngine: arrow keys and escape', () => {

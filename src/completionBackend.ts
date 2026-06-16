@@ -57,12 +57,14 @@ export class RconCompletionBackend implements CompletionBackend {
  * ordering guarantee the real async backend gets for free from the network).
  */
 export class LocalCompletionBackend implements CompletionBackend {
-  // getSuggestions sometimes returns incomplete argument help for inputs that
-  // are mid-command (e.g. once the user is typing a free-form argument like a
-  // player name, the locally-built tree may not have anything to say). Stick
-  // with the first full version we saw for this command rather than flicker
-  // between that and "(nothing)" — mirrors the original local-mode behavior.
-  private cachedCommand: string | null = null;
+  // getSuggestions sometimes returns undefined argumentHelp when the user is
+  // typing a free-form argument value the tree has no completions for (e.g. a
+  // player name). Rather than letting the hint flicker to blank, cache the last
+  // resolved usage and return it until the commandPath changes — each distinct
+  // navigated path (e.g. "mv worldborder" vs "mv worldborder damage buffer")
+  // gets its own cache entry so deeper subcommand navigation produces the
+  // correct, more-specific usage string rather than a stale parent-level one.
+  private cachedCommandPath: string | null = null;
   private cachedHelp: string | null = null;
 
   constructor(private commandTree: CommandTreeCrawler) {}
@@ -73,14 +75,6 @@ export class LocalCompletionBackend implements CompletionBackend {
 
   async fetchUsage(line: string): Promise<string> {
     const result = this.commandTree.getSuggestions(line);
-    // Everything up to the first space, including any "namespace:" prefix -
-    // \S rather than \w so "minecraft:clear" isn't truncated to "minecraft".
-    const commandName = (line.match(/^\/?(\S+)/) || [])[1] || '';
-
-    if (commandName !== this.cachedCommand) {
-      this.cachedCommand = commandName;
-      this.cachedHelp = null;
-    }
 
     if (result.argumentHelp !== undefined) {
       // Match the shape of the server's `cmdusage` response (e.g. "clear
@@ -88,10 +82,11 @@ export class LocalCompletionBackend implements CompletionBackend {
       // prefix from this leading commandPath, so it must be present even
       // when there's no argument help (e.g. "reload").
       const usage = result.argumentHelp ? `${result.commandPath} ${result.argumentHelp}` : result.commandPath!;
-      if (this.cachedHelp === null) {
+      if (result.commandPath !== this.cachedCommandPath) {
+        this.cachedCommandPath = result.commandPath ?? null;
         this.cachedHelp = usage;
       }
-      return this.cachedHelp;
+      return this.cachedHelp!;
     }
     return this.cachedHelp ?? '';
   }
