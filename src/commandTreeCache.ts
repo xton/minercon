@@ -112,8 +112,18 @@ export class CommandTreeCache {
         return { exists: false, age: 'No cache' };
       }
 
-      const stats = fs.statSync(this.cacheFile);
-      const ageMs = Date.now() - stats.mtime.getTime();
+      const cache: CommandCache = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
+
+      if (cache.version !== this.cacheVersion || cache.serverIdentifier !== this.serverIdentifier) {
+        return { exists: false, age: 'Stale' };
+      }
+
+      const lastUpdated = new Date(cache.lastUpdated);
+      const ageMs = Date.now() - lastUpdated.getTime();
+      const maxAge = 7 * 24 * 60 * 60 * 1000;
+      if (ageMs > maxAge) {
+        return { exists: false, age: 'Expired' };
+      }
 
       let age: string;
       if (ageMs < 60000) {
@@ -126,11 +136,7 @@ export class CommandTreeCache {
         age = `${Math.floor(ageMs / 86400000)} days`;
       }
 
-      return {
-        exists: true,
-        age,
-        lastUpdated: stats.mtime
-      };
+      return { exists: true, age, lastUpdated };
     } catch {
       return { exists: false, age: 'Error checking cache' };
     }

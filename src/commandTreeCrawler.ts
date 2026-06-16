@@ -36,6 +36,8 @@ export type ProgressPhase = 'cache-hit' | 'fetching' | 'loading' | 'complete';
 
 export class CommandTreeCrawler {
   private rootCommands: Map<string, CommandNode> = new Map();
+
+  get commands(): Map<string, CommandNode> { return this.rootCommands; }
   private isLoading: boolean = false;
   private loadingProgress: number = 0;
   private totalCommands: number = 0;

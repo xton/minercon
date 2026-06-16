@@ -24,6 +24,7 @@ import { errorMessage } from './logger';
 import { HistoryStore, HistorySearchState, startHistorySearch, setHistorySearchQuery, cycleHistorySearch } from './historyStore';
 import * as ansi from './ansi';
 import { progress } from '@clack/prompts';
+import { formatCommandTree } from './displayCommandTree';
 
 export interface RconSessionHost {
   write(text: string): void;
@@ -55,7 +56,7 @@ interface BuiltinCommand {
   description: string;
   /** Alternate names that dispatch to the same command but aren't listed in /help. */
   aliases?: string[];
-  run: () => void;
+  run: (args: string) => void;
 }
 
 export class RconSession {
@@ -626,9 +627,12 @@ export class RconSession {
         this.historyStore.save(this.lineEditor.historyEntries);
       }
 
-      const builtin = this.builtinLookup.get(command);
+      const spaceIdx = command.indexOf(' ');
+      const cmdName = spaceIdx === -1 ? command : command.slice(0, spaceIdx);
+      const cmdArgs = spaceIdx === -1 ? '' : command.slice(spaceIdx + 1).trim();
+      const builtin = this.builtinLookup.get(cmdName);
       if (builtin) {
-        builtin.run();
+        builtin.run(cmdArgs);
       } else {
         this.executeCommand(command);
       }
@@ -659,18 +663,18 @@ export class RconSession {
     return [
       {
         name: '/help', description: 'Show this help message',
-        run: () => this.showHelp(),
+        run: (_) => this.showHelp(),
       },
       {
         name: '/clear', description: 'Clear the terminal screen',
-        run: () => {
+        run: (_) => {
           this.sessionHost.write('\x1b[2J\x1b[H');
           this.showPrompt();
         },
       },
       {
         name: '/history', description: 'Show command history',
-        run: () => {
+        run: (_) => {
           this.showHistory();
           this.lineEditor.pushHistory('/history');
           this.historyStore.save(this.lineEditor.historyEntries);
@@ -678,16 +682,16 @@ export class RconSession {
       },
       {
         name: '/reconnect', description: 'Reconnect to the server',
-        run: () => { this.connectionManager.manualReconnect(); },
+        run: (_) => { this.connectionManager.manualReconnect(); },
       },
       {
         name: '/disconnect', description: 'Disconnect from the server',
-        run: () => this.connectionManager.disconnect(),
+        run: (_) => this.connectionManager.disconnect(),
       },
       {
         name: '/reload-commands', description: 'Force reload command database from server',
         aliases: ['/refresh-commands'],
-        run: () => {
+        run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no command cache to reload.');
           } else {
@@ -697,7 +701,7 @@ export class RconSession {
       },
       {
         name: '/clear-cache', description: 'Clear cached command database',
-        run: () => {
+        run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no cache.');
           } else {
@@ -709,7 +713,7 @@ export class RconSession {
       },
       {
         name: '/cache-info', description: 'Show command cache information',
-        run: () => {
+        run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no cache.');
             return;
@@ -722,6 +726,23 @@ export class RconSession {
           } else {
             this.sessionHost.write(ansi.yellow('No cache found.') + '\r\n\r\n');
           }
+          this.showPrompt();
+        },
+      },
+      {
+        name: '/tree', description: 'Print command tree. Usage: /tree [<command>]',
+        run: (args) => {
+          if (this.pluginMode) {
+            pluginModeNotice('Using server-side tab completion — no local command tree.');
+            return;
+          }
+          if (!this.commandTree.isReady) {
+            this.sessionHost.write(ansi.yellow('Command tree not yet loaded.') + '\r\n\r\n');
+            this.showPrompt();
+            return;
+          }
+          const output = formatCommandTree(this.commandTree.commands, args || undefined);
+          output.split('\n').forEach(line => this.sessionHost.write(line + '\r\n'));
           this.showPrompt();
         },
       },
