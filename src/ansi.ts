@@ -76,14 +76,15 @@ const MINECRAFT_COLOR_MAP: { [key: string]: string } = {
   '§k': '\x1b[5m',     // Obfuscated (blinking)
 };
 
+// Matches any single `§X` color/format code; the replacer looks each up in
+// MINECRAFT_COLOR_MAP. The character class covers exactly that map's keys.
+const MINECRAFT_COLOR_PATTERN = /§[0-9a-fklmnor]/g;
+
 /**
  * Convert Minecraft `§`-color codes to ANSI escape sequences.
  */
 export function formatMinecraftColors(text: string): string {
-  let result = text;
-  for (const [code, escapeCode] of Object.entries(MINECRAFT_COLOR_MAP)) {
-    result = result.replace(new RegExp(code.replace('§', '\\§'), 'g'), escapeCode);
-  }
+  let result = text.replace(MINECRAFT_COLOR_PATTERN, code => MINECRAFT_COLOR_MAP[code] ?? '');
   if (!result.endsWith(RESET)) {
     result += RESET;
   }

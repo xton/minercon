@@ -7,8 +7,8 @@
 // style Minecraft's /help produces. A deep CHOICE_LIST (choices that have
 // their own sub-parameters, produced by buildParameterStructureFromVariants
 // for multi-variant commands) forks into one line per choice. A simple
-// CHOICE_LIST (inline `(a|b|c)` literals from parseCommandHelp) is collapsed
-// onto the same line with bracket/pipe notation. Optional parameters are
+// CHOICE_LIST (inline `(a|b|c)` literals parsed from a single `(...)` token)
+// is collapsed onto the same line with bracket/pipe notation. Optional parameters are
 // shown in brackets rather than expanded, so the line count stays bounded.
 
 import { Parameter, ParameterType, CommandNode, parameterLabel } from './commandTree';

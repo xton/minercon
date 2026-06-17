@@ -4,7 +4,6 @@ import { ParameterType, Parameter } from '../commandTree';
 import {
     tokenizeParameterString,
     parseParameter,
-    parseCommandHelp,
     classifyParameterTokens,
     buildParameterStructureFromVariants,
     parseHelpLines,
@@ -43,110 +42,44 @@ suite('commandTreeParsingBrigadier', () => {
         assert.strictEqual(arg.optional, false);
     });
 
-    test('parseCommandHelp extracts parameters in order', () => {
-        const help = '/foo <bar> [baz] (a|b) sub';
-        const params = parseCommandHelp(help);
-        // Expect: <bar> ARGUMENT, [baz] optional LITERAL, (a|b) CHOICE_LIST, sub LITERAL
-        assert.strictEqual(params.length, 4);
-        assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[0].name, 'bar');
-        // In this implementation, [baz] without inner angle brackets is treated as a literal (optional)
-        assert.strictEqual(params[1].type, ParameterType.LITERAL);
-        assert.strictEqual(params[1].literal, 'baz');
-        assert.strictEqual(params[1].optional, true);
-        assert.strictEqual(params[2].type, ParameterType.CHOICE_LIST);
-        assert.strictEqual(params[3].type, ParameterType.LITERAL);
+    test('parseParameter: a plain word is a required LITERAL', () => {
+        assert.deepStrictEqual(parseParameter('confirm', 2), {
+            type: ParameterType.LITERAL, literal: 'confirm', optional: false, position: 2,
+        });
     });
 
-    test('parse /fill syntax', () => {
-        const params = parseCommandHelp('/fill <from> <to> <block> [outline|hollow|destroy|strict|replace|keep]');
-        assert.strictEqual(params.length, 4);
-        assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[0].name, 'from');
-        assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[1].name, 'to');
-        assert.strictEqual(params[2].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[2].name, 'block');
-        // Optional bracketed token with pipes is treated as a single LITERAL (implementation detail)
-        assert.strictEqual(params[3].type, ParameterType.LITERAL);
-        assert.strictEqual(params[3].optional, true);
-        assert.ok(params[3].literal!.includes('outline'));
+    test('parseParameter: [word] without inner <> is an optional LITERAL, brackets stripped', () => {
+        assert.deepStrictEqual(parseParameter('[baz]', 1), {
+            type: ParameterType.LITERAL, literal: 'baz', optional: true, position: 1,
+        });
     });
 
-    test('parse /rotate syntax with choices', () => {
-        const params = parseCommandHelp('/rotate <target> (<rotation>|facing)');
-        assert.strictEqual(params.length, 2);
-        assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[0].name, 'target');
-        assert.strictEqual(params[1].type, ParameterType.CHOICE_LIST);
-        const choices = params[1].choices!;
-        assert.strictEqual(choices.length, 2);
-        assert.strictEqual(expectType(choices[0], ParameterType.LITERAL).literal, '<rotation>');
-        assert.strictEqual(expectType(choices[1], ParameterType.LITERAL).literal, 'facing');
+    test('parseParameter: an optional bracketed pipe-list (e.g. /fill, /stopsound) stays one optional LITERAL', () => {
+        // Brigadier renders enum-style optional args as [a|b|c]; we keep the
+        // whole thing as a single literal token rather than splitting on |.
+        const p = expectType(parseParameter('[*|master|music|ambient]', 3), ParameterType.LITERAL);
+        assert.strictEqual(p.optional, true);
+        assert.strictEqual(p.literal, '*|master|music|ambient');
     });
 
-    test('parse /teleport choice list', () => {
-        const params = parseCommandHelp('/teleport (<location>|<destination>|<targets>)');
-        assert.strictEqual(params.length, 1);
-        assert.strictEqual(params[0].type, ParameterType.CHOICE_LIST);
-        const lits = params[0].choices!.map(c => expectType(c, ParameterType.LITERAL).literal);
-        assert.deepStrictEqual(lits, ['<location>', '<destination>', '<targets>']);
+    test('parseParameter: a (...) choice list preserves <arg> tokens as literal choice text', () => {
+        const p = expectType(parseParameter('(<rotation>|facing)', 1), ParameterType.CHOICE_LIST);
+        assert.deepStrictEqual(
+            p.choices.map(c => expectType(c, ParameterType.LITERAL).literal),
+            ['<rotation>', 'facing']
+        );
     });
 
-    test('parse /stopsound with optional types', () => {
-        const params = parseCommandHelp('/stopsound <targets> [*|master|music|record|weather|block|hostile|neutral|player|ambient|voice|ui]');
-        assert.strictEqual(params.length, 2);
-        assert.strictEqual(params[0].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[0].name, 'targets');
-        // Treated as optional literal list token
-        assert.strictEqual(params[1].type, ParameterType.LITERAL);
-        assert.strictEqual(params[1].optional, true);
-        assert.ok(params[1].literal!.includes('master'));
-        assert.ok(params[1].literal!.includes('*'));
+    test('parseParameter: an argument name may itself contain brackets (e.g. <share[,extra]>)', () => {
+        const p = expectType(parseParameter('<share[,extra]>', 0), ParameterType.ARGUMENT);
+        assert.strictEqual(p.name, 'share[,extra]');
     });
 
-    test('parse mvp modify/create/list variants', () => {
-        let params = parseCommandHelp('mvp modify [portal] <property> <value>');
-        assert.strictEqual(params.length, 4);
-        assert.strictEqual(params[0].type, ParameterType.LITERAL);
-        assert.strictEqual(params[0].literal, 'modify');
-        assert.strictEqual(params[1].type, ParameterType.LITERAL);
-        assert.strictEqual(params[1].literal, 'portal');
-        assert.strictEqual(params[2].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[2].name, 'property');
-        assert.strictEqual(params[3].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[3].name, 'value');
-
-        params = parseCommandHelp('mvp create <portal-name> [destination]');
-        assert.strictEqual(params.length, 3);
-        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'create');
-        assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[1].name, 'portal-name');
-        assert.strictEqual(params[2].type, ParameterType.LITERAL);
-
-        params = parseCommandHelp('mvp list [filter/world] [page]');
-        assert.strictEqual(params.length, 3);
-        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'list');
-        assert.strictEqual(params[1].optional, true);
-        assert.strictEqual(params[2].optional, true);
-    });
-
-    test('parse mvinv add-shares and bulkedit', () => {
-        let params = parseCommandHelp('mvinv add-shares <group> <share[,extra]>');
-        assert.strictEqual(params.length, 3);
-        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'add-shares');
-        assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[2].type, ParameterType.ARGUMENT);
-        assert.strictEqual(params[2].name, 'share[,extra]');
-
-        params = parseCommandHelp('mvinv bulkedit playerprofile delete <sharable> <players> <groups/worlds> [profile-type] [--include-groups-worlds]');
-        // Ensure the command path tokens are present and there are sufficient parameters
-        assert.ok(params.length >= 6);
-        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'bulkedit');
-        assert.strictEqual(expectType(params[1], ParameterType.LITERAL).literal, 'playerprofile');
-        assert.strictEqual(expectType(params[2], ParameterType.LITERAL).literal, 'delete');
-        // Optional flag should appear as an optional literal
-        assert.ok(params.some(p => p.type === ParameterType.LITERAL && p.optional && p.literal.includes('--include-groups-worlds')));
+    test('tokenizeParameterString keeps bracketed groups whole, including inner spaces and pipes', () => {
+        assert.deepStrictEqual(
+            tokenizeParameterString('<targets> [*|master|music] [plugin name]'),
+            ['<targets>', '[*|master|music]', '[plugin name]']
+        );
     });
 });
 
@@ -441,6 +374,17 @@ suite('splitConcatenatedHelpLines', () => {
             + '§f§6Usage: §f/version [plugin name]';
         const lines = splitConcatenatedHelpLines(helpText).split('\n').map(l => stripColors(l).trim()).filter(l => l);
         assert.deepStrictEqual(lines, ['Usage:', '/version [plugin name]']);
+    });
+
+    test('splits on EVERY "/", including inside a token - callers must not feed it "/"-bearing args', () => {
+        // This is a deliberate limitation: the transform is content-blind, which
+        // is necessary to split argless back-to-back vanilla commands ("/seed/setblock")
+        // but means a "/" inside an argument token gets mis-split. It is only ever
+        // run on vanilla minecraft:help blobs, whose args never contain "/".
+        assert.deepStrictEqual(
+            splitConcatenatedHelpLines('/warp <home/away>').split('\n').filter(l => l.trim()),
+            ['/warp <home', '/away>']
+        );
     });
 });
 
