@@ -376,7 +376,7 @@ export class LineEditor {
       // At end of line, transpose the last two characters; otherwise transpose
       // the character before the cursor with the one at the cursor.
       const pos = Math.min(this.cursorPosition, this.currentLine.length - 1);
-      const chars = this.currentLine.split('');
+      const chars = [...this.currentLine];
       [chars[pos - 1], chars[pos]] = [chars[pos], chars[pos - 1]];
       this.currentLine = chars.join('');
       this.cursorPosition = Math.min(pos + 1, this.currentLine.length);
