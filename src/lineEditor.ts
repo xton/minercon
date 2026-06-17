@@ -358,17 +358,7 @@ export class LineEditor {
       const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
 
-      // Find the last word boundary
-      let newPos = this.cursorPosition - 1;
-      // Skip trailing spaces
-      while (newPos > 0 && beforeCursor[newPos] === ' ') {
-        newPos--;
-      }
-      // Skip word characters
-      while (newPos > 0 && beforeCursor[newPos - 1] !== ' ') {
-        newPos--;
-      }
-
+      const newPos = this.findWordLeft();
       const killed = beforeCursor.slice(newPos);
       this.currentLine = beforeCursor.slice(0, newPos) + afterCursor;
       this.cursorPosition = newPos;
