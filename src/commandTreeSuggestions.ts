@@ -5,7 +5,7 @@
 // and what argument-help text to show. No state, no IO — a deterministic
 // function of the tree and the input.
 
-import { ParameterType, Parameter, CommandNode } from './commandTree';
+import { ParameterType, Parameter, CommandNode, parameterLabel } from './commandTree';
 
 export interface SuggestionResult {
   suggestions: string[];
@@ -58,7 +58,7 @@ export function getSuggestions(
   }
 
   // Navigate through the parameter tree
-  let currentParameters = rootNode.members || [];
+  let currentParameters = rootNode.members;
   let paramIndex = 1; // Start after the command name
 
   // The command path consumed so far (root command + any literal/subcommand
@@ -77,17 +77,16 @@ export function getSuggestions(
 
     if (firstParam.type === ParameterType.SUBCOMMAND) {
       // Direct subcommand
-      if (firstParam.name === currentPart || firstParam.literal === currentPart) {
-        currentParameters = firstParam.members || [];
+      if (firstParam.name === currentPart) {
+        currentParameters = firstParam.members;
         navigated = true;
       }
-    } else if (firstParam.type === ParameterType.CHOICE_LIST && firstParam.choices) {
+    } else if (firstParam.type === ParameterType.CHOICE_LIST) {
       // Choice list - find matching choice and navigate into it
       for (const choice of firstParam.choices) {
-        if (choice.type === ParameterType.SUBCOMMAND &&
-          (choice.name === currentPart || choice.literal === currentPart)) {
+        if (choice.type === ParameterType.SUBCOMMAND && choice.name === currentPart) {
           // IMPORTANT: Navigate into the selected choice's members
-          currentParameters = choice.members || [];
+          currentParameters = choice.members;
           navigated = true;
           break;
         } else if (choice.type === ParameterType.LITERAL && choice.literal === currentPart) {
@@ -142,31 +141,21 @@ function generateSuggestionsForCurrentPart(
   const suggestions: string[] = [];
 
   for (const param of parameters) {
-    if (param.type === ParameterType.SUBCOMMAND) {
-      // Direct subcommand
-      const name = param.name || param.literal || '';
-      if (name.startsWith(currentPart)) {
-        suggestions.push(name);
+    if (param.type === ParameterType.SUBCOMMAND || param.type === ParameterType.LITERAL) {
+      // A single suggestable token (subcommand name or literal text)
+      const label = parameterLabel(param);
+      if (label.startsWith(currentPart)) {
+        suggestions.push(label);
       }
-    } else if (param.type === ParameterType.CHOICE_LIST && param.choices) {
-      // Choice list - add all matching choices
+    } else if (param.type === ParameterType.CHOICE_LIST) {
+      // Choice list - add all matching subcommand/literal choices
       for (const choice of param.choices) {
-        if (choice.type === ParameterType.SUBCOMMAND) {
-          const name = choice.name || choice.literal || '';
-          if (name.startsWith(currentPart)) {
-            suggestions.push(name);
-          }
-        } else if (choice.type === ParameterType.LITERAL) {
-          const literal = choice.literal || '';
-          if (literal.startsWith(currentPart)) {
-            suggestions.push(literal);
+        if (choice.type === ParameterType.SUBCOMMAND || choice.type === ParameterType.LITERAL) {
+          const label = parameterLabel(choice);
+          if (label.startsWith(currentPart)) {
+            suggestions.push(label);
           }
         }
-      }
-    } else if (param.type === ParameterType.LITERAL) {
-      const literal = param.literal || '';
-      if (literal.startsWith(currentPart)) {
-        suggestions.push(literal);
       }
     }
     // We only process the first parameter position
@@ -189,20 +178,16 @@ function generateSuggestionsForNextPosition(
 
   const firstParam = parameters[0];
 
-  if (firstParam.type === ParameterType.SUBCOMMAND) {
-    // Direct subcommand
-    suggestions.push(firstParam.name || firstParam.literal || '');
-  } else if (firstParam.type === ParameterType.CHOICE_LIST && firstParam.choices) {
-    // Choice list - add all choices as suggestions
+  if (firstParam.type === ParameterType.SUBCOMMAND || firstParam.type === ParameterType.LITERAL) {
+    // A single suggestable token (subcommand name or literal text)
+    suggestions.push(parameterLabel(firstParam));
+  } else if (firstParam.type === ParameterType.CHOICE_LIST) {
+    // Choice list - add all subcommand/literal choices as suggestions
     for (const choice of firstParam.choices) {
-      if (choice.type === ParameterType.SUBCOMMAND) {
-        suggestions.push(choice.name || choice.literal || '');
-      } else if (choice.type === ParameterType.LITERAL) {
-        suggestions.push(choice.literal || '');
+      if (choice.type === ParameterType.SUBCOMMAND || choice.type === ParameterType.LITERAL) {
+        suggestions.push(parameterLabel(choice));
       }
     }
-  } else if (firstParam.type === ParameterType.LITERAL) {
-    suggestions.push(firstParam.literal || '');
   }
   // Don't suggest anything for ARGUMENT types
 
@@ -216,16 +201,15 @@ function buildArgumentHelp(parameters: Parameter[]): string {
   if (parameters.length === 0) { return ''; }
 
   return parameters.map(param => {
-    if (param.type === ParameterType.ARGUMENT) {
-      return param.optional ? `[<${param.name}>]` : `<${param.name}>`;
-    } else if (param.type === ParameterType.CHOICE_LIST && param.choices) {
-      const choices = param.choices.map((c: Parameter) => c.literal).join('|');
-      return `(${choices})`;
-    } else if (param.type === ParameterType.LITERAL) {
-      return param.literal;
-    } else if (param.type === ParameterType.SUBCOMMAND) {
-      return param.name; // Show subcommand name
+    switch (param.type) {
+      case ParameterType.ARGUMENT:
+        return param.optional ? `[<${param.name}>]` : `<${param.name}>`;
+      case ParameterType.CHOICE_LIST:
+        return `(${param.choices.map(parameterLabel).join('|')})`;
+      case ParameterType.LITERAL:
+        return param.literal;
+      case ParameterType.SUBCOMMAND:
+        return param.name; // Show subcommand name
     }
-    return '';
   }).join(' ');
 }

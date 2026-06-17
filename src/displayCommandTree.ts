@@ -11,8 +11,13 @@
 // onto the same line with bracket/pipe notation. Optional parameters are
 // shown in brackets rather than expanded, so the line count stays bounded.
 
-import { Parameter, ParameterType, CommandNode } from './commandTree';
+import { Parameter, ParameterType, CommandNode, parameterLabel } from './commandTree';
 import { cyan, gray, dim, stripColors } from './ansi';
+
+/** A parameter's nested parameters, or `[]` for the leaf types that have none. */
+function childMembers(p: Parameter): Parameter[] {
+  return p.type === ParameterType.SUBCOMMAND ? p.members : [];
+}
 
 const MAX_LINES = 300;
 
@@ -22,7 +27,7 @@ export function formatCommandTree(rootCommands: Map<string, CommandNode>, comman
     const node = rootCommands.get(name);
     if (!node) { return `Unknown command: /${name}\n`; }
     const lines: string[] = [];
-    walkSequential(`/${name}`, node.members ?? [], lines);
+    walkSequential(`/${name}`, node.members, lines);
     if (lines.length === 0) { lines.push(`/${name}`); }
     if (lines.length >= MAX_LINES) { lines.push('(truncated)'); }
     return lines.join('\n') + '\n';
@@ -54,18 +59,18 @@ function walkSequential(prefix: string, members: Parameter[], out: string[]): vo
 
   const [first, ...rest] = members;
 
-  if (first.type === ParameterType.CHOICE_LIST && first.choices?.some(c => c.members?.length)) {
+  if (first.type === ParameterType.CHOICE_LIST && first.choices.some(c => childMembers(c).length)) {
     // Deep alternation: fork one line per choice.
-    for (const choice of (first.choices ?? [])) {
+    for (const choice of first.choices) {
       if (out.length >= MAX_LINES) { return; }
-      walkSequential(`${prefix} ${paramToken(choice)}`, [...(choice.members ?? []), ...rest], out);
+      walkSequential(`${prefix} ${paramToken(choice)}`, [...childMembers(choice), ...rest], out);
     }
     // If the whole CHOICE_LIST is optional, also emit the path that skips it.
     if (first.optional) { walkSequential(prefix, rest, out); }
   } else {
     // Sequential: append this token and recurse into sub-members then siblings.
     const token = paramToken(first);
-    walkSequential(`${prefix} ${token}`, [...(first.members ?? []), ...rest], out);
+    walkSequential(`${prefix} ${token}`, [...childMembers(first), ...rest], out);
   }
 }
 
@@ -85,10 +90,10 @@ export function formatCommandLog(pairs: { send: string; recv: string }[]): strin
 function paramToken(p: Parameter): string {
   switch (p.type) {
     case ParameterType.ARGUMENT:   return p.optional ? `[<${p.name}>]` : `<${p.name}>`;
-    case ParameterType.LITERAL:    return p.optional ? `[${p.literal ?? '?'}]` : (p.literal ?? '?');
-    case ParameterType.SUBCOMMAND: return p.optional ? `[${p.name ?? '?'}]` : (p.name ?? '?');
+    case ParameterType.LITERAL:    return p.optional ? `[${p.literal}]` : p.literal;
+    case ParameterType.SUBCOMMAND: return p.optional ? `[${p.name}]` : p.name;
     case ParameterType.CHOICE_LIST: {
-      const inner = (p.choices ?? []).map(c => c.literal ?? c.name ?? '?').join('|');
+      const inner = parameterLabel(p);
       return p.optional ? `[(${inner})]` : `(${inner})`;
     }
   }

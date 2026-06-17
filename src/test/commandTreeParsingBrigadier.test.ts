@@ -18,6 +18,12 @@ import {
     VariantInfo,
 } from '../commandTreeParsingBrigadier';
 
+/** Asserts `p` is the given variant and returns it narrowed to that variant's fields. */
+function expectType<T extends ParameterType>(p: Parameter, type: T): Extract<Parameter, { type: T }> {
+    assert.strictEqual(p.type, type);
+    return p as Extract<Parameter, { type: T }>;
+}
+
 suite('commandTreeParsingBrigadier', () => {
     test('tokenizeParameterString handles nested tokens', () => {
         const input = '<arg1> [opt] (a|b) subcmd <nested>';
@@ -29,7 +35,7 @@ suite('commandTreeParsingBrigadier', () => {
         const choice = parseParameter('(one|two)', 0) as Parameter;
         assert.strictEqual(choice.type, ParameterType.CHOICE_LIST);
         assert.strictEqual(choice.choices!.length, 2);
-        assert.strictEqual(choice.choices![0].literal, 'one');
+        assert.strictEqual(expectType(choice.choices![0], ParameterType.LITERAL).literal, 'one');
 
         const arg = parseParameter('<name>', 1) as Parameter;
         assert.strictEqual(arg.type, ParameterType.ARGUMENT);
@@ -75,15 +81,15 @@ suite('commandTreeParsingBrigadier', () => {
         assert.strictEqual(params[1].type, ParameterType.CHOICE_LIST);
         const choices = params[1].choices!;
         assert.strictEqual(choices.length, 2);
-        assert.strictEqual(choices[0].literal, '<rotation>');
-        assert.strictEqual(choices[1].literal, 'facing');
+        assert.strictEqual(expectType(choices[0], ParameterType.LITERAL).literal, '<rotation>');
+        assert.strictEqual(expectType(choices[1], ParameterType.LITERAL).literal, 'facing');
     });
 
     test('parse /teleport choice list', () => {
         const params = parseCommandHelp('/teleport (<location>|<destination>|<targets>)');
         assert.strictEqual(params.length, 1);
         assert.strictEqual(params[0].type, ParameterType.CHOICE_LIST);
-        const lits = params[0].choices!.map(c => c.literal);
+        const lits = params[0].choices!.map(c => expectType(c, ParameterType.LITERAL).literal);
         assert.deepStrictEqual(lits, ['<location>', '<destination>', '<targets>']);
     });
 
@@ -113,14 +119,14 @@ suite('commandTreeParsingBrigadier', () => {
 
         params = parseCommandHelp('mvp create <portal-name> [destination]');
         assert.strictEqual(params.length, 3);
-        assert.strictEqual(params[0].literal, 'create');
+        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'create');
         assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[1].name, 'portal-name');
         assert.strictEqual(params[2].type, ParameterType.LITERAL);
 
         params = parseCommandHelp('mvp list [filter/world] [page]');
         assert.strictEqual(params.length, 3);
-        assert.strictEqual(params[0].literal, 'list');
+        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'list');
         assert.strictEqual(params[1].optional, true);
         assert.strictEqual(params[2].optional, true);
     });
@@ -128,7 +134,7 @@ suite('commandTreeParsingBrigadier', () => {
     test('parse mvinv add-shares and bulkedit', () => {
         let params = parseCommandHelp('mvinv add-shares <group> <share[,extra]>');
         assert.strictEqual(params.length, 3);
-        assert.strictEqual(params[0].literal, 'add-shares');
+        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'add-shares');
         assert.strictEqual(params[1].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[2].type, ParameterType.ARGUMENT);
         assert.strictEqual(params[2].name, 'share[,extra]');
@@ -136,11 +142,11 @@ suite('commandTreeParsingBrigadier', () => {
         params = parseCommandHelp('mvinv bulkedit playerprofile delete <sharable> <players> <groups/worlds> [profile-type] [--include-groups-worlds]');
         // Ensure the command path tokens are present and there are sufficient parameters
         assert.ok(params.length >= 6);
-        assert.strictEqual(params[0].literal, 'bulkedit');
-        assert.strictEqual(params[1].literal, 'playerprofile');
-        assert.strictEqual(params[2].literal, 'delete');
+        assert.strictEqual(expectType(params[0], ParameterType.LITERAL).literal, 'bulkedit');
+        assert.strictEqual(expectType(params[1], ParameterType.LITERAL).literal, 'playerprofile');
+        assert.strictEqual(expectType(params[2], ParameterType.LITERAL).literal, 'delete');
         // Optional flag should appear as an optional literal
-        assert.ok(params.some(p => p.optional && p.literal && p.literal.includes('--include-groups-worlds')));
+        assert.ok(params.some(p => p.type === ParameterType.LITERAL && p.optional && p.literal.includes('--include-groups-worlds')));
     });
 });
 
@@ -449,7 +455,6 @@ suite('buildParameterStructureFromVariants', () => {
         assert.deepStrictEqual(result, [{
             type: ParameterType.SUBCOMMAND,
             name: 'add',
-            literal: 'add',
             optional: false,
             position: 0,
             members,
@@ -468,7 +473,7 @@ suite('buildParameterStructureFromVariants', () => {
         assert.strictEqual(result.length, 1);
         assert.strictEqual(result[0].type, ParameterType.CHOICE_LIST);
         const choices = result[0].choices!;
-        assert.deepStrictEqual(choices.map(c => [c.name, c.position]), [['add', 0], ['remove', 1], ['list', 2]]);
+        assert.deepStrictEqual(choices.map(c => [expectType(c, ParameterType.SUBCOMMAND).name, c.position]), [['add', 0], ['remove', 1], ['list', 2]]);
         assert.ok(choices.every(c => c.type === ParameterType.SUBCOMMAND && c.isComplete === false));
     });
 });
