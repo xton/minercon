@@ -6,6 +6,7 @@
 // function of the tree and the input.
 
 import { ParameterType, Parameter, CommandNode, parameterLabel } from './commandTree';
+import { splitCommandLine } from './commandLine';
 
 export interface SuggestionResult {
   suggestions: string[];
@@ -39,8 +40,7 @@ export function getSuggestions(
     return { suggestions: [], argumentHelp: undefined };
   }
 
-  const hasTrailingSpace = input.endsWith(' ');
-  const parts = trimmed.slice(1).split(' ').filter(p => p.length > 0);
+  const { parts, hasTrailingSpace } = splitCommandLine(input);
   const commandName = parts[0];
 
   // Handle root command suggestions
