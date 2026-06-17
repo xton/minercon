@@ -203,54 +203,69 @@ export class RconSession {
       !cacheInfo.exists ? 'No cache found...' :
         'Cache outdated...';
 
+    // Three progress-reporting strategies for the same underlying crawl,
+    // chosen by host/cache state: log lines (file logging), a one-shot cache
+    // notice, or a live clack progress bar for a fresh crawl.
     if (this.sessionHost.logToFile) {
-      if (!willLoadFromCache) {
-        this.logger.info(`Loading server commands (${reason})`);
-      }
-      try {
-        await this.commandTree.initialize((progressPct, phase) => {
-          if (willLoadFromCache) {
-            if (progressPct >= 100) {
-              this.logger.success('Commands loaded from cache!');
-              this.showPrompt();
-            }
-            return;
-          }
+      await this.loadCommandsLogged(willLoadFromCache, reason, forceRefresh);
+    } else if (willLoadFromCache) {
+      await this.loadCommandsFromCache(forceRefresh);
+    } else {
+      await this.loadCommandsWithProgressBar(reason, forceRefresh);
+    }
+  }
 
-          this.logger.info(`${progressPhaseLabel(phase)} (${Math.round(progressPct)}%)`);
-
+  /** Command-tree load for the file-logging host: narrate progress through the logger rather than a progress bar. */
+  private async loadCommandsLogged(willLoadFromCache: boolean, reason: string, forceRefresh: boolean): Promise<void> {
+    if (!willLoadFromCache) {
+      this.logger.info(`Loading server commands (${reason})`);
+    }
+    try {
+      await this.commandTree.initialize((progressPct, phase) => {
+        if (willLoadFromCache) {
           if (progressPct >= 100) {
-            this.logger.success('Commands loaded and cached!');
+            this.logger.success('Commands loaded from cache!');
             this.showPrompt();
           }
-        }, undefined, forceRefresh);
-      } catch (error) {
-        this.logger.error(`Failed to load commands: ${error}`);
-        this.logger.warn('Autocomplete will be limited.');
-        this.showPrompt();
-      }
-      return;
-    }
+          return;
+        }
 
-    if (willLoadFromCache) {
-      // Cache hit resolves in a single synchronous step — no progress to
-      // show, so skip the progress bar entirely (and the raw-mode dance its
-      // start/stop incurs).
-      try {
-        await this.commandTree.initialize((progressPct) => {
-          if (progressPct >= 100) {
-            this.sessionHost.write(ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
-            this.showPrompt();
-          }
-        }, undefined, forceRefresh);
-      } catch (error) {
-        this.sessionHost.write(ansi.red(`✗ Failed to load commands: ${error}`) + '\r\n');
-        this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
-        this.showPrompt();
-      }
-      return;
-    }
+        this.logger.info(`${progressPhaseLabel(phase)} (${Math.round(progressPct)}%)`);
 
+        if (progressPct >= 100) {
+          this.logger.success('Commands loaded and cached!');
+          this.showPrompt();
+        }
+      }, undefined, forceRefresh);
+    } catch (error) {
+      this.logger.error(`Failed to load commands: ${error}`);
+      this.logger.warn('Autocomplete will be limited.');
+      this.showPrompt();
+    }
+  }
+
+  /**
+   * Command-tree load on a cache hit (terminal host): resolves in a single
+   * synchronous step, so skip the progress bar entirely (and the raw-mode
+   * dance its start/stop incurs).
+   */
+  private async loadCommandsFromCache(forceRefresh: boolean): Promise<void> {
+    try {
+      await this.commandTree.initialize((progressPct) => {
+        if (progressPct >= 100) {
+          this.sessionHost.write(ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
+          this.showPrompt();
+        }
+      }, undefined, forceRefresh);
+    } catch (error) {
+      this.sessionHost.write(ansi.red(`✗ Failed to load commands: ${error}`) + '\r\n');
+      this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
+      this.showPrompt();
+    }
+  }
+
+  /** Command-tree load for a fresh crawl (terminal host): a clack progress bar narrating phases and per-command messages. */
+  private async loadCommandsWithProgressBar(reason: string, forceRefresh: boolean): Promise<void> {
     const bar = progress({ style: 'block' });
     bar.start(`Loading server commands (${reason})`);
     let lastProgress = 0;
