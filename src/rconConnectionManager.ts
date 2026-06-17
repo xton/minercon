@@ -35,6 +35,7 @@ const defaultControllerFactory: ControllerFactory = (host, port, password, logge
 const CONNECTION_LOST_GRACE_MS = 1000;
 const INITIAL_RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 32000;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 export class RconConnectionManager {
   private _controller: RconController;
@@ -47,7 +48,6 @@ export class RconConnectionManager {
   private _isConnected: boolean = true;
   private _isReconnecting: boolean = false;
   private reconnectAttempts: number = 0;
-  private readonly maxReconnectAttempts: number = 5;
   private reconnectDelay: number = INITIAL_RECONNECT_DELAY_MS;
   private reconnectTimeout: NodeJS.Timeout | null = null;
 
@@ -150,7 +150,7 @@ export class RconConnectionManager {
     this._isReconnecting = true;
     this.reconnectAttempts++;
 
-    const attemptText = this.reconnectAttempts > 1 ? ` (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})` : '';
+    const attemptText = this.reconnectAttempts > 1 ? ` (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})` : '';
     this.host.write(ansi.yellow('Reconnecting to ' + this.serverHost + ':' + this.serverPort + attemptText + '...') + '\r\n');
 
     try {
@@ -176,7 +176,7 @@ export class RconConnectionManager {
     } catch (err) {
       this._isReconnecting = false;
 
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      if (this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         this.host.write(ansi.red('✗ Connection failed: ' + errorMessage(err)) + '\r\n');
         this.host.write(ansi.yellow('Retrying in ' + (this.reconnectDelay / 1000) + ' seconds...') + '\r\n');
 
@@ -194,7 +194,7 @@ export class RconConnectionManager {
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
       } else {
         // Max attempts reached
-        this.host.write(ansi.boldRed('✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.') + '\r\n');
+        this.host.write(ansi.boldRed('✗ Reconnection failed after ' + MAX_RECONNECT_ATTEMPTS + ' attempts.') + '\r\n');
         this.host.write('Type ' + ansi.yellow('/reconnect') + ' to try again.\r\n\r\n');
         this.resetReconnectState();
 

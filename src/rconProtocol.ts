@@ -172,7 +172,7 @@ export class RconProtocol extends EventEmitter {
         this.authenticated = false;
         this.emit('close');
 
-        for (const [, request] of this.pendingRequests) {
+        for (const request of this.pendingRequests.values()) {
           if (request.kind !== 'fence') {
             clearTimeout(request.timeout);
           }

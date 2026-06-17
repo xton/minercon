@@ -85,8 +85,9 @@ export class LocalCompletionBackend implements CompletionBackend {
       if (result.commandPath !== this.cachedCommandPath) {
         this.cachedCommandPath = result.commandPath ?? null;
         this.cachedHelp = usage;
+        return usage;
       }
-      return this.cachedHelp!;
+      return this.cachedHelp ?? usage;
     }
     return this.cachedHelp ?? '';
   }
