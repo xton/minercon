@@ -9,6 +9,8 @@
 // fetching, timing, or staleness — so it lives apart from completionEngine's
 // state machine, as its own pure, independently-testable function.
 
+import { splitCommandLine } from './commandLine';
+
 const ARGUMENT_TOKEN_PATTERN = /(<[^>]+>|\[[^\]]+\]|\([^)]+\))/g;
 
 export interface ArgumentHintDisplay {
@@ -34,8 +36,7 @@ export function formatArgumentHint(usage: string, line: string): ArgumentHintDis
   const commandPrefixWordCount = literalPrefix.length > 0 ? literalPrefix.split(/\s+/).length : 0;
   const commandPrefixText = '/' + literalPrefix;
 
-  const parts = line.trim().split(' ').filter(p => p.length > 0);
-  const hasTrailingSpace = line.endsWith(' ');
+  const { parts, hasTrailingSpace } = splitCommandLine(line);
   const argumentCount = Math.max(0, parts.length - commandPrefixWordCount);
 
   let currentArgIndex: number;

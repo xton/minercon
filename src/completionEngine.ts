@@ -11,6 +11,7 @@
 // real server at 2am.
 
 import { stripColors } from './ansi';
+import { splitCommandLine } from './commandLine';
 
 // ─────────────────────────── pure query helpers ───────────────────────────
 
@@ -26,10 +27,7 @@ import { stripColors } from './ansi';
  */
 export function buildCompletionsQuery(input: string): string | null {
   if (!input.startsWith('/')) { return null; }
-  const withoutSlash = input.slice(1);
-  const trimmed = withoutSlash.trim();
-  const hasTrailingSpace = withoutSlash.endsWith(' ');
-  const parts = trimmed.split(/\s+/).filter(p => p.length > 0);
+  const { parts, hasTrailingSpace } = splitCommandLine(input);
 
   if (parts.length === 0) { return '-'; }
   return hasTrailingSpace ? `${parts.join(' ')} -` : parts.join(' ');
@@ -155,8 +153,8 @@ function usageMatches(usage: Usage, line: string): boolean {
  */
 function usageCoversLine(usage: Usage, line: string): boolean {
   if (usage.kind !== 'ready' || usage.text === '') { return false; }
-  const cachedWords = usage.forQuery.trim().split(/\s+/).filter(w => w.length > 0);
-  const lineWords = line.trim().split(/\s+/).filter(w => w.length > 0);
+  const cachedWords = splitCommandLine(usage.forQuery).parts;
+  const lineWords = splitCommandLine(line).parts;
   if (lineWords.length < cachedWords.length) { return false; }
   if (!cachedWords.every((word, i) => word === lineWords[i])) { return false; }
   if (lineWords.length > cachedWords.length && /\([^)]+\)/.test(usage.text)) { return false; }
