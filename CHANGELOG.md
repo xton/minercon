@@ -341,6 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Forge/Fabric servers
 - ✅ Custom server software with RCON support
 
+[Unreleased]: https://github.com/xton/minercon/compare/2.2.0...HEAD
+[2.2.0]: https://github.com/xton/minercon/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/jaketcooper/minecraft-rcon/compare/2.0.5...2.1.0
 [2.0.5]: https://github.com/jaketcooper/minecraft-rcon/compare/2.0.0...2.0.5
 [2.0.0]: https://github.com/jaketcooper/minecraft-rcon/compare/1.1.1...2.0.0
