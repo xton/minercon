@@ -44,8 +44,10 @@ export class LineEditor {
   private selection: { anchor: number; head: number } | null = null;
 
   private history: string[] = [];
-  private historyIndex: number = -1;
-  private tempLine: string = '';
+  // Non-null while the user is navigating history; null when at the live line.
+  // Bundles the navigation index and the line saved on first Up-arrow so they
+  // stay in sync and can be reset atomically.
+  private historyCursor: { index: number; savedLine: string } | null = null;
 
   constructor(private host: LineEditorHost, private readonly maxHistorySize: number = 100) {}
 
@@ -465,33 +467,31 @@ export class LineEditor {
   }
 
   navigateHistory(direction: 'up' | 'down'): void {
-    if (this.history.length === 0) {
-      return;
-    }
-
-    if (this.historyIndex === -1 && direction === 'up') {
-      this.tempLine = this.currentLine;
-    }
+    if (this.history.length === 0) { return; }
 
     if (direction === 'up') {
-      if (this.historyIndex < this.history.length - 1) {
-        this.historyIndex++;
-        this.replaceLine(this.history[this.history.length - 1 - this.historyIndex]);
+      if (this.historyCursor === null) {
+        this.historyCursor = { index: 0, savedLine: this.currentLine };
+        this.replaceLine(this.history[this.history.length - 1]);
+      } else if (this.historyCursor.index < this.history.length - 1) {
+        this.historyCursor.index++;
+        this.replaceLine(this.history[this.history.length - 1 - this.historyCursor.index]);
       }
     } else {
-      if (this.historyIndex > 0) {
-        this.historyIndex--;
-        this.replaceLine(this.history[this.history.length - 1 - this.historyIndex]);
-      } else if (this.historyIndex === 0) {
-        this.historyIndex = -1;
-        this.replaceLine(this.tempLine);
+      if (this.historyCursor === null) { return; }
+      if (this.historyCursor.index > 0) {
+        this.historyCursor.index--;
+        this.replaceLine(this.history[this.history.length - 1 - this.historyCursor.index]);
+      } else {
+        const { savedLine } = this.historyCursor;
+        this.historyCursor = null;
+        this.replaceLine(savedLine);
       }
     }
   }
 
   resetHistoryCursor(): void {
-    this.historyIndex = -1;
-    this.tempLine = '';
+    this.historyCursor = null;
   }
 
   // ── word-boundary helpers ──
