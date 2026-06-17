@@ -84,7 +84,10 @@ const MINECRAFT_COLOR_PATTERN = /§[0-9a-fklmnor]/g;
  * Convert Minecraft `§`-color codes to ANSI escape sequences.
  */
 export function formatMinecraftColors(text: string): string {
-  let result = text.replace(MINECRAFT_COLOR_PATTERN, code => MINECRAFT_COLOR_MAP[code] ?? '');
+  // Collapse the `Â§` UTF-8 mojibake of the section sign first (same encodings
+  // stripColors handles) — otherwise the orphaned `Â` is left in the colored
+  // output once the `§x` after it is converted.
+  let result = text.replace(/Â§/g, '§').replace(MINECRAFT_COLOR_PATTERN, code => MINECRAFT_COLOR_MAP[code] ?? '');
   if (!result.endsWith(RESET)) {
     result += RESET;
   }
