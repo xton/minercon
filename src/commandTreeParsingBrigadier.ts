@@ -28,19 +28,15 @@ export function tokenizeParameterString(str: string): string[] {
   const tokens: string[] = [];
   let current = '';
   let depth = 0;
-  let inBrackets = false;
 
   for (let i = 0; i < str.length; i++) {
     const char = str[i];
 
     if ((char === '<' || char === '[' || char === '(')) {
-      if (depth === 0) {
-        if (current.trim()) {
-          // This is a literal
-          tokens.push(current.trim());
-          current = '';
-        }
-        inBrackets = true;
+      if (depth === 0 && current.trim()) {
+        // A bare literal abutting the start of a bracketed token.
+        tokens.push(current.trim());
+        current = '';
       }
       depth++;
       current += char;
@@ -50,9 +46,10 @@ export function tokenizeParameterString(str: string): string[] {
       if (depth === 0) {
         tokens.push(current.trim());
         current = '';
-        inBrackets = false;
       }
-    } else if (char === ' ' && depth === 0 && !inBrackets) {
+    } else if (char === ' ' && depth === 0) {
+      // Whitespace only separates tokens at the top level; inside a bracketed
+      // token (depth > 0) it's part of the token (e.g. "[plugin name]").
       if (current.trim()) {
         tokens.push(current.trim());
         current = '';
@@ -134,27 +131,6 @@ export function parseParameter(token: string, position: number): Parameter {
     optional: false,
     position
   };
-}
-
-/**
- * Parse command help output to extract parameters
- */
-export function parseCommandHelp(helpText: string): Parameter[] {
-  const parameters: Parameter[] = [];
-  const stripped = stripColors(helpText).trim();
-
-  // Remove the command name from the beginning if present
-  const syntaxMatch = stripped.match(/^\/?\w+\s+(.*)/);
-  const paramString = syntaxMatch ? syntaxMatch[1] : stripped;
-
-  // Split into tokens - handle nested brackets/parens
-  const tokens = tokenizeParameterString(paramString);
-
-  tokens.forEach((token, index) => {
-    parameters.push(parseParameter(token, index));
-  });
-
-  return parameters;
 }
 
 /**
@@ -353,6 +329,14 @@ function isArgsPlaceholder(parameters: Parameter[]): boolean {
  * True iff `parameters` is exactly the generic `[<args>]` placeholder Bukkit
  * emits for `minecraft:help <cmd>` on commands that aren't Brigadier-backed
  * (e.g. `version`, `reload`, `plugins`) — i.e. no real argument info.
+ *
+ * Narrower than `isArgsPlaceholder` on purpose: it requires the `[<args>]`
+ * form to be *optional*. Bukkit's stand-in is always optional, so a
+ * *required* `<args>` is treated as a genuine (if oddly-named) argument by
+ * `hasRealUsage`/`mergeHelpSources` — those guard against emitting a fake
+ * `[<args>]` token while still honoring a real one. (`hasUsableArguments`,
+ * used for the separate "should we re-fetch this subcommand?" decision,
+ * deliberately rejects both forms via `isArgsPlaceholder`.)
  */
 export function isGenericArgsPlaceholder(parameters: Parameter[]): boolean {
   return isArgsPlaceholder(parameters) && parameters[0].optional === true;
@@ -396,6 +380,22 @@ export interface ParsedHelpResponse {
   commands: ParsedHelpCommand[];
   aliases: AliasRedirect[];
 }
+
+/**
+ * Shapes a root-command line can take in a `/help`/`minecraft:help` response,
+ * tried in order (first match wins). Each captures the command name in group
+ * 1; namespace prefixes (`minecraft:`, ...) are part of the name, so `:` is in
+ * every character class - see `parseHelpResponse`.
+ */
+const ROOT_COMMAND_PATTERNS: readonly RegExp[] = [
+  /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
+  /^([a-zA-Z0-9_:-]+):\s/,          // command: or command-with-hyphens:
+  /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
+  /^([a-zA-Z0-9_:-]+)\s+[-<[(]/     // command followed by args
+];
+
+/** Words that look like commands in description text but never are. */
+const NON_COMMAND_WORDS: ReadonlySet<string> = new Set(['usage', 'example', 'description', 'syntax']);
 
 /**
  * Parse a `/help` or `minecraft:help` response into the root commands and
@@ -443,14 +443,7 @@ export function parseHelpResponse(response: string): ParsedHelpResponse {
       continue;
     }
 
-    const patterns = [
-      /^\/([a-zA-Z0-9_:-]+)/,           // /command or /namespace:command
-      /^([a-zA-Z0-9_:-]+):\s/,          // command: or command-with-hyphens:
-      /^[-*]\s*([a-zA-Z0-9_:-]+)/,      // - command or * command
-      /^([a-zA-Z0-9_:-]+)\s+[-<[(]/     // command followed by args
-    ];
-
-    for (const pattern of patterns) {
+    for (const pattern of ROOT_COMMAND_PATTERNS) {
       const match = stripped.match(pattern);
       if (!match) {
         continue;
@@ -458,7 +451,7 @@ export function parseHelpResponse(response: string): ParsedHelpResponse {
       const commandName = match[1];
 
       // Skip common non-command words that appear in descriptions
-      if (['usage', 'example', 'description', 'syntax'].includes(commandName.toLowerCase())) {
+      if (NON_COMMAND_WORDS.has(commandName.toLowerCase())) {
         continue;
       }
 
