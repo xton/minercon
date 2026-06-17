@@ -13,7 +13,7 @@
 
 import { RconController } from './rconClient';
 import { CommandTreeCrawler } from './commandTreeCrawler';
-import { buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse } from './completionEngine';
+import { buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse } from './completionQueries';
 
 export interface CompletionBackend {
   fetchCompletions(line: string): Promise<string[]>;
@@ -37,14 +37,14 @@ export class RconCompletionBackend implements CompletionBackend {
     const query = buildCompletionsQuery(line);
     if (query === null) { return []; }
     const response = await this.getController().send(`tabcomplete ${query}`);
-    return parseCompletionsResponse(response ?? undefined);
+    return parseCompletionsResponse(response);
   }
 
   async fetchUsage(line: string): Promise<string> {
     const query = buildUsageQuery(line);
     if (query === null) { return ''; }
     const response = await this.getController().send(`cmdusage ${query}`);
-    return parseUsageResponse(response ?? undefined);
+    return parseUsageResponse(response);
   }
 }
 
