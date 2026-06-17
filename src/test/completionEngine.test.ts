@@ -2,6 +2,8 @@
 import * as assert from 'assert';
 import {
   buildCompletionsQuery, buildUsageQuery, parseCompletionsResponse, parseUsageResponse,
+} from '../completionQueries';
+import {
   applySuggestion, longestCommonPrefix,
   createMachine, step, Machine, Effect, Event,
 } from '../completionEngine';

@@ -115,83 +115,39 @@ export function getSuggestions(
   const argumentHelp = buildArgumentHelp(currentParameters);
   const commandPath = pathParts.join(' ');
 
-  // Generate suggestions based on current position
-  let suggestions: string[] = [];
-
-  if (hasTrailingSpace) {
-    // We want suggestions for the NEXT parameter
-    suggestions = generateSuggestionsForNextPosition(currentParameters);
-  } else {
-    // We're typing something, get matching suggestions
-    const currentPart = parts[parts.length - 1] || '';
-    suggestions = generateSuggestionsForCurrentPart(currentParameters, currentPart);
-  }
+  // Generate suggestions for the current position. A trailing space means the
+  // user is starting the next token, so match against an empty prefix (every
+  // candidate); otherwise match the partial token they're still typing.
+  const typedPrefix = hasTrailingSpace ? '' : (parts[parts.length - 1] || '');
+  const suggestions = suggestionsMatchingPrefix(currentParameters, typedPrefix);
 
   return { suggestions, argumentHelp, commandPath };
 }
 
 /**
- * Generate suggestions for what we're currently typing
- * Must handle CHOICE_LIST parameters properly
+ * Suggestions for the parameter position represented by `parameters`, limited
+ * to the candidates that start with `prefix` (pass `''` to get them all — e.g.
+ * after a trailing space, when the user is starting a fresh token). Only the
+ * first parameter at this position is suggestable; ARGUMENT positions have no
+ * fixed candidates and yield nothing.
  */
-function generateSuggestionsForCurrentPart(
-  parameters: Parameter[],
-  currentPart: string
-): string[] {
-  const suggestions: string[] = [];
+function suggestionsMatchingPrefix(parameters: Parameter[], prefix: string): string[] {
+  if (parameters.length === 0) { return []; }
+  const param = parameters[0];
 
-  for (const param of parameters) {
-    if (param.type === ParameterType.SUBCOMMAND || param.type === ParameterType.LITERAL) {
-      // A single suggestable token (subcommand name or literal text)
-      const label = parameterLabel(param);
-      if (label.startsWith(currentPart)) {
-        suggestions.push(label);
-      }
-    } else if (param.type === ParameterType.CHOICE_LIST) {
-      // Choice list - add all matching subcommand/literal choices
-      for (const choice of param.choices) {
-        if (choice.type === ParameterType.SUBCOMMAND || choice.type === ParameterType.LITERAL) {
-          const label = parameterLabel(choice);
-          if (label.startsWith(currentPart)) {
-            suggestions.push(label);
-          }
-        }
-      }
-    }
-    // We only process the first parameter position
-    break;
-  }
+  // A CHOICE_LIST contributes each of its subcommand/literal choices; a bare
+  // SUBCOMMAND/LITERAL contributes itself; an ARGUMENT contributes nothing.
+  const candidates =
+    param.type === ParameterType.CHOICE_LIST
+      ? param.choices.filter(c => c.type === ParameterType.SUBCOMMAND || c.type === ParameterType.LITERAL)
+      : (param.type === ParameterType.SUBCOMMAND || param.type === ParameterType.LITERAL)
+        ? [param]
+        : [];
 
-  return suggestions.sort();
-}
-
-/**
- * Generate suggestions for the next parameter position
- * Must handle CHOICE_LIST parameters properly
- */
-function generateSuggestionsForNextPosition(
-  parameters: Parameter[]
-): string[] {
-  const suggestions: string[] = [];
-
-  if (parameters.length === 0) { return suggestions; }
-
-  const firstParam = parameters[0];
-
-  if (firstParam.type === ParameterType.SUBCOMMAND || firstParam.type === ParameterType.LITERAL) {
-    // A single suggestable token (subcommand name or literal text)
-    suggestions.push(parameterLabel(firstParam));
-  } else if (firstParam.type === ParameterType.CHOICE_LIST) {
-    // Choice list - add all subcommand/literal choices as suggestions
-    for (const choice of firstParam.choices) {
-      if (choice.type === ParameterType.SUBCOMMAND || choice.type === ParameterType.LITERAL) {
-        suggestions.push(parameterLabel(choice));
-      }
-    }
-  }
-  // Don't suggest anything for ARGUMENT types
-
-  return suggestions.sort();
+  return candidates
+    .map(parameterLabel)
+    .filter(label => label.startsWith(prefix))
+    .sort();
 }
 
 /**
