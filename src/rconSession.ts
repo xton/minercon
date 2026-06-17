@@ -59,6 +59,15 @@ interface BuiltinCommand {
   run: (args: string) => void;
 }
 
+/** A command response taller than this many lines is treated as a screen-disrupting dump that the next prompt/suggestion render must clear past. */
+const LARGE_OUTPUT_LINE_THRESHOLD = 10;
+
+/** Commands to remember (in-memory and persisted) when the host doesn't specify a `historySize`. */
+const DEFAULT_HISTORY_SIZE = 100;
+
+/** Substring the TabComplete plugin's `tabcomplete` help text contains — how `detectAndInitialize` recognizes plugin mode. */
+const TAB_COMPLETE_PROBE_MARKER = 'Returns tab completions for a partial command string';
+
 export class RconSession {
   private connectionManager: RconConnectionManager;
   private lineEditor: LineEditor;
@@ -96,7 +105,7 @@ export class RconSession {
     this.serverHost = host;
     this.serverPort = port;
 
-    const historySize = sessionHost.historySize ?? 100;
+    const historySize = sessionHost.historySize ?? DEFAULT_HISTORY_SIZE;
 
     this.connectionManager = new RconConnectionManager(host, port, password, logger, controller, {
       write: (text) => sessionHost.write(text),
@@ -140,7 +149,7 @@ export class RconSession {
       onLineChanged: (line) => this.dispatchToEngine({ kind: 'lineChanged', line }),
       beforeLineCleared: () => this.suggestionDisplay.clear(),
       consumeOutputArtifacts: () => {
-        if (this.lastCommandOutputLines > 10) {
+        if (this.lastCommandOutputLines > LARGE_OUTPUT_LINE_THRESHOLD) {
           this.lastCommandOutputLines = 0;
           return true;
         }
@@ -174,7 +183,7 @@ export class RconSession {
     }
     try {
       const response = await this.connectionManager.controller.send('tabcomplete');
-      if (response && response.includes('Returns tab completions for a partial command string')) {
+      if (response && response.includes(TAB_COMPLETE_PROBE_MARKER)) {
         this.pluginMode = true;
         this.commandTree.isReady = true;
         this.sessionHost.write('\r\n' + ansi.green('✓ Server tab-complete plugin detected — using server-side completions') + '\r\n\r\n');
@@ -845,7 +854,7 @@ export class RconSession {
       }
     } finally {
       this.lastCommandOutputLines = outputLineCount;
-      if (outputLineCount > 10) {
+      if (outputLineCount > LARGE_OUTPUT_LINE_THRESHOLD) {
         this.suggestionDisplay.markNeedsClearOnNextRender();
       }
 
