@@ -765,7 +765,7 @@ export class RconSession {
             this.showPrompt();
             return;
           }
-          const cmdArg = args || undefined;
+          const cmdArg = args.trim() || undefined;
           const output = formatCommandTree(this.commandTree.commands, cmdArg);
           output.split('\n').forEach(line => this.sessionHost.write(line + '\r\n'));
           if (cmdArg) {
