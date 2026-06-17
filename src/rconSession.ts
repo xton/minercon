@@ -159,6 +159,12 @@ export class RconSession {
 
     this.historyStore = new HistoryStore(sessionHost.cacheDir, host, port, logger, historySize);
     this.lineEditor.loadHistory(this.historyStore.load());
+
+    this.keyHandlers = this.buildKeyHandlers();
+    this.builtinCommands = this.buildBuiltinCommands();
+    this.builtinLookup = new Map(
+      this.builtinCommands.flatMap(cmd => [cmd.name, ...(cmd.aliases ?? [])].map(name => [name, cmd] as const))
+    );
   }
 
   open(): void {
@@ -321,12 +327,9 @@ export class RconSession {
     this.sessionHost.write(this.promptText());
   }
 
-  private readonly keyHandlers = this.buildKeyHandlers();
+  private readonly keyHandlers: Map<string, () => void>;
 
   private buildKeyHandlers(): Map<string, () => void> {
-    // NOTE: built once as a class-field initializer — before the constructor
-    // body assigns this.lineEditor — so handlers must look up this.lineEditor
-    // lazily at call time, not capture it here.
     const bindings: { sequences: string[]; handler: () => void }[] = [
       { sequences: ['\t'], handler: () => this.handleTabComplete() },
       { sequences: ['\x1b[Z'], handler: () => this.handleShiftTab() },
@@ -671,10 +674,8 @@ export class RconSession {
   // Same lookup-table pattern as buildKeyHandlers; like there, the run()
   // closures resolve collaborators lazily at call time.
 
-  private readonly builtinCommands = this.buildBuiltinCommands();
-  private readonly builtinLookup: Map<string, BuiltinCommand> = new Map(
-    this.builtinCommands.flatMap(cmd => [cmd.name, ...(cmd.aliases ?? [])].map(name => [name, cmd] as const))
-  );
+  private readonly builtinCommands: BuiltinCommand[];
+  private readonly builtinLookup: Map<string, BuiltinCommand>;
 
   private buildBuiltinCommands(): BuiltinCommand[] {
     /** Writes the "this is plugin mode, there's no local cache" notice — shared by every cache-related command. */
