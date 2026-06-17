@@ -19,7 +19,7 @@ interface CommandCache {
 export class CommandTreeCache {
   private cacheDir: string;
   private cacheFile: string;
-  private cacheVersion: string = '2.3.0'; // Bumped: unified CommandNode/Parameter tree shape (parameters -> members)
+  private cacheVersion: string = '2.4.0'; // Bumped: Parameter is now a discriminated union (subcommands drop redundant `literal`; nodes carry optional/position)
   private serverIdentifier: string;
 
   constructor(

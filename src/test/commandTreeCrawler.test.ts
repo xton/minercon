@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { silentLogger } from './support/testLogger';
 import { CommandTreeCrawler } from '../commandTreeCrawler';
-import { ParameterType, Parameter, CommandNode } from '../commandTree';
+import { ParameterType, Parameter, SubcommandParameter, ChoiceListParameter, CommandNode, parameterLabel } from '../commandTree';
 import { isGenericArgsPlaceholder } from '../commandTreeParsingBrigadier';
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
@@ -58,13 +58,20 @@ function createCommandTree(sendCommand: (command: string) => Promise<string>): C
   return new CommandTreeCrawler(sendCommand, silentLogger(), cacheDir, 'host', 25575);
 }
 
-function findChoice(parameters: Parameter[], name: string): Parameter {
-  const choiceList = parameters.find(p => p.type === ParameterType.CHOICE_LIST);
-  const direct = parameters.find(p => p.type === ParameterType.SUBCOMMAND && p.name === name);
+/** The subcommand choices of the single CHOICE_LIST in `parameters`, asserting there is one. */
+function variantChoices(parameters: Parameter[], message: string): SubcommandParameter[] {
+  const choiceList = parameters.find((p): p is ChoiceListParameter => p.type === ParameterType.CHOICE_LIST);
+  assert.ok(choiceList, message);
+  return choiceList.choices.filter((c): c is SubcommandParameter => c.type === ParameterType.SUBCOMMAND);
+}
+
+function findChoice(parameters: Parameter[], name: string): SubcommandParameter {
+  const direct = parameters.find((p): p is SubcommandParameter => p.type === ParameterType.SUBCOMMAND && p.name === name);
   if (direct) { return direct; }
-  const choice = choiceList?.choices?.find(c => c.name === name);
-  assert.ok(choice, `expected a "${name}" subcommand among ${JSON.stringify(parameters.map(p => p.name))}`);
-  return choice!;
+  const choiceList = parameters.find((p): p is ChoiceListParameter => p.type === ParameterType.CHOICE_LIST);
+  const choice = choiceList?.choices.find((c): c is SubcommandParameter => c.type === ParameterType.SUBCOMMAND && c.name === name);
+  assert.ok(choice, `expected a "${name}" subcommand among ${JSON.stringify(parameters.map(parameterLabel))}`);
+  return choice;
 }
 
 suite('CommandTreeCrawler - no-plugin help crawl', () => {
@@ -136,12 +143,11 @@ suite('CommandTreeCrawler - no-plugin help crawl', () => {
     });
 
     test('gamerule gets all rule variants, each with a [<value>] parameter', () => {
-      const params = nodes.get('gamerule')!.members!;
-      const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
-      assert.ok(choiceList, 'expected gamerule to be a CHOICE_LIST of rule variants');
-      const names = choiceList!.choices!.map(c => c.name);
+      const params = nodes.get('gamerule')!.members;
+      const choices = variantChoices(params, 'expected gamerule to be a CHOICE_LIST of rule variants');
+      const names = choices.map(c => c.name);
       assert.deepStrictEqual(names, ['announceAdvancements', 'doDaylightCycle', 'logAdminCommands']);
-      for (const choice of choiceList!.choices!) {
+      for (const choice of choices) {
         assert.deepStrictEqual(choice.members, [
           { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
         ]);
@@ -237,12 +243,11 @@ suite('CommandTreeCrawler - no-plugin help crawl', () => {
     });
 
     test('gamerule gets all rule variants from minecraft:help, each retaining its [<value>] parameter', () => {
-      const params = nodes.get('gamerule')!.members!;
-      const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
-      assert.ok(choiceList, 'expected gamerule to be a CHOICE_LIST of rule variants');
-      const names = choiceList!.choices!.map(c => c.name);
+      const params = nodes.get('gamerule')!.members;
+      const choices = variantChoices(params, 'expected gamerule to be a CHOICE_LIST of rule variants');
+      const names = choices.map(c => c.name);
       assert.deepStrictEqual(names, ['announceAdvancements', 'doDaylightCycle', 'logAdminCommands']);
-      for (const choice of choiceList!.choices!) {
+      for (const choice of choices) {
         // help gamerule <rule> isn't itself a help topic - the [<value>]
         // parameter discovered from the root minecraft:help blob must
         // survive the loadSubcommandDetails recursion unscathed.
@@ -388,12 +393,11 @@ suite('CommandTreeCrawler - no-plugin help crawl', () => {
 
     test('both gamerule and minecraft:gamerule list each rule with usable [<value>] members', () => {
       for (const cmd of ['gamerule', 'minecraft:gamerule']) {
-        const params = nodes.get(cmd)!.members!;
-        const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
-        assert.ok(choiceList, `expected ${cmd} to be a CHOICE_LIST of rule variants`);
-        const names = choiceList!.choices!.map(c => c.name);
+        const params = nodes.get(cmd)!.members;
+        const choices = variantChoices(params, `expected ${cmd} to be a CHOICE_LIST of rule variants`);
+        const names = choices.map(c => c.name);
         assert.deepStrictEqual(names, ['advance_time', 'minecraft:advance_time', 'locator_bar', 'minecraft:locator_bar']);
-        for (const choice of choiceList!.choices!) {
+        for (const choice of choices) {
           assert.deepStrictEqual(choice.members, [
             { type: ParameterType.ARGUMENT, name: 'value', optional: true, position: 0 },
           ]);
@@ -438,12 +442,11 @@ suite('CommandTreeCrawler - no-plugin help crawl', () => {
     });
 
     test('minecraft:difficulty becomes a CHOICE_LIST of complete, argument-free value variants', () => {
-      const params = nodes.get('minecraft:difficulty')!.members!;
-      const choiceList = params.find(p => p.type === ParameterType.CHOICE_LIST);
-      assert.ok(choiceList, 'expected minecraft:difficulty to be a CHOICE_LIST of value variants');
-      const names = choiceList!.choices!.map(c => c.name);
+      const params = nodes.get('minecraft:difficulty')!.members;
+      const choices = variantChoices(params, 'expected minecraft:difficulty to be a CHOICE_LIST of value variants');
+      const names = choices.map(c => c.name);
       assert.deepStrictEqual(names, ['peaceful', 'easy', 'normal', 'hard']);
-      for (const choice of choiceList!.choices!) {
+      for (const choice of choices) {
         assert.strictEqual(choice.isComplete, true);
         assert.deepStrictEqual(choice.members, []);
       }

@@ -12,7 +12,7 @@
 import * as path from 'path';
 import type { ConsolaInstance } from 'consola';
 import { stripColors } from './ansi';
-import { ParameterType, Parameter, CommandNode, newCommandNode } from './commandTree';
+import { ParameterType, Parameter, SubcommandParameter, CommandNode, newCommandNode } from './commandTree';
 import {
   HelpLinesResult,
   VariantInfo,
@@ -174,7 +174,7 @@ export class CommandTreeCrawler {
         const node = this.rootCommands.get(commands[i])!;
         this.currentLogKey = commands[i];
         try {
-          await this.loadCommandDetails(node, node.members!, pendingAliases);
+          await this.loadCommandDetails(node, node.members, pendingAliases);
         } catch (error) {
           this.logger.warn(`Warning: Failed to load details for ${commands[i]}: ${error}`);
         } finally {
@@ -350,7 +350,7 @@ export class CommandTreeCrawler {
     if (commandPath.includes(':')) { return undefined; }
 
     for (const [name, node] of this.rootCommands) {
-      if (node.isComplete && name.endsWith(`:${commandPath}`) && node.members?.length) {
+      if (node.isComplete && name.endsWith(`:${commandPath}`) && node.members.length) {
         return node;
       }
     }
@@ -408,8 +408,8 @@ export class CommandTreeCrawler {
   /**
    * Load details for a command or subcommand
    */
-  private async loadCommandDetails(parent: Parameter, parameters: Parameter[], pendingAliases: Map<string, string>): Promise<void> {
-    const commandPath = parent.name || parent.literal || '';
+  private async loadCommandDetails(parent: SubcommandParameter, parameters: Parameter[], pendingAliases: Map<string, string>): Promise<void> {
+    const commandPath = parent.name;
 
     // A bare command (e.g. "version") and its namespaced counterparts (e.g.
     // "bukkit:version", "minecraft:version") describe the same underlying
@@ -420,7 +420,7 @@ export class CommandTreeCrawler {
     const sibling = this.findNamespacedSibling(commandPath);
     if (sibling) {
       parameters.length = 0;
-      parameters.push(...(sibling.members ?? []));
+      parameters.push(...sibling.members);
       parent.isComplete = true;
       this.report(`Reusing ${sibling.name}'s details for ${commandPath}`);
       return;
@@ -509,7 +509,7 @@ export class CommandTreeCrawler {
     // subcommand (e.g. once per gamerule, scoreboard objectives subcommand,
     // ...). Only fall through to fetching when that usage is empty or just
     // the generic `<args>` placeholder, i.e. we don't actually know its args.
-    if (subcommand.members && hasUsableArguments(subcommand.members)) {
+    if (hasUsableArguments(subcommand.members)) {
       subcommand.isComplete = true;
       await this.loadSubcommandsIn(fullPath, subcommand.members);
       return;
@@ -521,7 +521,7 @@ export class CommandTreeCrawler {
     // - "peaceful" has no syntax of its own to discover, so
     // "help"/"minecraft:help <fullPath>" would just be wasted round trips
     // (confirmed: minecraft:help returns empty, help returns "not found").
-    if (subcommand.members && subcommand.members.length === 0 && subcommand.optional) {
+    if (subcommand.members.length === 0 && subcommand.optional) {
       subcommand.isComplete = true;
       return;
     }
@@ -549,9 +549,6 @@ export class CommandTreeCrawler {
       }
 
       // Clear existing members to avoid duplicates
-      if (!subcommand.members) {
-        subcommand.members = [];
-      }
       subcommand.members.length = 0;
       if (direct !== null) {
         subcommand.members.push(...direct);
@@ -562,9 +559,7 @@ export class CommandTreeCrawler {
       subcommand.isComplete = true;
 
       // Recursively load any nested subcommands
-      if (subcommand.members) {
-        await this.loadSubcommandsIn(fullPath, subcommand.members);
-      }
+      await this.loadSubcommandsIn(fullPath, subcommand.members);
 
     } catch {
       // Subcommand might not have its own help, that's okay
@@ -579,7 +574,7 @@ export class CommandTreeCrawler {
    */
   private async loadSubcommandsIn(path: string, parameters: Parameter[]): Promise<void> {
     for (const param of parameters) {
-      if (param.type === ParameterType.CHOICE_LIST && param.choices) {
+      if (param.type === ParameterType.CHOICE_LIST) {
         // For choice lists, recurse into each subcommand choice
         for (const choice of param.choices) {
           if (choice.type === ParameterType.SUBCOMMAND && !choice.isComplete) {

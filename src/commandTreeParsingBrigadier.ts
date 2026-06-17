@@ -70,18 +70,19 @@ export function tokenizeParameterString(str: string): string[] {
 }
 
 /**
- * Parse a single parameter token
+ * Parse a single parameter token. Every token maps to exactly one parameter
+ * (an unbracketed word becomes a `LITERAL`), so this never returns null.
  */
-export function parseParameter(token: string, position: number): Parameter | null {
+export function parseParameter(token: string, position: number): Parameter {
   // Check for choice list (option1|option2|...)
   if (token.startsWith('(') && token.endsWith(')')) {
     const choicesStr = token.slice(1, -1);
-    const choices = choicesStr.split('|').map((choice, idx) => ({
+    const choices: Parameter[] = choicesStr.split('|').map((choice, idx) => ({
       type: ParameterType.LITERAL,
       literal: choice.trim(),
       optional: false,
       position: idx
-    } as Parameter));
+    }));
 
     return {
       type: ParameterType.CHOICE_LIST,
@@ -150,10 +151,7 @@ export function parseCommandHelp(helpText: string): Parameter[] {
   const tokens = tokenizeParameterString(paramString);
 
   tokens.forEach((token, index) => {
-    const param = parseParameter(token, index);
-    if (param) {
-      parameters.push(param);
-    }
+    parameters.push(parseParameter(token, index));
   });
 
   return parameters;
@@ -205,13 +203,7 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
 
   if (isArgument) {
     // Every token is a direct parameter of the command/subcommand itself
-    const parameters: Parameter[] = [];
-    for (let i = 0; i < tokens.length; i++) {
-      const param = parseParameter(tokens[i], i);
-      if (param) {
-        parameters.push(param);
-      }
-    }
+    const parameters = tokens.map((token, i) => parseParameter(token, i));
     return { kind: 'direct', parameters };
   }
 
@@ -225,13 +217,7 @@ export function classifyParameterTokens(tokens: string[]): ParameterTokenClassif
     optional = true;
   }
 
-  const parameters: Parameter[] = [];
-  for (let i = 1; i < tokens.length; i++) {
-    const param = parseParameter(tokens[i], i - 1);
-    if (param) {
-      parameters.push(param);
-    }
-  }
+  const parameters = tokens.slice(1).map((token, i) => parseParameter(token, i));
 
   return { kind: 'variant', name, optional, parameters };
 }
@@ -511,7 +497,6 @@ export function buildParameterStructureFromVariants(variants: Map<string, Varian
     subcommandChoices.push({
       type: ParameterType.SUBCOMMAND,
       name,
-      literal: name,
       optional,
       position: subcommandChoices.length,
       members,

@@ -9,7 +9,7 @@ function literal(text: string, optional = false): Parameter {
     return { type: ParameterType.LITERAL, literal: text, optional, position: 0 };
 }
 function subcommand(name: string, members: Parameter[] = []): Parameter {
-    return { type: ParameterType.SUBCOMMAND, name, literal: name, optional: false, position: 0, members, isComplete: true };
+    return { type: ParameterType.SUBCOMMAND, name, optional: false, position: 0, members, isComplete: true };
 }
 function choiceList(...choices: Parameter[]): Parameter {
     return { type: ParameterType.CHOICE_LIST, choices, optional: false, position: 0 };
