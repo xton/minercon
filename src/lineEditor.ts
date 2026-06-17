@@ -37,8 +37,11 @@ export class LineEditor {
   private currentLine: string = '';
   private cursorPosition: number = 0;
 
-  private selectionStart: number = -1;
-  private selectionEnd: number = -1;
+  // The active selection, or null when there's none. `anchor` is the fixed end
+  // (where the gesture started); `head` is the moving end, kept in step with the
+  // cursor. A collapsed selection (anchor === head) counts as none — see
+  // hasSelection.
+  private selection: { anchor: number; head: number } | null = null;
 
   private history: string[] = [];
   private historyIndex: number = -1;
@@ -57,18 +60,22 @@ export class LineEditor {
   // ── selection ──
 
   hasSelection(): boolean {
-    return this.selectionStart !== -1 && this.selectionEnd !== -1 && this.selectionStart !== this.selectionEnd;
+    return this.selection !== null && this.selection.anchor !== this.selection.head;
   }
 
   clearSelection(): void {
-    this.selectionStart = -1;
-    this.selectionEnd = -1;
+    this.selection = null;
+  }
+
+  /** The selection's bounds as `[start, end)`, low-to-high — only valid when `hasSelection()`. */
+  private selectionRange(): { start: number; end: number } {
+    const { anchor, head } = this.selection!;
+    return { start: Math.min(anchor, head), end: Math.max(anchor, head) };
   }
 
   getSelectedText(): string {
     if (!this.hasSelection()) { return ''; }
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
+    const { start, end } = this.selectionRange();
     return this.currentLine.slice(start, end);
   }
 
@@ -81,80 +88,50 @@ export class LineEditor {
   /** `deleteSelection` without the host notification — for compound edits (insertText) that notify once themselves, with the final line. */
   private deleteSelectionInternal(): void {
     if (!this.hasSelection()) { return; }
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
+    const { start, end } = this.selectionRange();
 
     this.currentLine = this.currentLine.slice(0, start) + this.currentLine.slice(end);
     this.cursorPosition = start;
     this.clearSelection();
   }
 
-  selectLeft(): void {
-    if (this.cursorPosition > 0) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition--;
-      this.selectionEnd = this.cursorPosition;
-      this.redraw();
+  /**
+   * Extend (or begin) the selection so its moving end lands at `newPos`: anchor
+   * at the current cursor if there isn't a selection yet, then move both the
+   * cursor and the selection's moving end to `newPos` and repaint. Every
+   * select* operation is this — they differ only in how they pick `newPos`.
+   */
+  private extendSelectionTo(newPos: number): void {
+    if (!this.hasSelection()) {
+      this.selection = { anchor: this.cursorPosition, head: this.cursorPosition };
     }
+    this.cursorPosition = newPos;
+    this.selection!.head = newPos;
+    this.redraw();
+  }
+
+  selectLeft(): void {
+    if (this.cursorPosition > 0) { this.extendSelectionTo(this.cursorPosition - 1); }
   }
 
   selectRight(): void {
-    if (this.cursorPosition < this.currentLine.length) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition++;
-      this.selectionEnd = this.cursorPosition;
-      this.redraw();
-    }
+    if (this.cursorPosition < this.currentLine.length) { this.extendSelectionTo(this.cursorPosition + 1); }
   }
 
   selectWordLeft(): void {
-    if (!this.hasSelection()) {
-      this.selectionStart = this.cursorPosition;
-      this.selectionEnd = this.cursorPosition;
-    }
-    this.cursorPosition = this.findWordLeft();
-    this.selectionEnd = this.cursorPosition;
-    this.redraw();
+    this.extendSelectionTo(this.findWordLeft());
   }
 
   selectWordRight(): void {
-    if (!this.hasSelection()) {
-      this.selectionStart = this.cursorPosition;
-      this.selectionEnd = this.cursorPosition;
-    }
-    this.cursorPosition = this.findWordRight();
-    this.selectionEnd = this.cursorPosition;
-    this.redraw();
+    this.extendSelectionTo(this.findWordRight());
   }
 
   selectToStart(): void {
-    if (this.cursorPosition > 0) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = 0;
-      this.selectionEnd = 0;
-      this.redraw();
-    }
+    if (this.cursorPosition > 0) { this.extendSelectionTo(0); }
   }
 
   selectToEnd(): void {
-    if (this.cursorPosition < this.currentLine.length) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = this.currentLine.length;
-      this.selectionEnd = this.currentLine.length;
-      this.redraw();
-    }
+    if (this.cursorPosition < this.currentLine.length) { this.extendSelectionTo(this.currentLine.length); }
   }
 
   // ── cursor movement ──
@@ -292,9 +269,7 @@ export class LineEditor {
       this.host.write('\b');
       const restOfLine = this.currentLine.slice(this.cursorPosition);
       this.host.write(restOfLine + ' ');
-      if (restOfLine.length + 1 > 0) {
-        this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
-      }
+      this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
 
       this.host.onLineChanged(this.currentLine);
     }
@@ -309,30 +284,35 @@ export class LineEditor {
                         this.currentLine.slice(this.cursorPosition + 1);
       const restOfLine = this.currentLine.slice(this.cursorPosition);
       this.host.write(restOfLine + ' ');
-      if (restOfLine.length + 1 > 0) {
-        this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
-      }
+      this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
 
       this.host.onLineChanged(this.currentLine);
     }
   }
 
+  /**
+   * Repaint the line after a kill: step the cursor `cursorShiftLeft` columns
+   * left to the new insertion point (for backward kills), clear to end of line,
+   * then write the surviving `tail` and step back onto its start. Shared by all
+   * four kill operations — they differ only in `tail` and the shift.
+   */
+  private repaintAfterKill(tail: string, cursorShiftLeft: number = 0): void {
+    if (cursorShiftLeft > 0) { this.host.write('\x1b[' + cursorShiftLeft + 'D'); }
+    this.host.write('\x1b[K');
+    this.host.write(tail);
+    if (tail.length > 0) { this.host.write('\x1b[' + tail.length + 'D'); }
+  }
+
   // emacs: unix-line-discard — kill from cursor to start of line
   killToStart(): string {
     if (this.cursorPosition > 0) {
-      const deletedCount = this.cursorPosition;
       const killed = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
       this.currentLine = afterCursor;
       this.cursorPosition = 0;
       this.clearSelection();
 
-      this.host.write('\x1b[' + deletedCount + 'D');
-      this.host.write('\x1b[K');
-      this.host.write(afterCursor);
-      if (afterCursor.length > 0) {
-        this.host.write('\x1b[' + afterCursor.length + 'D');
-      }
+      this.repaintAfterKill(afterCursor, killed.length);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -344,8 +324,8 @@ export class LineEditor {
     if (this.cursorPosition < this.currentLine.length) {
       const killed = this.currentLine.slice(this.cursorPosition);
       this.currentLine = this.currentLine.slice(0, this.cursorPosition);
-      this.host.write('\x1b[K');
       this.clearSelection();
+      this.repaintAfterKill('');
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -358,28 +338,13 @@ export class LineEditor {
       const beforeCursor = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
 
-      // Find the last word boundary
-      let newPos = this.cursorPosition - 1;
-      // Skip trailing spaces
-      while (newPos > 0 && beforeCursor[newPos] === ' ') {
-        newPos--;
-      }
-      // Skip word characters
-      while (newPos > 0 && beforeCursor[newPos - 1] !== ' ') {
-        newPos--;
-      }
-
+      const newPos = this.findWordLeft();
       const killed = beforeCursor.slice(newPos);
       this.currentLine = beforeCursor.slice(0, newPos) + afterCursor;
       this.cursorPosition = newPos;
       this.clearSelection();
 
-      this.host.write('\x1b[' + killed.length + 'D');
-      this.host.write('\x1b[K');
-      this.host.write(afterCursor);
-      if (afterCursor.length > 0) {
-        this.host.write('\x1b[' + afterCursor.length + 'D');
-      }
+      this.repaintAfterKill(afterCursor, killed.length);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -396,11 +361,7 @@ export class LineEditor {
       this.currentLine = beforeCursor + afterDeleted;
       this.clearSelection();
 
-      this.host.write('\x1b[K');
-      this.host.write(afterDeleted);
-      if (afterDeleted.length > 0) {
-        this.host.write('\x1b[' + afterDeleted.length + 'D');
-      }
+      this.repaintAfterKill(afterDeleted);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -431,11 +392,10 @@ export class LineEditor {
     this.host.write('\x1b[K');
     this.host.write(this.host.promptText());
 
-    if (!this.hasSelection() || this.selectionStart === this.selectionEnd) {
+    if (!this.hasSelection()) {
       this.host.write(this.currentLine);
     } else {
-      const start = Math.min(this.selectionStart, this.selectionEnd);
-      const end = Math.max(this.selectionStart, this.selectionEnd);
+      const { start, end } = this.selectionRange();
 
       if (start > 0) {
         this.host.write(this.currentLine.slice(0, start));

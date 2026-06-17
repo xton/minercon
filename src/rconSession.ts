@@ -59,6 +59,15 @@ interface BuiltinCommand {
   run: (args: string) => void;
 }
 
+/** A command response taller than this many lines is treated as a screen-disrupting dump that the next prompt/suggestion render must clear past. */
+const LARGE_OUTPUT_LINE_THRESHOLD = 10;
+
+/** Commands to remember (in-memory and persisted) when the host doesn't specify a `historySize`. */
+const DEFAULT_HISTORY_SIZE = 100;
+
+/** Substring the TabComplete plugin's `tabcomplete` help text contains — how `detectAndInitialize` recognizes plugin mode. */
+const TAB_COMPLETE_PROBE_MARKER = 'Returns tab completions for a partial command string';
+
 export class RconSession {
   private connectionManager: RconConnectionManager;
   private lineEditor: LineEditor;
@@ -96,7 +105,7 @@ export class RconSession {
     this.serverHost = host;
     this.serverPort = port;
 
-    const historySize = sessionHost.historySize ?? 100;
+    const historySize = sessionHost.historySize ?? DEFAULT_HISTORY_SIZE;
 
     this.connectionManager = new RconConnectionManager(host, port, password, logger, controller, {
       write: (text) => sessionHost.write(text),
@@ -105,10 +114,7 @@ export class RconSession {
     }, controllerFactory);
 
     this.commandTree = new CommandTreeCrawler(
-      async (cmd) => {
-        const result = await this.connectionManager.controller.send(cmd);
-        return result ?? '';
-      },
+      (cmd) => this.connectionManager.controller.send(cmd),
       logger,
       sessionHost.cacheDir,
       host,
@@ -131,7 +137,7 @@ export class RconSession {
           const column = this.historySearchLabel.length + this.historySearch.query.length;
           return terminalWidth ? column % terminalWidth : column;
         }
-        const promptWidth = this.promptText().replace(/\x1b\[[0-9;]*m/g, '').length;
+        const promptWidth = ansi.stripAnsi(this.promptText()).length;
         const column = promptWidth + this.lineEditor.cursor;
         return terminalWidth ? column % terminalWidth : column;
       },
@@ -143,7 +149,7 @@ export class RconSession {
       onLineChanged: (line) => this.dispatchToEngine({ kind: 'lineChanged', line }),
       beforeLineCleared: () => this.suggestionDisplay.clear(),
       consumeOutputArtifacts: () => {
-        if (this.lastCommandOutputLines > 10) {
+        if (this.lastCommandOutputLines > LARGE_OUTPUT_LINE_THRESHOLD) {
           this.lastCommandOutputLines = 0;
           return true;
         }
@@ -177,7 +183,7 @@ export class RconSession {
     }
     try {
       const response = await this.connectionManager.controller.send('tabcomplete');
-      if (response && response.includes('Returns tab completions for a partial command string')) {
+      if (response && response.includes(TAB_COMPLETE_PROBE_MARKER)) {
         this.pluginMode = true;
         this.commandTree.isReady = true;
         this.sessionHost.write('\r\n' + ansi.green('✓ Server tab-complete plugin detected — using server-side completions') + '\r\n\r\n');
@@ -197,54 +203,69 @@ export class RconSession {
       !cacheInfo.exists ? 'No cache found...' :
         'Cache outdated...';
 
+    // Three progress-reporting strategies for the same underlying crawl,
+    // chosen by host/cache state: log lines (file logging), a one-shot cache
+    // notice, or a live clack progress bar for a fresh crawl.
     if (this.sessionHost.logToFile) {
-      if (!willLoadFromCache) {
-        this.logger.info(`Loading server commands (${reason})`);
-      }
-      try {
-        await this.commandTree.initialize((progressPct, phase) => {
-          if (willLoadFromCache) {
-            if (progressPct >= 100) {
-              this.logger.success('Commands loaded from cache!');
-              this.showPrompt();
-            }
-            return;
-          }
+      await this.loadCommandsLogged(willLoadFromCache, reason, forceRefresh);
+    } else if (willLoadFromCache) {
+      await this.loadCommandsFromCache(forceRefresh);
+    } else {
+      await this.loadCommandsWithProgressBar(reason, forceRefresh);
+    }
+  }
 
-          this.logger.info(`${progressPhaseLabel(phase)} (${Math.round(progressPct)}%)`);
-
+  /** Command-tree load for the file-logging host: narrate progress through the logger rather than a progress bar. */
+  private async loadCommandsLogged(willLoadFromCache: boolean, reason: string, forceRefresh: boolean): Promise<void> {
+    if (!willLoadFromCache) {
+      this.logger.info(`Loading server commands (${reason})`);
+    }
+    try {
+      await this.commandTree.initialize((progressPct, phase) => {
+        if (willLoadFromCache) {
           if (progressPct >= 100) {
-            this.logger.success('Commands loaded and cached!');
+            this.logger.success('Commands loaded from cache!');
             this.showPrompt();
           }
-        }, undefined, forceRefresh);
-      } catch (error) {
-        this.logger.error(`Failed to load commands: ${error}`);
-        this.logger.warn('Autocomplete will be limited.');
-        this.showPrompt();
-      }
-      return;
-    }
+          return;
+        }
 
-    if (willLoadFromCache) {
-      // Cache hit resolves in a single synchronous step — no progress to
-      // show, so skip the progress bar entirely (and the raw-mode dance its
-      // start/stop incurs).
-      try {
-        await this.commandTree.initialize((progressPct) => {
-          if (progressPct >= 100) {
-            this.sessionHost.write(ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
-            this.showPrompt();
-          }
-        }, undefined, forceRefresh);
-      } catch (error) {
-        this.sessionHost.write(ansi.red(`✗ Failed to load commands: ${error}`) + '\r\n');
-        this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
-        this.showPrompt();
-      }
-      return;
-    }
+        this.logger.info(`${progressPhaseLabel(phase)} (${Math.round(progressPct)}%)`);
 
+        if (progressPct >= 100) {
+          this.logger.success('Commands loaded and cached!');
+          this.showPrompt();
+        }
+      }, undefined, forceRefresh);
+    } catch (error) {
+      this.logger.error(`Failed to load commands: ${error}`);
+      this.logger.warn('Autocomplete will be limited.');
+      this.showPrompt();
+    }
+  }
+
+  /**
+   * Command-tree load on a cache hit (terminal host): resolves in a single
+   * synchronous step, so skip the progress bar entirely (and the raw-mode
+   * dance its start/stop incurs).
+   */
+  private async loadCommandsFromCache(forceRefresh: boolean): Promise<void> {
+    try {
+      await this.commandTree.initialize((progressPct) => {
+        if (progressPct >= 100) {
+          this.sessionHost.write(ansi.green('✓ Commands loaded from cache!') + '\r\n\r\n');
+          this.showPrompt();
+        }
+      }, undefined, forceRefresh);
+    } catch (error) {
+      this.sessionHost.write(ansi.red(`✗ Failed to load commands: ${error}`) + '\r\n');
+      this.sessionHost.write(ansi.yellow('Autocomplete will be limited.') + '\r\n\r\n');
+      this.showPrompt();
+    }
+  }
+
+  /** Command-tree load for a fresh crawl (terminal host): a clack progress bar narrating phases and per-command messages. */
+  private async loadCommandsWithProgressBar(reason: string, forceRefresh: boolean): Promise<void> {
     const bar = progress({ style: 'block' });
     bar.start(`Loading server commands (${reason})`);
     let lastProgress = 0;
@@ -572,25 +593,23 @@ export class RconSession {
     }
   }
 
+  /** The input line the current in-flight fetch is resolving for (or the live line if somehow idle). */
+  private fetchLine(): string {
+    return this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
+  }
+
+  /** Await `p`, falling back to `fallback` if it rejects — a failed fetch is just "no result". */
+  private async settleOr<T>(p: Promise<T>, fallback: T): Promise<T> {
+    try { return await p; } catch { return fallback; }
+  }
+
   private async runEngineCompletionsFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
-    let items: string[] = [];
-    try {
-      items = await this.completionBackend.fetchCompletions(line);
-    } catch {
-      items = [];
-    }
+    const items = await this.settleOr(this.completionBackend.fetchCompletions(this.fetchLine()), []);
     this.dispatchToEngine({ kind: 'completionsResult', requestId, items });
   }
 
   private async runEngineUsageFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
-    let text = '';
-    try {
-      text = await this.completionBackend.fetchUsage(line);
-    } catch {
-      text = '';
-    }
+    const text = await this.settleOr(this.completionBackend.fetchUsage(this.fetchLine()), '');
     this.dispatchToEngine({ kind: 'usageResult', requestId, text });
   }
 
@@ -850,7 +869,7 @@ export class RconSession {
       }
     } finally {
       this.lastCommandOutputLines = outputLineCount;
-      if (outputLineCount > 10) {
+      if (outputLineCount > LARGE_OUTPUT_LINE_THRESHOLD) {
         this.suggestionDisplay.markNeedsClearOnNextRender();
       }
 
