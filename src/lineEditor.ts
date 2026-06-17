@@ -37,8 +37,11 @@ export class LineEditor {
   private currentLine: string = '';
   private cursorPosition: number = 0;
 
-  private selectionStart: number = -1;
-  private selectionEnd: number = -1;
+  // The active selection, or null when there's none. `anchor` is the fixed end
+  // (where the gesture started); `head` is the moving end, kept in step with the
+  // cursor. A collapsed selection (anchor === head) counts as none — see
+  // hasSelection.
+  private selection: { anchor: number; head: number } | null = null;
 
   private history: string[] = [];
   private historyIndex: number = -1;
@@ -57,18 +60,22 @@ export class LineEditor {
   // ── selection ──
 
   hasSelection(): boolean {
-    return this.selectionStart !== -1 && this.selectionEnd !== -1 && this.selectionStart !== this.selectionEnd;
+    return this.selection !== null && this.selection.anchor !== this.selection.head;
   }
 
   clearSelection(): void {
-    this.selectionStart = -1;
-    this.selectionEnd = -1;
+    this.selection = null;
+  }
+
+  /** The selection's bounds as `[start, end)`, low-to-high — only valid when `hasSelection()`. */
+  private selectionRange(): { start: number; end: number } {
+    const { anchor, head } = this.selection!;
+    return { start: Math.min(anchor, head), end: Math.max(anchor, head) };
   }
 
   getSelectedText(): string {
     if (!this.hasSelection()) { return ''; }
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
+    const { start, end } = this.selectionRange();
     return this.currentLine.slice(start, end);
   }
 
@@ -81,8 +88,7 @@ export class LineEditor {
   /** `deleteSelection` without the host notification — for compound edits (insertText) that notify once themselves, with the final line. */
   private deleteSelectionInternal(): void {
     if (!this.hasSelection()) { return; }
-    const start = Math.min(this.selectionStart, this.selectionEnd);
-    const end = Math.max(this.selectionStart, this.selectionEnd);
+    const { start, end } = this.selectionRange();
 
     this.currentLine = this.currentLine.slice(0, start) + this.currentLine.slice(end);
     this.cursorPosition = start;
@@ -97,11 +103,10 @@ export class LineEditor {
    */
   private extendSelectionTo(newPos: number): void {
     if (!this.hasSelection()) {
-      this.selectionStart = this.cursorPosition;
-      this.selectionEnd = this.cursorPosition;
+      this.selection = { anchor: this.cursorPosition, head: this.cursorPosition };
     }
     this.cursorPosition = newPos;
-    this.selectionEnd = newPos;
+    this.selection!.head = newPos;
     this.redraw();
   }
 
@@ -387,11 +392,10 @@ export class LineEditor {
     this.host.write('\x1b[K');
     this.host.write(this.host.promptText());
 
-    if (!this.hasSelection() || this.selectionStart === this.selectionEnd) {
+    if (!this.hasSelection()) {
       this.host.write(this.currentLine);
     } else {
-      const start = Math.min(this.selectionStart, this.selectionEnd);
-      const end = Math.max(this.selectionStart, this.selectionEnd);
+      const { start, end } = this.selectionRange();
 
       if (start > 0) {
         this.host.write(this.currentLine.slice(0, start));
