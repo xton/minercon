@@ -289,22 +289,29 @@ export class LineEditor {
     }
   }
 
+  /**
+   * Repaint the line after a kill: step the cursor `cursorShiftLeft` columns
+   * left to the new insertion point (for backward kills), clear to end of line,
+   * then write the surviving `tail` and step back onto its start. Shared by all
+   * four kill operations — they differ only in `tail` and the shift.
+   */
+  private repaintAfterKill(tail: string, cursorShiftLeft: number = 0): void {
+    if (cursorShiftLeft > 0) { this.host.write('\x1b[' + cursorShiftLeft + 'D'); }
+    this.host.write('\x1b[K');
+    this.host.write(tail);
+    if (tail.length > 0) { this.host.write('\x1b[' + tail.length + 'D'); }
+  }
+
   // emacs: unix-line-discard — kill from cursor to start of line
   killToStart(): string {
     if (this.cursorPosition > 0) {
-      const deletedCount = this.cursorPosition;
       const killed = this.currentLine.slice(0, this.cursorPosition);
       const afterCursor = this.currentLine.slice(this.cursorPosition);
       this.currentLine = afterCursor;
       this.cursorPosition = 0;
       this.clearSelection();
 
-      this.host.write('\x1b[' + deletedCount + 'D');
-      this.host.write('\x1b[K');
-      this.host.write(afterCursor);
-      if (afterCursor.length > 0) {
-        this.host.write('\x1b[' + afterCursor.length + 'D');
-      }
+      this.repaintAfterKill(afterCursor, killed.length);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -316,8 +323,8 @@ export class LineEditor {
     if (this.cursorPosition < this.currentLine.length) {
       const killed = this.currentLine.slice(this.cursorPosition);
       this.currentLine = this.currentLine.slice(0, this.cursorPosition);
-      this.host.write('\x1b[K');
       this.clearSelection();
+      this.repaintAfterKill('');
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -336,12 +343,7 @@ export class LineEditor {
       this.cursorPosition = newPos;
       this.clearSelection();
 
-      this.host.write('\x1b[' + killed.length + 'D');
-      this.host.write('\x1b[K');
-      this.host.write(afterCursor);
-      if (afterCursor.length > 0) {
-        this.host.write('\x1b[' + afterCursor.length + 'D');
-      }
+      this.repaintAfterKill(afterCursor, killed.length);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
@@ -358,11 +360,7 @@ export class LineEditor {
       this.currentLine = beforeCursor + afterDeleted;
       this.clearSelection();
 
-      this.host.write('\x1b[K');
-      this.host.write(afterDeleted);
-      if (afterDeleted.length > 0) {
-        this.host.write('\x1b[' + afterDeleted.length + 'D');
-      }
+      this.repaintAfterKill(afterDeleted);
       this.host.onLineChanged(this.currentLine);
       return killed;
     }
