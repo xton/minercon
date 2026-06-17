@@ -64,6 +64,22 @@ export interface SocketLike extends EventEmitter {
   destroy(): void;
 }
 
+/** The events `RconProtocol` emits, with their listener signatures. */
+export interface RconProtocolEvents {
+  error: (error: Error) => void;
+  close: () => void;
+}
+
+// Declaration-merged onto the class below so `on`/`once`/`off`/`emit` are
+// typed against `RconProtocolEvents` — known events get checked listener
+// signatures and argument types, instead of EventEmitter's `(...args: any[])`.
+export interface RconProtocol {
+  on<E extends keyof RconProtocolEvents>(event: E, listener: RconProtocolEvents[E]): this;
+  once<E extends keyof RconProtocolEvents>(event: E, listener: RconProtocolEvents[E]): this;
+  off<E extends keyof RconProtocolEvents>(event: E, listener: RconProtocolEvents[E]): this;
+  emit<E extends keyof RconProtocolEvents>(event: E, ...args: Parameters<RconProtocolEvents[E]>): boolean;
+}
+
 export class RconProtocol extends EventEmitter {
   private socket: SocketLike | null = null;
   private host: string;
@@ -81,6 +97,7 @@ export class RconProtocol extends EventEmitter {
   
   // Configuration
   private readonly RESPONSE_TIMEOUT = 10000; // 10 seconds for command responses
+  private readonly AUTH_TIMEOUT = 5000;      // 5 seconds for the login handshake
   
   constructor(
     host: string,
@@ -191,7 +208,7 @@ export class RconProtocol extends EventEmitter {
       const authTimeout = setTimeout(() => {
         this.pendingRequests.delete(authId);
         reject(new Error('Authentication timeout'));
-      }, 5000);
+      }, this.AUTH_TIMEOUT);
       
       this.pendingRequests.set(authId, {
         kind: 'auth',
