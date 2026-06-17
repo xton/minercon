@@ -1,7 +1,7 @@
 > **Historical writeup.** Describes a since-refactored shape of the terminal
-> rendering code (now `suggestionDisplay.ts`/`rconTerminal.ts`/
-> `rconSession.ts`). For the current architecture, see
-> [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
+> rendering code (now `displaySuggestion.ts` — the `SuggestionDisplay`
+> renderer — driven by `rconSession.ts`). For the current architecture, see
+> [ARCHITECTURE.md](ARCHITECTURE.md).
 
 # Terminal Rendering Fix for Large Output
 

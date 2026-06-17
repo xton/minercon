@@ -203,7 +203,7 @@ Run the CLI with `--log-level debug` (or set `MCRCON_LOG_LEVEL=debug`) to get pe
 - **Vanilla**: standard help format
 - **Spigot/Paper**: includes plugin commands; accepts the `minecraft:` namespace prefix
 - **Fabric**: modded commands included; rejects the `minecraft:` namespace prefix
-- **Custom**: unpredictable formats — see `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for how `commandTreeCrawler.ts` copes
+- **Custom**: unpredictable formats — see `docs/NO_PLUGIN_HELP_CRAWL.md` for how `commandTreeCrawler.ts` copes
 
 ## Comparison with Alternatives
 

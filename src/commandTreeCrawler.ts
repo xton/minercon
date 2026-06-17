@@ -7,7 +7,7 @@
 // `getSuggestions`). All the text parsing this crawl relies on is in
 // `commandTreeParsingBrigadier.ts` as pure functions - this file is the
 // stateful orchestration: deciding what to fetch, in what order, and how to
-// merge and store the results. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+// merge and store the results. See docs/NO_PLUGIN_HELP_CRAWL.md.
 
 import * as path from 'path';
 import type { ConsolaInstance } from 'consola';
@@ -55,7 +55,7 @@ export class CommandTreeCrawler {
   // Vanilla/Fabric reject it as an unknown namespace (Brigadier syntax
   // error), but their plain `/help [<cmd>]` already returns full `<args>`
   // syntax directly. Detected once in fetchRootCommands() and reused for
-  // every per-command detail fetch. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+  // every per-command detail fetch. See docs/NO_PLUGIN_HELP_CRAWL.md.
   private supportsMinecraftNamespace: boolean = true;
 
   // For each root command, whether its summary line in the root
@@ -372,7 +372,7 @@ export class CommandTreeCrawler {
    * Bukkit `Description:`/`Usage:`/`Aliases:` page (even for vanilla-backed
    * commands), extracted via `extractBukkitUsageLines`; when it isn't,
    * vanilla/fabric's `help <path>` is *always* a flat Brigadier blob. See
-   * docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+   * docs/NO_PLUGIN_HELP_CRAWL.md.
    */
   private mergeHelpSources(helpResponse: string, mcResponse: string | null, commandPath: string): HelpLinesResult {
     // mcResponse is always a flat Brigadier blob - never a Bukkit help page.
