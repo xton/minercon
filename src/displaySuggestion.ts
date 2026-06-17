@@ -29,7 +29,6 @@ export class SuggestionDisplay {
   // Paging
   private visibleStart: number = 0;
   private readonly maxVisible: number = 10;
-  private currentPage: number = 1;
 
   private needsClearOnNextRender: boolean = false;
 
@@ -45,6 +44,11 @@ export class SuggestionDisplay {
 
   private get totalPages(): number {
     return Math.ceil(this.currentSuggestions.length / this.maxVisible);
+  }
+
+  /** The 1-based page the selected item sits on (only meaningful while a list is showing). */
+  private get currentPage(): number {
+    return Math.floor(this.suggestionIndex / this.maxVisible) + 1;
   }
 
   /** Replaces the direct `needsClearBeforeSuggestions = true` assignment from `executeCommand` — the next render should wipe the screen below the cursor first (e.g. after a multi-line command response may have pushed the display area around). */
@@ -100,7 +104,6 @@ export class SuggestionDisplay {
     this.suggestionIndex = -1;
     this.currentSuggestions = [];
     this.visibleStart = 0;
-    this.currentPage = 1;
   }
 
   /** Erases whatever's currently drawn in the display area — the single source of truth for "clear the old frame before drawing (or removing) the new one." */
@@ -116,13 +119,22 @@ export class SuggestionDisplay {
       }
     }
 
-    // Scroll-safe return: relative cursor-up is correct even when the \r\n
-    // above caused the terminal to scroll (absolute \x1b7/\x1b8 are not).
-    this.host.write(`\x1b[${this.displayLines}A`);
+    this.returnCursorToPrompt(this.displayLines);
+    this.displayLines = 0;
+  }
+
+  /**
+   * Returns the cursor to the prompt after drawing or erasing `lineCount` lines
+   * in the area below it: up `lineCount` rows, back to column 0, then out to the
+   * prompt's column. Uses a *relative* cursor-up (`\x1b[NA`) rather than an
+   * absolute save/restore (`\x1b7`/`\x1b8`), because the `\r\n`s used to enter
+   * the area may have scrolled the terminal and invalidated any saved row.
+   */
+  private returnCursorToPrompt(lineCount: number): void {
+    this.host.write(`\x1b[${lineCount}A`);
     this.host.write('\r');
     const col = this.host.cursorColumn();
     if (col > 0) { this.host.write(`\x1b[${col}C`); }
-    this.displayLines = 0;
   }
 
   /**
@@ -241,27 +253,12 @@ export class SuggestionDisplay {
     }
 
     this.displayLines = lines.length;
-
-    // Scroll-safe return: \x1b[N]A (relative up) is correct even when the
-    // \r\n outputs above caused the terminal to scroll. \x1b7/\x1b8 (absolute
-    // save/restore) fail in that case because the saved row is invalidated.
-    this.host.write(`\x1b[${lines.length}A`);
-    this.host.write('\r');
-    const col = this.host.cursorColumn();
-    if (col > 0) { this.host.write(`\x1b[${col}C`); }
+    this.returnCursorToPrompt(lines.length);
   }
 
   private updateVisibleWindow(): void {
     // Keep a buffer of 2 items above and below the selected item when possible
     const buffer = 2;
-
-    // Calculate which page the selected item is on
-    const selectedPage = Math.floor(this.suggestionIndex / this.maxVisible) + 1;
-
-    // Update current page if it changed
-    if (selectedPage !== this.currentPage) {
-      this.currentPage = selectedPage;
-    }
 
     // Update the visible window
     if (this.suggestionIndex < this.visibleStart + buffer) {
