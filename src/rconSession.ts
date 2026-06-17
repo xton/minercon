@@ -569,25 +569,23 @@ export class RconSession {
     }
   }
 
+  /** The input line the current in-flight fetch is resolving for (or the live line if somehow idle). */
+  private fetchLine(): string {
+    return this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
+  }
+
+  /** Await `p`, falling back to `fallback` if it rejects — a failed fetch is just "no result". */
+  private async settleOr<T>(p: Promise<T>, fallback: T): Promise<T> {
+    try { return await p; } catch { return fallback; }
+  }
+
   private async runEngineCompletionsFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
-    let items: string[] = [];
-    try {
-      items = await this.completionBackend.fetchCompletions(line);
-    } catch {
-      items = [];
-    }
+    const items = await this.settleOr(this.completionBackend.fetchCompletions(this.fetchLine()), []);
     this.dispatchToEngine({ kind: 'completionsResult', requestId, items });
   }
 
   private async runEngineUsageFetch(requestId: number): Promise<void> {
-    const line = this.engine.fetch.kind === 'busy' ? this.engine.fetch.forLine : this.lineEditor.line;
-    let text = '';
-    try {
-      text = await this.completionBackend.fetchUsage(line);
-    } catch {
-      text = '';
-    }
+    const text = await this.settleOr(this.completionBackend.fetchUsage(this.fetchLine()), '');
     this.dispatchToEngine({ kind: 'usageResult', requestId, text });
   }
 
