@@ -264,9 +264,7 @@ export class LineEditor {
       this.host.write('\b');
       const restOfLine = this.currentLine.slice(this.cursorPosition);
       this.host.write(restOfLine + ' ');
-      if (restOfLine.length + 1 > 0) {
-        this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
-      }
+      this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
 
       this.host.onLineChanged(this.currentLine);
     }
@@ -281,9 +279,7 @@ export class LineEditor {
                         this.currentLine.slice(this.cursorPosition + 1);
       const restOfLine = this.currentLine.slice(this.cursorPosition);
       this.host.write(restOfLine + ' ');
-      if (restOfLine.length + 1 > 0) {
-        this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
-      }
+      this.host.write('\x1b[' + (restOfLine.length + 1) + 'D');
 
       this.host.onLineChanged(this.currentLine);
     }
