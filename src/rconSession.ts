@@ -105,10 +105,7 @@ export class RconSession {
     }, controllerFactory);
 
     this.commandTree = new CommandTreeCrawler(
-      async (cmd) => {
-        const result = await this.connectionManager.controller.send(cmd);
-        return result ?? '';
-      },
+      (cmd) => this.connectionManager.controller.send(cmd),
       logger,
       sessionHost.cacheDir,
       host,
