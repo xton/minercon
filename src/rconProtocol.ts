@@ -472,7 +472,9 @@ export class RconProtocol extends EventEmitter {
   }
 
   /**
-   * Check if connected
+   * The lowest-level connection truth: an open socket that has authenticated.
+   * `RconController.isConnected()` forwards to this; `RconConnectionManager`
+   * keeps a separate intent-level flag that can briefly diverge during reconnects.
    */
   public isConnected(): boolean {
     return this.socket !== null && this.authenticated;

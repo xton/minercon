@@ -31,6 +31,12 @@ const defaultControllerFactory: ControllerFactory = (host, port, password, logge
 
 export class RconConnectionManager {
   private _controller: RconController;
+  // Intent-level connection state: whether the session currently considers
+  // itself connected, driven by the lifecycle transitions here (initial
+  // connect, `disconnect`, `reportConnectionLost`, successful reconnect). This
+  // is what the UI/prompt reads, and is deliberately distinct from the live
+  // socket truth in `RconController.isConnected()` — the two can briefly differ
+  // mid-reconnect (e.g. this is `false` while a new socket is being dialed).
   private _isConnected: boolean = true;
   private _isReconnecting: boolean = false;
   private reconnectAttempts: number = 0;

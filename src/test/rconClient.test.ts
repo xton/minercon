@@ -144,17 +144,6 @@ suite('RconController: send', () => {
         assert.strictEqual(await controller.send('after'), 'done:after');
     });
 
-    test('an undefined protocol response resolves to a string without throwing', async () => {
-        // RconProtocol.send is typed Promise<string>, but the defensive
-        // non-string path used to evaluate JSON.stringify(undefined).length —
-        // a TypeError. Drive it directly to pin the fallback down.
-        const { controller, calls } = setup(async () => undefined as unknown as string);
-        await controller.connect();
-
-        assert.strictEqual(await controller.send('list'), '');
-        assert.strictEqual(calls.warn.length, 0, 'undefined is the "no response" shape, not a warning-worthy non-string');
-    });
-
     test('logs a debug line for the send and a debug line for the recv, with the elapsed time', async () => {
         const { controller, calls } = setup(async (cmd) => `done:${cmd}`);
         await controller.connect();

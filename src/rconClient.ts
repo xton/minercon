@@ -59,29 +59,21 @@ export class RconController {
     this.logger.info('RCON session established.');
   }
 
-  public send(cmd: string): Promise<string | undefined> {
+  public send(cmd: string): Promise<string> {
     const result = this.sendQueue.then(() => this.sendNow(cmd));
     this.sendQueue = result.catch(() => undefined);
     return result;
   }
 
-  private async sendNow(cmd: string): Promise<string | undefined> {
+  private async sendNow(cmd: string): Promise<string> {
     if (!this.client) { throw new Error('Not connected'); }
     const sentAt = Date.now();
     this.logger.debug(`send: ${cmd}`);
     try {
       const res = await this.client.send(cmd);
       const elapsedMs = Date.now() - sentAt;
-
-      if (typeof res !== 'string' && res !== undefined) {
-        this.logger.warn(`Received non-string response: ${JSON.stringify(res)}`);
-      }
-
-      // JSON.stringify(undefined) is undefined, not a string — fall back to
-      // '' so the debug line's result.length can't throw.
-      const result = typeof res === 'string' ? res : JSON.stringify(res) ?? '';
-      this.logger.debug(`recv (+${elapsedMs}ms): ${cmd} -> ${result.length} chars`);
-      return result;
+      this.logger.debug(`recv (+${elapsedMs}ms): ${cmd} -> ${res.length} chars`);
+      return res;
     } catch (err) {
       this.logger.error('Error sending command: ' + errorMessage(err));
       throw err;
@@ -98,6 +90,10 @@ export class RconController {
     this.client = null;
   }
 
+  // The live socket-level truth: do we currently have an authenticated
+  // connection? `RconConnectionManager` tracks a separate, intent-level
+  // `isConnected` (whether the session *believes* it's connected) that can
+  // briefly diverge from this during reconnects — see that class.
   public isConnected(): boolean {
     return this.client !== null && this.client.isConnected();
   }
