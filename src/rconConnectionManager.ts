@@ -29,6 +29,13 @@ export type ControllerFactory = (host: string, port: number, password: string, l
 const defaultControllerFactory: ControllerFactory = (host, port, password, logger) =>
   new RconController(host, port, password, logger);
 
+// Auto-reconnect timing. After a dropped connection we wait a short grace
+// period, then retry with exponential backoff (doubling each attempt) capped
+// at the max delay.
+const CONNECTION_LOST_GRACE_MS = 1000;
+const INITIAL_RECONNECT_DELAY_MS = 2000;
+const MAX_RECONNECT_DELAY_MS = 32000;
+
 export class RconConnectionManager {
   private _controller: RconController;
   // Intent-level connection state: whether the session currently considers
@@ -41,7 +48,7 @@ export class RconConnectionManager {
   private _isReconnecting: boolean = false;
   private reconnectAttempts: number = 0;
   private readonly maxReconnectAttempts: number = 5;
-  private reconnectDelay: number = 2000;
+  private reconnectDelay: number = INITIAL_RECONNECT_DELAY_MS;
   private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor(
@@ -71,7 +78,7 @@ export class RconConnectionManager {
   /** Resets the reconnect-attempt counter, backoff delay, and any pending reconnect timer back to their initial state. */
   private resetReconnectState(): void {
     this.reconnectAttempts = 0;
-    this.reconnectDelay = 2000;
+    this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
 
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
@@ -92,7 +99,7 @@ export class RconConnectionManager {
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
       this.attemptReconnect();
-    }, 1000);
+    }, CONNECTION_LOST_GRACE_MS);
   }
 
   disconnect(): void {
@@ -184,7 +191,7 @@ export class RconConnectionManager {
         }, this.reconnectDelay);
 
         // Exponential backoff with max delay
-        this.reconnectDelay = Math.min(this.reconnectDelay * 2, 32000);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
       } else {
         // Max attempts reached
         this.host.write(ansi.boldRed('✗ Reconnection failed after ' + this.maxReconnectAttempts + ' attempts.') + '\r\n');
