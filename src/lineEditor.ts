@@ -89,72 +89,44 @@ export class LineEditor {
     this.clearSelection();
   }
 
-  selectLeft(): void {
-    if (this.cursorPosition > 0) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition--;
+  /**
+   * Extend (or begin) the selection so its moving end lands at `newPos`: anchor
+   * at the current cursor if there isn't a selection yet, then move both the
+   * cursor and the selection's moving end to `newPos` and repaint. Every
+   * select* operation is this — they differ only in how they pick `newPos`.
+   */
+  private extendSelectionTo(newPos: number): void {
+    if (!this.hasSelection()) {
+      this.selectionStart = this.cursorPosition;
       this.selectionEnd = this.cursorPosition;
-      this.redraw();
     }
+    this.cursorPosition = newPos;
+    this.selectionEnd = newPos;
+    this.redraw();
+  }
+
+  selectLeft(): void {
+    if (this.cursorPosition > 0) { this.extendSelectionTo(this.cursorPosition - 1); }
   }
 
   selectRight(): void {
-    if (this.cursorPosition < this.currentLine.length) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition++;
-      this.selectionEnd = this.cursorPosition;
-      this.redraw();
-    }
+    if (this.cursorPosition < this.currentLine.length) { this.extendSelectionTo(this.cursorPosition + 1); }
   }
 
   selectWordLeft(): void {
-    if (!this.hasSelection()) {
-      this.selectionStart = this.cursorPosition;
-      this.selectionEnd = this.cursorPosition;
-    }
-    this.cursorPosition = this.findWordLeft();
-    this.selectionEnd = this.cursorPosition;
-    this.redraw();
+    this.extendSelectionTo(this.findWordLeft());
   }
 
   selectWordRight(): void {
-    if (!this.hasSelection()) {
-      this.selectionStart = this.cursorPosition;
-      this.selectionEnd = this.cursorPosition;
-    }
-    this.cursorPosition = this.findWordRight();
-    this.selectionEnd = this.cursorPosition;
-    this.redraw();
+    this.extendSelectionTo(this.findWordRight());
   }
 
   selectToStart(): void {
-    if (this.cursorPosition > 0) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = 0;
-      this.selectionEnd = 0;
-      this.redraw();
-    }
+    if (this.cursorPosition > 0) { this.extendSelectionTo(0); }
   }
 
   selectToEnd(): void {
-    if (this.cursorPosition < this.currentLine.length) {
-      if (!this.hasSelection()) {
-        this.selectionStart = this.cursorPosition;
-        this.selectionEnd = this.cursorPosition;
-      }
-      this.cursorPosition = this.currentLine.length;
-      this.selectionEnd = this.currentLine.length;
-      this.redraw();
-    }
+    if (this.cursorPosition < this.currentLine.length) { this.extendSelectionTo(this.currentLine.length); }
   }
 
   // ── cursor movement ──
