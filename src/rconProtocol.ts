@@ -3,12 +3,19 @@ import * as net from 'net';
 import { EventEmitter } from 'events';
 import type { ConsolaInstance } from 'consola';
 
-// RCON packet types
-enum PacketType {
-  AUTH = 3,
-  AUTH_RESPONSE = 2,
-  COMMAND = 2,
-  RESPONSE = 0
+// RCON packet type tags. The wire protocol reuses the value 2 for two
+// different things depending on direction (SERVERDATA_EXECCOMMAND when we send,
+// SERVERDATA_AUTH_RESPONSE when the server replies), so they live in separate
+// enums: nothing in this file ever compares an outgoing tag to an incoming one,
+// which keeps that shared value from being mistaken for a single meaning.
+enum OutgoingType {
+  AUTH = 3,        // SERVERDATA_AUTH
+  COMMAND = 2,     // SERVERDATA_EXECCOMMAND
+}
+
+enum IncomingType {
+  RESPONSE = 0,        // SERVERDATA_RESPONSE_VALUE
+  AUTH_RESPONSE = 2,   // SERVERDATA_AUTH_RESPONSE
 }
 
 // RCON packet structure
@@ -18,6 +25,31 @@ interface RconPacket {
   type: number;
   body: string;
 }
+
+/**
+ * One outstanding request awaiting its reply, keyed in `pendingRequests` by
+ * the request id we sent. The three kinds have genuinely different lifecycles,
+ * so they're a discriminated union rather than one bag with optional fields:
+ *
+ * - `auth`: the login handshake; resolves/rejects the `connect()` promise.
+ * - `command`: a real command. Accumulates response `fragments`, and on its
+ *   first fragment fires `sendFence` to send the empty "fence" command whose
+ *   reply marks the end of this command's (possibly multi-packet) response.
+ * - `fence`: that trailing empty command. Its reply means every fragment of
+ *   the command it follows has arrived, so its `resolve` settles that command.
+ */
+type PendingRequest =
+  | { kind: 'auth'; resolve: () => void; reject: (error: Error) => void; timeout: NodeJS.Timeout }
+  | {
+      kind: 'command';
+      command: string;
+      resolve: (value: string) => void;
+      reject: (error: Error) => void;
+      timeout: NodeJS.Timeout;
+      fragments: string[];
+      sendFence?: () => void;
+    }
+  | { kind: 'fence'; resolve: () => void; reject: (error: Error) => void };
 
 /**
  * The slice of `net.Socket` that `RconProtocol` actually drives — narrow
@@ -45,14 +77,7 @@ export class RconProtocol extends EventEmitter {
   private responseBuffer: Buffer = Buffer.alloc(0);
   
   // For tracking requests and responses
-  private pendingRequests: Map<number, {
-    resolve: (value: string) => void;
-    reject: (error: Error) => void;
-    command: string;
-    fragments: string[];
-    timeout?: NodeJS.Timeout;
-    sendFence?: () => void;
-  }> = new Map();
+  private pendingRequests: Map<number, PendingRequest> = new Map();
   
   // Configuration
   private readonly RESPONSE_TIMEOUT = 10000; // 10 seconds for command responses
@@ -123,19 +148,21 @@ export class RconProtocol extends EventEmitter {
       
       // Handle close
       this.socket.on('close', () => {
-        const pending = [...this.pendingRequests.values()].map(r => r.command).join(', ');
+        const pending = [...this.pendingRequests.values()]
+          .map(r => r.kind === 'command' ? r.command : r.kind)
+          .join(', ');
         this.logger.info(`Connection closed (pending: ${pending || 'none'})`);
         this.authenticated = false;
         this.emit('close');
 
         for (const [, request] of this.pendingRequests) {
-          if (request.timeout) {
+          if (request.kind !== 'fence') {
             clearTimeout(request.timeout);
           }
           // Deliver any accumulated fragments if the server closed mid-response
-          // (e.g. the final fragment was exactly MAX_PACKET_SIZE bytes and we
-          // were still waiting for more).
-          if (request.fragments.length > 0) {
+          // (e.g. the final fragment was exactly one full packet and we were
+          // still waiting for more).
+          if (request.kind === 'command' && request.fragments.length > 0) {
             request.resolve(request.fragments.join(''));
           } else {
             request.reject(new Error('Connection closed'));
@@ -167,7 +194,8 @@ export class RconProtocol extends EventEmitter {
       }, 5000);
       
       this.pendingRequests.set(authId, {
-        resolve: (_response: string) => {
+        kind: 'auth',
+        resolve: () => {
           clearTimeout(authTimeout);
           this.authenticated = true;
           this.logger.info('Authentication successful');
@@ -177,13 +205,11 @@ export class RconProtocol extends EventEmitter {
           clearTimeout(authTimeout);
           reject(error);
         },
-        command: 'auth',
-        fragments: [],
         timeout: authTimeout
       });
-      
+
       // Send auth packet
-      const packet = this.createPacket(authId, PacketType.AUTH, this.password);
+      const packet = this.createPacket(authId, OutgoingType.AUTH, this.password);
       if (this.socket) {
         this.socket.write(packet);
       }
@@ -218,6 +244,8 @@ export class RconProtocol extends EventEmitter {
       }, this.RESPONSE_TIMEOUT);
 
       this.pendingRequests.set(requestId, {
+        kind: 'command',
+        command: command,
         resolve: (response: string) => {
           clearTimeout(timeout);
           this.pendingRequests.delete(requestId);
@@ -230,9 +258,8 @@ export class RconProtocol extends EventEmitter {
           this.pendingRequests.delete(dummyId);
           reject(error);
         },
-        command: command,
-        fragments: [],
         timeout: timeout,
+        fragments: [],
         // Sent on the first response fragment — ensures the fence arrives in
         // its own TCP read() on the server, not batched with the command packet.
         // RconClient.run() closes the connection if read() returns more bytes
@@ -240,25 +267,24 @@ export class RconProtocol extends EventEmitter {
         // arrive in one read() cause an immediate disconnect.
         sendFence: () => {
           if (this.socket) {
-            const dummyPacket = this.createPacket(dummyId, PacketType.COMMAND, '');
+            const dummyPacket = this.createPacket(dummyId, OutgoingType.COMMAND, '');
             this.socket.write(dummyPacket);
           }
         },
       });
 
       this.pendingRequests.set(dummyId, {
+        kind: 'fence',
         resolve: () => {
           const mainRequest = this.pendingRequests.get(requestId);
-          if (mainRequest) {
+          if (mainRequest && mainRequest.kind === 'command') {
             mainRequest.resolve(mainRequest.fragments.join(''));
           }
         },
         reject: () => {},
-        command: 'dummy',
-        fragments: [],
       });
 
-      const commandPacket = this.createPacket(requestId, PacketType.COMMAND, command);
+      const commandPacket = this.createPacket(requestId, OutgoingType.COMMAND, command);
       if (this.socket) {
         this.socket.write(commandPacket);
       }
@@ -297,70 +323,82 @@ export class RconProtocol extends EventEmitter {
     }
   }
 
+  /** The single in-flight auth request, if any, with the id it's keyed under. */
+  private findAuthRequest(): { id: number; request: Extract<PendingRequest, { kind: 'auth' }> } | undefined {
+    for (const [id, request] of this.pendingRequests) {
+      if (request.kind === 'auth') {
+        return { id, request };
+      }
+    }
+    return undefined;
+  }
+
   /**
    * Handle a parsed packet
    */
   private handlePacket(packet: RconPacket): void {
-    // Special handling for auth responses
+    // Failed auth: the server replies with id -1 rather than echoing the id we
+    // sent, so we can't look it up — find the pending auth request directly.
     if (packet.id === -1) {
-      // Authentication failed
-      for (const [id, request] of this.pendingRequests) {
-        if (request.command === 'auth') {
-          request.reject(new Error('Authentication failed'));
-          this.pendingRequests.delete(id);
-          break;
-        }
+      const auth = this.findAuthRequest();
+      if (auth) {
+        this.pendingRequests.delete(auth.id);
+        auth.request.reject(new Error('Authentication failed'));
       }
       return;
     }
-    
-    // Find the corresponding request
+
     const request = this.pendingRequests.get(packet.id);
     if (!request) {
-      // Might be an auth response packet (they send two packets)
-      // Check if this is following an auth request
-      for (const [id, req] of this.pendingRequests) {
-        if (req.command === 'auth' && packet.type === PacketType.AUTH_RESPONSE) {
-          // This is the auth response
-          req.resolve('');
-          this.pendingRequests.delete(id);
+      // Some servers don't echo our auth id on the AUTH_RESPONSE packet — if an
+      // auth handshake is in flight, this unmatched response is it.
+      if (packet.type === IncomingType.AUTH_RESPONSE) {
+        const auth = this.findAuthRequest();
+        if (auth) {
+          this.pendingRequests.delete(auth.id);
+          auth.request.resolve();
           return;
         }
       }
-      
       this.logger.warn(`Received packet with unknown request ID: ${packet.id}`);
       return;
     }
-    
-    // Handle based on packet type
-    if (packet.type === PacketType.RESPONSE) {
-      if (request.command === 'auth') {
-        // First of the two auth-acknowledgement packets — ignore it; the
-        // AUTH_RESPONSE packet that follows is what we actually resolve on.
+
+    switch (request.kind) {
+      case 'auth':
+        // Auth gets two packets: an empty RESPONSE_VALUE we ignore, then the
+        // AUTH_RESPONSE we resolve on. Delete on resolve so the entry doesn't
+        // linger where the close handler could re-fire it.
+        if (packet.type === IncomingType.AUTH_RESPONSE) {
+          this.pendingRequests.delete(packet.id);
+          request.resolve();
+        }
         return;
-      }
-      if (request.sendFence) {
-        request.sendFence();
-        request.sendFence = undefined;
-      }
-      request.fragments.push(packet.body);
-      if (request.command === 'dummy') {
-        request.resolve('');
-      }
-    } else if (packet.type === PacketType.AUTH_RESPONSE) {
-      // Auth response — resolve and clean up so the auth entry doesn't linger
-      // in pendingRequests where the close handler could re-fire it.
-      if (request.command === 'auth') {
-        this.pendingRequests.delete(packet.id);
-        request.resolve('');
-      }
+
+      case 'command':
+        if (packet.type !== IncomingType.RESPONSE) { return; }
+        // First fragment in: send the fence so its reply can mark the end of
+        // this (possibly multi-packet) response.
+        if (request.sendFence) {
+          request.sendFence();
+          request.sendFence = undefined;
+        }
+        request.fragments.push(packet.body);
+        return;
+
+      case 'fence':
+        // The fence's reply means every fragment of the command it follows has
+        // arrived; its resolve settles that command (and clears both entries).
+        if (packet.type !== IncomingType.RESPONSE) { return; }
+        request.resolve();
+        return;
     }
   }
 
   /**
    * Create an RCON packet
    */
-  private createPacket(id: number, type: PacketType, body: string): Buffer {
+  private createPacket(id: number, type: OutgoingType, body: string): Buffer {
     // Calculate size (4 bytes ID + 4 bytes type + body + 2 null terminators)
     const bodyLength = Buffer.byteLength(body, 'utf8');
     const size = 4 + 4 + bodyLength + 2;
@@ -420,7 +458,7 @@ export class RconProtocol extends EventEmitter {
 
       // Clear pending requests
       for (const [, request] of this.pendingRequests) {
-        if (request.timeout) {
+        if (request.kind !== 'fence') {
           clearTimeout(request.timeout);
         }
         request.reject(new Error('Disconnected'));
