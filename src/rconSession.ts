@@ -128,7 +128,7 @@ export class RconSession {
           const column = this.historySearchLabel.length + this.historySearch.query.length;
           return terminalWidth ? column % terminalWidth : column;
         }
-        const promptWidth = this.promptText().replace(/\x1b\[[0-9;]*m/g, '').length;
+        const promptWidth = ansi.stripAnsi(this.promptText()).length;
         const column = promptWidth + this.lineEditor.cursor;
         return terminalWidth ? column % terminalWidth : column;
       },

@@ -102,3 +102,12 @@ export function stripColors(text: string): string {
   return text.replace(/[§Â]§[0-9a-fklmnor]/g, '')
     .replace(/§[0-9a-fklmnor]/g, '');
 }
+
+/**
+ * Remove ANSI SGR (color/style) escape sequences — e.g. to measure a styled
+ * string's *visible* width. Distinct from `stripColors`, which removes the
+ * Minecraft `§`-code alphabet rather than the ANSI escapes those map to.
+ */
+export function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, '');
+}
