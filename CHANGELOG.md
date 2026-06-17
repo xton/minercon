@@ -9,6 +9,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [3.0.0] - 2026-06-17
+
+Minercon graduates from a VS Code–only extension into a dual-target tool: the
+same RCON client now ships as a **standalone CLI** (`minercon`, runnable in any
+terminal) *and* as the VS Code extension. This release also adds **server-side
+TabComplete plugins/mod** (Paper, Spigot, Fabric) for live, in-game-accurate
+completion, a full emacs-style line editor, persistent command history, and a
+rebuilt command-tree engine.
+
+> Renamed from **"Minecraft RCON Terminal"** to **Minercon** — same project,
+> new name.
+
+### 🚀 Highlights
+
+- **Standalone CLI (`minercon`)** — run an RCON terminal in any shell, not just
+  inside VS Code. The VS Code extension now runs the same CLI directly as its
+  terminal process, so both targets share one implementation.
+- **Server-side tab completion** — new [Paper](paper-plugin/),
+  [Spigot](spigot-plugin/), and [Fabric](fabric-mod/) TabComplete add-ons.
+  When installed, completions are fetched live from the server as you type,
+  identical to in-game tab completion ("plugin mode"). Without them, Minercon
+  falls back to crawling and caching `/help` ("local mode"). The mode is
+  detected automatically on connect.
+
+### ✨ Added
+
+#### CLI
+- `minercon [host] [port]` entry point with `--password`, `--save`,
+  `--log-file`, `--log-level`, `--history-size`, and `--no-plugin` flags.
+- Environment variables `MCRCON_PASSWORD`, `MCRCON_LOG_FILE`,
+  `MCRCON_LOG_LEVEL`, and `MCRCON_HISTORY_SIZE`.
+- Interactive host/port/password prompts (masked password input) via
+  [@clack/prompts](https://github.com/bombshell-dev/clack).
+- Saved config at `~/.config/minercon/config.json` (`--save` persists
+  host/port/history-size; the password is never written to disk).
+- In-process kill ring for cut/yank within the session.
+
+#### Server-side TabComplete add-ons
+- **Paper plugin** — uses
+  [paperweight-userdev](https://docs.papermc.io/paper/dev/userdev/) for direct
+  typed access to Paper's Brigadier command dispatcher (no NMS reflection).
+  Requires Java 21 and Paper 1.21+.
+- **Spigot plugin** — equivalent completion for Spigot 1.21+ servers (Java 21).
+- **Fabric mod** — equivalent completion for Fabric servers.
+
+#### Line editing & history
+- Full emacs-style line editor: character/word movement, Home/End, selection
+  (Shift + arrows/word/line), transpose (`Ctrl+T`), and kill/yank
+  (`Ctrl+K`/`Ctrl+U`/`Ctrl+W`/`Alt+D`/`Ctrl+Y`). In VS Code the kill ring is
+  the system clipboard; in the CLI it is session-local.
+- Persistent command history stored as a plain text file, sized by
+  `--history-size`, with `Up`/`Down`, `Ctrl+P`/`Ctrl+N`, and reverse search
+  (`Ctrl+R`).
+
+#### Built-in commands
+- `/history` — show command history.
+- `/tree <command>` — inspect the parsed command tree for a command (with
+  send/recv debug logging).
+- `/cache-info` — show the age and location of the cached command tree.
+  (Joins the existing `/reload-commands` and `/clear-cache`.)
+
 ### 🔧 Changed
 - Logging now goes directly through [consola](https://github.com/unjs/consola)
   instead of a custom `Logger`/`TerminalWriter` layer — output (CLI and VS
@@ -21,11 +84,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The extension and CLI are now bundled with esbuild (`dist/extension.js`,
   `dist/minercon.js`) for packaging, so runtime dependencies like consola
   ship in the VSIX without including `node_modules`.
+- Command-tree loading uses `@clack/prompts`'s `progress()` instead of a
+  hand-rolled `\r\x1b[K` progress bar; per-step narration goes through a
+  `report()`/`onMessage` callback so it no longer collides with the bar's
+  redraws. The cache-hit path skips the progress bar entirely.
+- Command-tree internals rebuilt: a single recursive `commandTree` model
+  (`CommandNode`/`Parameter` unified), dedicated Brigadier and Bukkit parsers,
+  a crawler, an on-disk cache, and a suggestions layer. Modules were
+  reorganized into prefix-grouped clusters (`commandTree*`, `rcon*`,
+  `display*`, `completion*`).
 
-### ⚠️ Known issue
-- When `--log-file` is not used, log lines printed during an in-progress
-  command (e.g. the local-mode command-tree-loading progress bar) can
-  interleave/corrupt the progress bar's in-place redraw — see TODO.md.
+### 🐛 Fixed
+- Parse Bukkit "Showing help for X" plugin help pages so plugin commands get
+  proper usage hints.
+- Subcommand usage hint no longer shows the parent choice-list instead of the
+  specific subcommand usage.
+- Don't reuse a namespaced sibling command's usage when it has none.
+- `Ctrl+D` on a non-empty line deletes forward instead of disconnecting.
+- Progress bar no longer breaks on a stale cache.
+
+### ⚠️ Breaking changes
+- **Log level names changed** — `warning` is now `warn`; the level set is now
+  consola's (`debug|info|warn|error|trace|verbose|…`) rather than the old
+  fixed `debug|info|warning|error`.
+- **Packaging changed** — the extension/CLI are bundled to `dist/` with
+  esbuild; the published artifact layout differs from 2.x.
+
+### 📝 Residual known issue
+- With `--log-level debug` and no `--log-file`, a stray log line printed *while*
+  the command-tree progress bar is mid-redraw can still interleave with it
+  (the same caveat any terminal spinner has). Accepted as a debug-only cosmetic
+  edge case; use `--log-file` to avoid it entirely. See TODO.md §13.
+
+### 📚 Documentation
+- Added `docs/ARCHITECTURE.md` (including a Terminology section covering
+  "plugin mode" vs "local mode").
+- Rewrote `docs/TECHNICAL.md` against the current `rconProtocol`/`rconClient`.
+- Refreshed `README.md`, `CONTRIBUTING.md`, and `SECURITY.md` for the current
+  project layout, CLI flags, and shortcuts; marked older technical writeups as
+  historical.
 
 ---
 
@@ -341,6 +438,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Forge/Fabric servers
 - ✅ Custom server software with RCON support
 
+[Unreleased]: https://github.com/xton/minercon/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/xton/minercon/compare/2.2.0...3.0.0
+[2.2.0]: https://github.com/jaketcooper/minecraft-rcon/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/jaketcooper/minecraft-rcon/compare/2.0.5...2.1.0
 [2.0.5]: https://github.com/jaketcooper/minecraft-rcon/compare/2.0.0...2.0.5
 [2.0.0]: https://github.com/jaketcooper/minecraft-rcon/compare/1.1.1...2.0.0
