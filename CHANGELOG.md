@@ -59,8 +59,8 @@ rebuilt command-tree engine.
 #### Line editing & history
 - Full emacs-style line editor: character/word movement, Home/End, selection
   (Shift + arrows/word/line), transpose (`Ctrl+T`), and kill/yank
-  (`Ctrl+K`/`Ctrl+U`/`Ctrl+W`/`Alt+D`/`Ctrl+Y`). In VS Code the kill ring is
-  the system clipboard; in the CLI it is session-local.
+  (`Ctrl+K`/`Ctrl+U`/`Ctrl+W`/`Alt+D`/`Ctrl+Y`). The kill ring is
+  session-local in both the CLI and VS Code extension.
 - Persistent command history stored as a plain text file, sized by
   `--history-size`, with `Up`/`Down`, `Ctrl+P`/`Ctrl+N`, and reverse search
   (`Ctrl+R`).
@@ -109,12 +109,6 @@ rebuilt command-tree engine.
   fixed `debug|info|warning|error`.
 - **Packaging changed** — the extension/CLI are bundled to `dist/` with
   esbuild; the published artifact layout differs from 2.x.
-
-### 📝 Residual known issue
-- With `--log-level debug` and no `--log-file`, a stray log line printed *while*
-  the command-tree progress bar is mid-redraw can still interleave with it
-  (the same caveat any terminal spinner has). Accepted as a debug-only cosmetic
-  edge case; use `--log-file` to avoid it entirely. See TODO.md §13.
 
 ### 📚 Documentation
 - Added `docs/ARCHITECTURE.md` (including a Terminology section covering

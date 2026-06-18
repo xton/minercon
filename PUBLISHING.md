@@ -6,38 +6,32 @@ registry** — grab it early.
 
 ## 1. Pre-flight: make the package publishable
 
-- [ ] **Fix the npm tarball — it is currently broken and bloated.**
-  `npm pack --dry-run` today produces 228 files / 2.1 MB unpacked: it ships
-  `src/` and all tests, while `out/` (the actual compiled code) is excluded
-  by `.gitignore`-fallback rules — npm force-includes only the `main`/`bin`
-  files, so the published CLI would crash on its first `require('./rconSession')`.
-  Add a `files` whitelist (e.g. `["out/", "!out/test/", "images/icon.png",
-  "LICENSE", "README.md", "CHANGELOG.md"]`) and a `prepublishOnly: "npm run
-  compile"` script; re-audit with `npm pack --dry-run` until it's just the
-  compiled tree.
-- [ ] **Fill in package.json metadata** — `author`, `keywords` (`minecraft`,
-  `rcon`, `console`, `terminal`, `server-admin`, `tab-completion`, ...),
-  `homepage`, `bugs`, `repository.url` in `git+https://...` form, and an
-  `engines.node` (`>=18`) for the CLI. These feed both the npm page and the
-  Marketplace listing search.
-- [ ] **Add `--version` to the CLI** (read from package.json at runtime).
-  First thing people try; also needed in bug reports.
+- [x] **Fix the npm tarball** — `files` whitelist added (`out/*.js`,
+  `out/minercon`, `images/icon.png`, `CHANGELOG.md`); tarball now ships
+  29 files / 285 KB instead of 129 files / 1.2 MB. `prepublishOnly:
+  "npm run compile"` added so the compiled tree is always fresh on
+  publish.
+- [x] **Fill in package.json metadata** — `author`, `keywords`, `homepage`,
+  `bugs`, `repository.url` (git+https form), `engines.node: ">=18"`.
+- [x] **Add `--version` to the CLI** — `-V`/`--version` reads from
+  `package.json` at runtime; works for both `out/` and `dist/` install
+  paths.
 - [ ] **Write the missing CHANGELOG entries** — CHANGELOG stops at 2.2.0
   (2025-10-03) but the package says 3.0.0; everything since (the standalone
   CLI, plugin mode + RconTabComplete, the help-crawl local mode, Ctrl+R,
   history persistence, `--no-plugin`, ...) is the actual launch story.
   The 3.0.0 entry is effectively the announcement post — write it well once,
   reuse it everywhere.
-- [ ] **LICENSE: add your own copyright line** alongside the existing
-  `Copyright (c) 2025 Jake T Cooper` (keep his — MIT requires preserving the
-  notice; the fork attribution in README's Acknowledgements is already good).
-- [ ] **Fill in or delete `.github/FUNDING.yml`** — it's still the unfilled
-  GitHub template (every line a placeholder comment).
-- [ ] **Windows smoke test** the CLI (raw-mode stdin, ANSI rendering in
-  Windows Terminal, `~/.config` path assumptions — `os.homedir()+'/.config'`
-  is unixy; consider `env.APPDATA`/`XDG_CONFIG_HOME` handling). The
-  `cp`/`chmod` in the compile script also breaks `npm run compile` for
-  Windows contributors — a tiny node script fixes both.
+- [x] **LICENSE: add copyright line** — `Copyright (c) 2026 xton` added
+  alongside Jake T Cooper's notice.
+- [x] **Delete `.github/FUNDING.yml`** — was the unfilled template.
+- [x] **Windows compile fix** — replaced `cp`/`chmod` in the compile script
+  with `scripts/post-compile.js` (cross-platform Node script); CI added
+  (`windows-smoke.yml`) covering compile, `--version`, `--help`, non-TTY
+  rejection, and unit tests on `windows-latest`. Note: Linux container
+  tests (real RCON connection) can't run on Windows CI runners — Docker
+  Desktop isn't available there; test the connection manually on a Windows
+  machine with Docker Desktop installed.
 - [ ] **Refresh the demo media** — `images/demo-autocomplete.gif` predates
   argument hints/Ctrl+R; record one ~20s GIF (or asciinema for the CLI)
   showing: connect → type `/give` → live suggestions → Tab cycling →
