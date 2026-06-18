@@ -745,31 +745,42 @@ discovery channels that link back to the client:
 
 ### 11.5 Announce / find an audience
 
+**Audience reality check**: the target user is someone on managed Minecraft
+hosting (Apex, Shockbyte, BisectHosting, etc.) who gets RCON from their
+provider but not SSH — hobbyist server operators, not professional admins.
+Serious admins SSH to their servers and look down on RCON; they are not the
+audience. r/admincraft skews heavily toward that crowd and also has a
+community prohibition on AI-generated code, so it's off the table entirely.
+
 Order matters: have npm + Marketplace + GitHub Release all live *before*
 posting anywhere, then announce within a few days while it's fresh.
 
-- [ ] **r/admincraft** — the primary audience (server admins). Read the
-  self-promo rules first, post with the demo GIF, lead with the pain point
-  ("RCON clients truncate /help and have no tab completion"), mention it's
-  free/MIT/open-source, and stick around in the comments. This is the single
-  highest-value post.
 - [ ] **r/MinecraftCommands** — people who live in command syntax; the
-  argument-hint/tab-completion angle lands well here.
+  argument-hint/tab-completion angle lands well here, and this sub skews
+  toward users who rely on the tools their host gives them (i.e. RCON).
+  This is the single highest-value Reddit post.
 - [ ] **r/feedthebeast** (modded servers — the Fabric mod angle) and
   **r/vscode** (the extension angle) as secondary posts, reworded per
   audience, spaced out by a week or so.
+- [ ] **r/Minecraft** or **r/admincraft**-adjacent communities — not
+  r/admincraft itself (AI code ban), but subreddits for specific server
+  types (e.g. r/feedthebeast, r/MCPE) where managed-hosting users congregate.
+  Keep messaging practical: "if your host gives you RCON but not SSH, this
+  gives you a real terminal."
 - [ ] **Show HN** — "Show HN: Minercon – a Minecraft RCON terminal with tab
   completion". HN loves the technical meat: the double-packet fragmentation
   fence and the /help-crawl Brigadier reverse-engineering
   (docs/NO_PLUGIN_HELP_CRAWL.md is most of a blog post already).
   Consider polishing that into a post and submitting the post instead of the
   repo.
-- [ ] **Discord servers**: PaperMC (#plugins / tooling channels), the
-  Admincraft discord, Fabric's discord (for the mod). Ask-don't-spam: most
-  have a showcase channel.
-- [ ] **The itzg/minecraft-server (docker) ecosystem** — minercon pairs
-  naturally with dockerized servers (the functional tests already use it); a
-  docs PR or discussion post there reaches exactly the right users.
+- [ ] **Hosting-provider communities** — forums, Discord servers, and help
+  threads for popular managed hosts (Apex, Shockbyte, BisectHosting). These
+  users have RCON but no SSH, which is exactly the audience; many hosts have
+  a "third-party tools" or "resources" channel.
+- [ ] **Discord servers**: PaperMC (#plugins / tooling channels) and
+  Fabric's discord (for the mod). Skip the Admincraft discord — same
+  professional-admin skew as r/admincraft. Ask-don't-spam: most have a
+  showcase channel.
 - [ ] **Awesome lists** — PR to awesome-minecraft / awesome-vscode style
   lists once the listing pages look good.
 - [ ] After launch: enable GitHub Discussions (or point people at issues),
