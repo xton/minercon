@@ -2,7 +2,7 @@
 > `commandAutocomplete.ts` (now split across `commandTreeCrawler.ts`,
 > `commandTreeParsingBrigadier.ts`, `commandTreeParsingBukkit.ts`,
 > `commandTreeSuggestions.ts`, and `commandTreeCache.ts`).
-> For the current architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
+> For the current architecture, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 # CommandAutocomplete Updates for RCON Protocol v2
 

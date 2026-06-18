@@ -1,7 +1,7 @@
 > **Historical writeup.** Describes a since-refactored shape of the help-text
 > parsing code (then `commandAutocomplete.ts`, now `commandTreeCrawler.ts` plus
 > `commandTreeParsingBrigadier.ts`/`commandTreeParsingBukkit.ts`). For the
-> current architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
+> current architecture, see [ARCHITECTURE.md](../ARCHITECTURE.md).
 
 # Fix for Hyphenated Commands
 

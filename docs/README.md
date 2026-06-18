@@ -29,13 +29,14 @@ A spec under active discussion rather than a finished reference.
 
 ## Historical writeups
 
-Snapshots of earlier fixes. They describe code shapes that have since been
-refactored away and are kept for context only — each carries a banner pointing
-back to [ARCHITECTURE.md](ARCHITECTURE.md) for the current shape.
+Snapshots of earlier fixes, grouped under [`historical/`](historical/). They
+describe code shapes that have since been refactored away and are kept for
+context only — each carries a banner pointing back to
+[ARCHITECTURE.md](ARCHITECTURE.md) for the current shape.
 
-- [RENDERING_FIX.md](RENDERING_FIX.md) — terminal-rendering fixes for the
-  suggestion display after large command output.
-- [HYPHEN_FIX.md](HYPHEN_FIX.md) — parsing parameters for hyphenated command
-  names out of `/help` output.
-- [AUTOCOMPLETE_UPDATES.md](AUTOCOMPLETE_UPDATES.md) — autocomplete changes that
-  came with the custom RCON protocol implementation.
+- [historical/RENDERING_FIX.md](historical/RENDERING_FIX.md) — terminal-rendering
+  fixes for the suggestion display after large command output.
+- [historical/HYPHEN_FIX.md](historical/HYPHEN_FIX.md) — parsing parameters for
+  hyphenated command names out of `/help` output.
+- [historical/AUTOCOMPLETE_UPDATES.md](historical/AUTOCOMPLETE_UPDATES.md) —
+  autocomplete changes that came with the custom RCON protocol implementation.
