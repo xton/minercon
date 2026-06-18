@@ -11,6 +11,9 @@ Kept in sync with the code; start here.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — a tour of `src/`: what each module owns
   and how the layers (RCON → command knowledge → completion engine → terminal
   UI → orchestration → host adapters) fit together. The map to read first.
+- [UML.md](UML.md) — the same structure as diagrams: per-layer class diagrams,
+  the `Parameter` and engine-`Machine` data models, plus sequence and
+  state-machine diagrams for the key runtime flows.
 - [TECHNICAL.md](TECHNICAL.md) — the RCON wire protocol: packet framing, the
   deferred "fence packet" technique for reassembling fragmented responses, and
   the record/replay test harness.
