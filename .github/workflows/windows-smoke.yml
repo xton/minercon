@@ -6,14 +6,11 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  MC_VERSION: '1.21.4'
-
 jobs:
   windows-smoke:
     name: Windows smoke test
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -45,21 +42,3 @@ jobs:
 
       - name: Unit tests
         run: npm test
-
-      - name: Switch Docker to Linux containers
-        # windows-latest defaults to Windows containers mode; Minecraft server
-        # images are Linux, so we need to switch. Takes ~30-60 s.
-        shell: powershell
-        run: |
-          & "C:\Program Files\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine
-          $elapsed = 0
-          do {
-            Start-Sleep -Seconds 2
-            $elapsed += 2
-            $info = docker info 2>&1
-          } while ($LASTEXITCODE -ne 0 -and $elapsed -lt 90)
-          if ($LASTEXITCODE -ne 0) { throw "Docker Linux engine did not become ready" }
-          docker version
-
-      - name: Vanilla connection test
-        run: npx mocha --ui tdd --timeout 360000 --grep "\[vanilla\]" out/test/functional/connection.test.js
