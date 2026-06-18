@@ -106,7 +106,7 @@ for (const variant of nonPluginVariants) {
     });
 
     // The following tests exercise the merged /help + minecraft:help crawl
-    // (see docs/technical/NO_PLUGIN_HELP_CRAWL.md). They run after the
+    // (see docs/NO_PLUGIN_HELP_CRAWL.md). They run after the
     // "initializes without error" test above has populated the cache, so
     // loadCommandTree() here is fast (no RCON calls).
 

@@ -135,7 +135,7 @@ suite('classifyParameterTokens', () => {
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
 // Vanilla/Fabric 1.21.4 server, used throughout this suite and in
-// commandTreeCrawler.test.ts. See docs/technical/NO_PLUGIN_HELP_CRAWL.md.
+// commandTreeCrawler.test.ts. See docs/NO_PLUGIN_HELP_CRAWL.md.
 suite('parseHelpLines', () => {
     test('vanilla "/help <cmd>" direct syntax (gamemode)', () => {
         const result = parseHelpLines('/gamemode <gamemode> [<target>]', 'gamemode');

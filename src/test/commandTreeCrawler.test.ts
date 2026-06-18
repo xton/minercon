@@ -8,7 +8,7 @@ import { ParameterType, Parameter, SubcommandParameter, ChoiceListParameter, Com
 import { isGenericArgsPlaceholder } from '../commandTreeParsingBrigadier';
 
 // Real responses captured from a live Paper 1.21.4 (no plugins) and a live
-// Vanilla/Fabric 1.21.4 server, see docs/technical/NO_PLUGIN_HELP_CRAWL.md and
+// Vanilla/Fabric 1.21.4 server, see docs/NO_PLUGIN_HELP_CRAWL.md and
 // commandTreeParsingBrigadier.test.ts (same fixtures, used there to test the individual
 // parsing helpers).
 

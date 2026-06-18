@@ -40,7 +40,7 @@ A few terms carry specific meaning throughout this codebase and its docs:
   (and `minecraft:help`, where supported) once at startup to build a
   **command tree**, which `LocalCompletionBackend`/`commandTreeSuggestions.ts`
   query thereafter. This is the path exercised by the "no-plugin" help-crawl
-  work — see `docs/technical/NO_PLUGIN_HELP_CRAWL.md`.
+  work — see `docs/NO_PLUGIN_HELP_CRAWL.md`.
 
 - **`--no-plugin` / `disablePlugin`** — a CLI flag / `RconSessionHost` option
   that forces local mode even when a compatible addon is present. Useful for
@@ -64,7 +64,7 @@ A few terms carry specific meaning throughout this codebase and its docs:
   line; vanilla and Fabric reject this prefix entirely.
   `supportsMinecraftNamespace` detects which is true for the connected
   server, and `mergeHelpSources()` combines both responses when both are
-  available. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md`.
+  available. See `docs/NO_PLUGIN_HELP_CRAWL.md`.
 
 - **Fence packet** (a.k.a. double-packet technique) — the empty dummy RCON
   command sent partway through a response to detect where a fragmented
@@ -202,7 +202,7 @@ Pure parsing of Minecraft's Brigadier-shaped `/help` output (flat `/cmd
 <args>` blobs, as returned by `minecraft:help` and vanilla's plain `help`)
 into a `Parameter` tree (`commandTree.ts`), plus the root-listing parser (`parseHelpResponse`)
 and the one-time namespace-support probe (`isUnsupportedNamespaceError`),
-including the quirks documented in `docs/technical/` (concatenated help
+including the quirks documented in `docs/NO_PLUGIN_HELP_CRAWL.md` (concatenated help
 lines, hyphenated literals, namespace differences between `/help` and
 `minecraft:help`). Every export is a deterministic function — no IO.
 

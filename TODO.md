@@ -18,7 +18,7 @@ anything non-obvious.
 
 ## 3. Design patterns
 - [x] Command/lookup-table pattern for key dispatch (came along with the rconTerminal split)
-- [x] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` — landed as a **merge strategy** rather than a class hierarchy: `fetchRootCommands()` detects `supportsMinecraftNamespace` once (vanilla/fabric reject the `minecraft:` prefix; paper/spigot accept it), then `loadCommandDetails`/`loadSubcommandDetails` always fetch both `help <path>` and (when supported) `minecraft:help <path>` and hand them to a new `mergeHelpSources()`, which picks whichever side has real `<args>` syntax (vanilla's `minecraft:help` vs. Bukkit's `help`/Usage-line for added commands) at every recursion depth. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for the full empirical writeup
+- [x] Strategy pattern for local-vs-plugin parsing in `commandAutocomplete.ts` — landed as a **merge strategy** rather than a class hierarchy: `fetchRootCommands()` detects `supportsMinecraftNamespace` once (vanilla/fabric reject the `minecraft:` prefix; paper/spigot accept it), then `loadCommandDetails`/`loadSubcommandDetails` always fetch both `help <path>` and (when supported) `minecraft:help <path>` and hand them to a new `mergeHelpSources()`, which picks whichever side has real `<args>` syntax (vanilla's `minecraft:help` vs. Bukkit's `help`/Usage-line for added commands) at every recursion depth. See `docs/NO_PLUGIN_HELP_CRAWL.md` for the full empirical writeup
 - [x] Extract a "terminal renderer" collaborator → `SuggestionDisplay` (pure content builders + `renderSuggestionArea`)
 
 ## 4. Dead code
@@ -101,7 +101,7 @@ level, not just by live functional tests.
 
 58 unit tests in `commandAutocomplete.test.ts`/`helpTextParsing.test.ts` (250
 total), plus all 32 functional tests across vanilla/paper/spigot/fabric, pass.
-`tsc`/`eslint` clean. See `docs/technical/NO_PLUGIN_HELP_CRAWL.md` for the full
+`tsc`/`eslint` clean. See `docs/NO_PLUGIN_HELP_CRAWL.md` for the full
 empirical writeup.*
 
 ## 8. Fresh code-review pass (2026-06-10)
@@ -632,7 +632,7 @@ Ordered roughly by user impact within each group.
 - [x] **`SECURITY.md` supported-versions table** still lists 2.0.x/1.1.x/1.0.x
   while the package is at 3.0.0. Fixed: table now reads `3.0.x` (supported) /
   `< 3.0` (unsupported); also bumped the "Last updated" date.
-- [x] **Mark `docs/technical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
+- [x] **Mark `docs/historical/AUTOCOMPLETE_UPDATES.md`, `HYPHEN_FIX.md`,
   `RENDERING_FIX.md` as historical** — they describe code shapes that have
   since been refactored away (e.g. quoting pre-split `commandAutocomplete.ts`
   internals). Added a one-line "historical writeup, see ARCHITECTURE.md for
@@ -761,7 +761,7 @@ posting anywhere, then announce within a few days while it's fresh.
 - [ ] **Show HN** — "Show HN: Minercon – a Minecraft RCON terminal with tab
   completion". HN loves the technical meat: the double-packet fragmentation
   fence and the /help-crawl Brigadier reverse-engineering
-  (docs/technical/NO_PLUGIN_HELP_CRAWL.md is most of a blog post already).
+  (docs/NO_PLUGIN_HELP_CRAWL.md is most of a blog post already).
   Consider polishing that into a post and submitting the post instead of the
   repo.
 - [ ] **Discord servers**: PaperMC (#plugins / tooling channels), the

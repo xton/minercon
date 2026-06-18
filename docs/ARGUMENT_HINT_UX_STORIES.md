@@ -17,6 +17,14 @@ Each story has a status marker:
 
 Add notes / ✅-or-✗ / alternative phrasing inline as we talk through these.
 
+> **Note on module names.** This doc predates the renderer split. The two
+> separate `showSuggestionList` / `showArgumentHint` methods on the old
+> `rconTerminal.ts` that the "Rendering mechanics" section below discusses have
+> since been consolidated into a single `SuggestionDisplay.renderSuggestionArea`
+> (`displaySuggestion.ts`), driven by `executeEngineEffect` in `rconSession.ts`.
+> The behavior described still holds; only the names have moved. See
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the current layout.
+
 ## Quick mechanics refresher (for grounding the discussion)
 
 - The engine tracks `usage` as `none | loading | ready` per "open" phase, keyed
