@@ -1,0 +1,41 @@
+name: Windows Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows-smoke:
+    name: Windows smoke test
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile (cross-platform check)
+        run: npm run compile
+
+      - name: CLI --version
+        run: node out/minercon --version
+
+      - name: CLI --help
+        run: node out/minercon --help
+
+      - name: Non-TTY rejection
+        shell: bash
+        run: |
+          output=$(echo "" | node out/minercon 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "does not support piped input"

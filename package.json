@@ -45,7 +45,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile && node esbuild.js --production",
     "prepublishOnly": "npm run compile",
-    "compile": "tsc -p ./ && node esbuild.js && cp out/cli.js out/minercon && chmod +x out/minercon",
+    "compile": "tsc -p ./ && node esbuild.js && node scripts/post-compile.js",
     "watch": "tsc -w -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
