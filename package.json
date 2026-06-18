@@ -3,14 +3,36 @@
   "displayName": "Minercon",
   "description": "A powerful RCON client for Minecraft servers with advanced fragmentation support",
   "version": "3.0.0",
+  "author": "xton <thisischriston@gmail.com>",
   "icon": "images/icon.png",
   "license": "MIT",
+  "homepage": "https://github.com/xton/minercon",
+  "bugs": {
+    "url": "https://github.com/xton/minercon/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/xton/minercon"
+    "url": "git+https://github.com/xton/minercon.git"
   },
+  "keywords": [
+    "minecraft",
+    "rcon",
+    "terminal",
+    "server-admin",
+    "tab-completion",
+    "minecraft-server",
+    "console",
+    "rcon-client"
+  ],
+  "files": [
+    "out/*.js",
+    "out/minercon",
+    "images/icon.png",
+    "CHANGELOG.md"
+  ],
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.95.0",
+    "node": ">=18"
   },
   "categories": [
     "Other"
@@ -22,6 +44,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && node esbuild.js --production",
+    "prepublishOnly": "npm run compile",
     "compile": "tsc -p ./ && node esbuild.js && cp out/cli.js out/minercon && chmod +x out/minercon",
     "watch": "tsc -w -p ./",
     "pretest": "npm run compile && npm run lint",
