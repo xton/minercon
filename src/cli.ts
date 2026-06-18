@@ -41,10 +41,17 @@ async function main(): Promise<void> {
       'history-size': { type: 'string' },
       'no-plugin': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
+      version: { type: 'boolean', short: 'V', default: false },
     },
     allowPositionals: true,
     strict: false,
   });
+
+  if (values.version) {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as { version: string };
+    process.stdout.write(`minercon ${pkg.version}\n`);
+    process.exit(0);
+  }
 
   if (values.help) {
     process.stdout.write([
@@ -58,6 +65,7 @@ async function main(): Promise<void> {
       '  --history-size <n>    Number of commands to remember in history (default: 100)',
       '  --no-plugin           Skip the server-side tab-complete plugin probe (manual testing only;',
       '                        not persisted to config)',
+      '  -V, --version         Print version and exit',
       '  -h, --help            Show this help',
       '',
       'Environment:',
