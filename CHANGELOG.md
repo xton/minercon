@@ -69,18 +69,11 @@ rebuilt command-tree engine.
 - `/history` — show command history.
 - `/tree <command>` — inspect the parsed command tree for a command (with
   send/recv debug logging).
-- `/cache-info` — show the age and location of the cached command tree.
-  (Joins the existing `/reload-commands` and `/clear-cache`.)
 
 ### 🔧 Changed
 - Logging now goes directly through [consola](https://github.com/unjs/consola)
   instead of a custom `Logger`/`TerminalWriter` layer — output (CLI and VS
   Code extension) is now formatted by consola's default reporters.
-- `--log-level`/`MCRCON_LOG_LEVEL` now accept any consola log level (e.g.
-  `warn`, `log`, `trace`, `verbose`) instead of the old `debug|info|warning|error`
-  set — note `warning` is now spelled `warn`.
-- `--log-file`/`MCRCON_LOG_FILE` are reimplemented on top of consola's
-  `stdout`/`stderr` options, writing to the given file instead of the console.
 - The extension and CLI are now bundled with esbuild (`dist/extension.js`,
   `dist/minercon.js`) for packaging, so runtime dependencies like consola
   ship in the VSIX without including `node_modules`.
@@ -99,16 +92,7 @@ rebuilt command-tree engine.
   proper usage hints.
 - Subcommand usage hint no longer shows the parent choice-list instead of the
   specific subcommand usage.
-- Don't reuse a namespaced sibling command's usage when it has none.
 - `Ctrl+D` on a non-empty line deletes forward instead of disconnecting.
-- Progress bar no longer breaks on a stale cache.
-
-### ⚠️ Breaking changes
-- **Log level names changed** — `warning` is now `warn`; the level set is now
-  consola's (`debug|info|warn|error|trace|verbose|…`) rather than the old
-  fixed `debug|info|warning|error`.
-- **Packaging changed** — the extension/CLI are bundled to `dist/` with
-  esbuild; the published artifact layout differs from 2.x.
 
 ### 📚 Documentation
 - Added `docs/ARCHITECTURE.md` (including a Terminology section covering

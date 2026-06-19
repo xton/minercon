@@ -16,7 +16,7 @@ registry** — grab it early.
 - [x] **Add `--version` to the CLI** — `-V`/`--version` reads from
   `package.json` at runtime; works for both `out/` and `dist/` install
   paths.
-- [ ] **Write the missing CHANGELOG entries** — CHANGELOG stops at 2.2.0
+- [x] **Write the missing CHANGELOG entries** — CHANGELOG stops at 2.2.0
   (2025-10-03) but the package says 3.0.0; everything since (the standalone
   CLI, plugin mode + RconTabComplete, the help-crawl local mode, Ctrl+R,
   history persistence, `--no-plugin`, ...) is the actual launch story.
@@ -121,12 +121,6 @@ posting anywhere, then announce within a few days while it's fresh.
   types (e.g. r/feedthebeast, r/MCPE) where managed-hosting users congregate.
   Keep messaging practical: "if your host gives you RCON but not SSH, this
   gives you a real terminal."
-- [ ] **Show HN** — "Show HN: Minercon – a Minecraft RCON terminal with tab
-  completion". HN loves the technical meat: the double-packet fragmentation
-  fence and the /help-crawl Brigadier reverse-engineering
-  (docs/NO_PLUGIN_HELP_CRAWL.md is most of a blog post already).
-  Consider polishing that into a post and submitting the post instead of the
-  repo.
 - [ ] **Hosting-provider communities** — forums, Discord servers, and help
   threads for popular managed hosts (Apex, Shockbyte, BisectHosting). These
   users have RCON but no SSH, which is exactly the audience; many hosts have
@@ -140,20 +134,3 @@ posting anywhere, then announce within a few days while it's fresh.
 - [ ] After launch: enable GitHub Discussions (or point people at issues),
   and watch the Marketplace Q&A tab — answered questions are marketing.
 
-## 6. Relationship with the original author (jaketcooper/Minecraft-rcon)
-
-There's no legal todo — MIT is satisfied by the preserved LICENSE copyright
-line and the README Acknowledgements (both already in place). The rest is
-courtesy, which costs little and occasionally pays off big:
-
-- [ ] **Send a friendly heads-up** (GitHub issue on his repo, or email if
-  listed): the fork lives on, got renamed to Minercon, here's what it became,
-  he's credited in README + LICENSE — and a thank-you. No ask attached.
-- [ ] **Offer a cross-link**: if his project is dormant, he may be happy to
-  add "actively maintained fork: minercon" to his README — that converts his
-  existing installs/stars into your funnel. His call; offer once.
-- [ ] If he engages, add him to `contributors` in package.json and the
-  release notes. If he doesn't respond, the existing attribution is already
-  correct and sufficient — proceed.
-- [ ] Keep the branding distinct (already done — different name, icon, and
-  description), so Marketplace/npm listings can't be confused with his.

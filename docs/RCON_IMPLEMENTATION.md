@@ -10,7 +10,9 @@ The Minecraft RCON protocol splits large responses into 4096-byte packets. The p
 When receiving fragmented responses, there's no built-in way to know when all fragments have arrived. The protocol doesn't include a "last packet" flag or total size header.
 
 ### Our Approach
-We use the classic "double-packet"/dummy-packet technique, with one twist: the dummy ("fence") packet is sent only after the *first* fragment of the real response has arrived, not immediately after the command.
+We use the classic "double-packet"/dummy-packet technique: send a dummy packet with a known ID after our main request. Requests are guaranteed to be processed in order, so we know that when we receive the dummy packet's response then we've received all of our main request's response.
+
+Minercon's implementation diverges from jaketcooper's with one twist: the dummy ("fence") packet is sent only after the *first* fragment of the real response has arrived, not immediately after the command.
 
 ```
 1. Send actual command (ID: 1) → "help"
@@ -29,6 +31,8 @@ The RCON server processes commands sequentially, so once we receive the response
 The deferral exists because of a real-server bug: some servers' RCON connection handlers (confirmed against Paper/Spigot's `RconClient.run()`) read from the socket and compare the bytes read against the *first* packet's declared size. If our "command" and "fence" writes are batched by TCP into a single `read()` (which `net.Socket.write()` calls are free to do when issued back-to-back), the byte count won't match the first packet's size field and the server closes the connection with "Thread RCON Client ... shutting down" — before it even looks at the fence's packet type.
 
 By waiting for the first response fragment before writing the fence, a TCP round trip has already happened, so the fence packet arrives in its own `read()`. This is why the fence is **type 2 (`SERVERDATA_EXECCOMMAND`)**, not type 0 — all known client implementations use an empty `EXECCOMMAND` as the fence, and the type itself isn't what was causing disconnects; the batching was.
+
+This was discovered while building a functional test using local containers where latency is very, very low.
 
 ## Packet Structure
 
@@ -121,23 +125,6 @@ private handlePacket(packet: RconPacket): void {
 6. **Return Result**: Concatenate and return the accumulated fragments
 7. **Cleanup**: If the connection closes mid-response with fragments already accumulated, resolve with what was received rather than rejecting
 
-## Error Handling
-
-### Timeout Management
-- Authentication timeout: 5 seconds
-- Command response timeout: 10 seconds (`RESPONSE_TIMEOUT` in `rconProtocol.ts`), covering both the command and its fence round trip
-
-### Error Recovery
-- Socket `error`/`close` events reject or resolve all pending requests (resolving with any partial fragments already received)
-- `RconController` (`rconClient.ts`) wraps `RconProtocol` and serializes all `send()` calls through a `sendQueue`, so a failed or slow command can't wedge later ones
-- `RconConnectionManager` (`rconConnectionManager.ts`) owns reconnection: exponential backoff (1s → 32s, capped at 5 attempts) when the connection is lost
-
-### Edge Cases Handled
-- Server closes connection mid-response (partial fragments returned)
-- Malformed/undersized packets (`parsePacket` throws, logged and skipped)
-- Authentication with an empty password
-- Very large responses split across many fragments
-
 ## Performance Considerations
 
 ### Memory Management
@@ -152,27 +139,6 @@ private handlePacket(packet: RconPacket): void {
 - `RconProtocol` itself can track multiple pending requests by ID
 - In practice, `RconController.sendQueue` **deliberately serializes** every `send()` — at most one command (plus its fence) is ever in flight. This is load-bearing: concurrent exchanges over the same socket cause some servers to close the connection (see `sendQueue`'s comment in `rconClient.ts`)
 
-## Testing
-
-### Record/Replay Harness (`rconProtocol.test.ts`)
-`RconProtocol`'s wire-level behavior — auth handshake, packet framing, fragmentation reassembly, deferred-fence completion detection, error responses — is tested byte-exact via a record/replay harness:
-
-- `support/recordingSocket.ts` wraps a real socket to capture a live conversation as a `RconFixture` (run via `npm run record-rcon-fixtures`)
-- `support/fakeSocket.ts` (`FakeSocket`) replays a fixture's frames against `RconProtocol` with no real network
-- Fixtures live in `src/test/fixtures/rcon/` (e.g. `synthetic.ts` for hand-built edge cases, `xton.ts` for a recorded real-server conversation)
-
-### `RconController` Tests (`rconClient.test.ts`)
-`RconController`'s own logic — `sendQueue` serialization, error containment (a rejected send doesn't wedge the queue), `Not connected` guards, and event wiring — is tested against a lightweight `FakeProtocol` injected via the same `createProtocol` seam pattern as `RconProtocol`'s `createSocket`.
-
-### Manual Testing
-```bash
-# Fragmentation
-/help                    # Should show 300+ commands, fully reassembled
-
-# Special characters
-/say Hello §aWorld§r!    # Color codes preserved
-```
-
 ## Debugging
 
 Run the CLI with `--log-level debug` (or set `MCRCON_LOG_LEVEL=debug`) to get per-command `send`/`recv` logging from `RconController.sendNow`, including elapsed time and response size:
@@ -182,68 +148,13 @@ Run the CLI with `--log-level debug` (or set `MCRCON_LOG_LEVEL=debug`) to get pe
 [DEBUG] recv (+42ms): help -> 8213 chars
 ```
 
-### Common Issues
-
-| Symptom | Likely Cause | Solution |
-|---------|-------------|----------|
-| Timeout on large commands | Slow server, or response never triggers the fence | Increase `RESPONSE_TIMEOUT`, check `--log-level debug` |
-| Auth fails | Wrong password | Check `server.properties` |
-| Connection drops right after a command | Fence sent before first fragment (regression) | Confirm `sendFence` deferral logic in `handlePacket` |
-| Connection drops | Network issue / firewall | Check keepalive, firewall rules |
-
-## Protocol Quirks
-
-### Minecraft-Specific Behaviors
-- Color codes use the `§` character — see `src/ansi.ts` for stripping/translation to ANSI
-- Some servers limit RCON command access
-- Help output format varies by server type (vanilla / Spigot / Paper / Fabric)
-- Maximum packet payload is 4096 bytes
-
-### Server Variations
+## Server Variations of `/help`
 - **Vanilla**: standard help format
 - **Spigot/Paper**: includes plugin commands; accepts the `minecraft:` namespace prefix
 - **Fabric**: modded commands included; rejects the `minecraft:` namespace prefix
 - **Custom**: unpredictable formats — see `docs/NO_PLUGIN_HELP_CRAWL.md` for how `commandTreeCrawler.ts` copes
 
-## Comparison with Alternatives
-
-### `rcon-client` Library
-- ❌ Truncates at 4096 bytes
-- ❌ No fragmentation support
-
-### Our Implementation
-- ✅ Full fragmentation reassembly via deferred fence
-- ✅ Survives the `RconClient.run()` batching bug present in some servers
-- ✅ Partial-result delivery on mid-response disconnect
-
-### Other Approaches Considered
-1. **Timeout-based**: wait *N* seconds for more packets — ❌ slow and unreliable
-2. **Size heuristic**: assume exactly-4096-byte responses are incomplete — ❌ false positives on responses that happen to be exactly 4096 bytes
-3. **Immediate double-packet** (fence sent right after the command, no deferral) — ❌ causes some servers to disconnect (see "Why This Works" above)
-4. **Deferred double-packet** (chosen) — ✅ reliable across vanilla, Spigot, and Paper
-
-## Future Improvements
-
-### Potential Enhancements
-1. Response caching at the protocol level
-2. Compression for very large responses
-
-### Known Limitations
-- No encryption (RCON protocol limitation — plaintext password and traffic)
-- No built-in rate limiting
-- Commands are processed one at a time per connection (by design — see "Concurrency" above)
-
 ## References
 
 - [Source RCON Protocol](https://developer.valvesoftware.com/wiki/Source_RCON_Protocol)
 - [Minecraft Wiki: RCON](https://minecraft.wiki/w/RCON)
-
-## Code Location
-
-- `src/rconProtocol.ts` — wire protocol: framing, auth, fragmentation, deferred fence
-  - `connect()` / `disconnect()` / `isConnected()`
-  - `send()` — the public command API
-  - `handleData()` — buffers incoming bytes and slices out complete packets
-  - `handlePacket()` — dispatches a parsed packet to its pending request, fires the deferred fence
-  - `createPacket()` / `parsePacket()` — packet encode/decode
-- `src/rconClient.ts` (`RconController`) — adds the serialized `sendQueue` and debug logging on top of `RconProtocol`

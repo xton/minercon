@@ -370,8 +370,9 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and
 Minercon (formerly "Minecraft RCON Terminal") began as a fork of
 [jaketcooper/Minecraft-rcon](https://github.com/jaketcooper/Minecraft-rcon),
 which provided the initial RCON protocol implementation and VS Code extension
-scaffold. The interactive terminal experience, tab completion, line editing,
-standalone CLI, and the new name were developed from there with significant
+scaffold, help-based tab completion, interactive terminal experience, line editing. 
+Plugin-mode tab-completion, standalone CLI, history search, lots of testing, loads 
+of polish, countless fixes, and the new name were developed from there with significant
 help from [Claude](https://claude.ai).
 
 ---

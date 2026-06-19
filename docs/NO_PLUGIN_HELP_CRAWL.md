@@ -245,8 +245,3 @@ Extend `localMode.test.ts` (or a new sibling file) — after a real
   `minecraft:help` blob to avoid the subsequent per-command `minecraft:help
   <cmd>` round trip — a possible future optimization, not needed for
   correctness.
-- Independently re-verifying Spigot (BuildTools-based debug image failed to
-  boot under Rosetta this round: "Unsupported Java detected (69.0)"). Spigot
-  shares Paper's `CraftServer`/`SimpleHelpMap` lineage, so the Paper-derived
-  strategy is expected to apply unchanged; the functional test suite already
-  covers the `[spigot]` variant and will surface any divergence.
