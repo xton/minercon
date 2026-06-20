@@ -23,6 +23,7 @@ class FakeController {
   connectCalls = 0;
   disconnectCalls = 0;
   private connected: boolean;
+  private closeHandler: (() => void) | null = null;
 
   constructor(private readonly connectImpl: () => Promise<void>, initiallyConnected: boolean) {
     this.connected = initiallyConnected;
@@ -38,6 +39,9 @@ class FakeController {
     this.disconnectCalls++;
     this.connected = false;
   }
+
+  setUnexpectedCloseHandler(handler: () => void): void { this.closeHandler = handler; }
+  simulateUnexpectedClose(): void { this.connected = false; this.closeHandler?.(); }
 
   isConnected(): boolean { return this.connected; }
   async send(): Promise<string | undefined> { return ''; }
@@ -213,7 +217,7 @@ suite('RconConnectionManager auto-reconnect/backoff', () => {
     assert.strictEqual(h.manager.isReconnecting, false);
     assert.deepStrictEqual(timers.pendingDelays(), [], 'no further retry is scheduled');
     assert.ok(h.writes.join('').includes('Reconnection failed after 5 attempts'));
-    assert.ok(h.writes.join('').includes('/reconnect'));
+    assert.ok(h.writes.join('').includes('.reconnect'));
     assert.strictEqual(h.reconnectedCalls, 0);
   });
 
@@ -292,5 +296,33 @@ suite('RconConnectionManager auto-reconnect/backoff', () => {
 
     assert.deepStrictEqual(timers.pendingDelays(), []);
     assert.ok(h.controllers[0].disconnectCalls >= 1);
+  });
+
+  test('socket-level close triggers auto-reconnect without needing a failing command in flight', async () => {
+    const h = createHarness(['ok']);
+    assert.strictEqual(h.manager.isConnected, true);
+
+    // Simulate an unexpected socket close (e.g. ETIMEDOUT) — no RCON command
+    // was in flight, so this only fires via the close handler.
+    h.controllers[0].simulateUnexpectedClose();
+
+    // The manager should immediately mark itself as disconnected and schedule reconnect.
+    assert.strictEqual(h.manager.isConnected, false, 'isConnected becomes false on socket close');
+    assert.ok(h.writes.join('').includes('Connection lost'), 'user sees the "Connection lost" message');
+    assert.deepStrictEqual(timers.pendingDelays(), [1000], 'reconnect grace timer is scheduled');
+  });
+
+  test('socket-level close during deliberate disconnect does not double-trigger reconnect', async () => {
+    const h = createHarness(['ok']);
+    h.manager.disconnect(); // sets _isConnected = false, calls controller.disconnect()
+
+    // Even if the socket close event fires after a deliberate disconnect, no
+    // spurious "Connection lost" or extra reconnect timer should be scheduled.
+    h.controllers[0].simulateUnexpectedClose();
+
+    // The earlier disconnect() already scheduled no timer and set isConnected false.
+    assert.strictEqual(h.manager.isConnected, false);
+    assert.deepStrictEqual(timers.pendingDelays(), [], 'no reconnect timer after deliberate disconnect');
+    assert.ok(!h.writes.join('').includes('Connection lost'), 'no spurious "Connection lost" message');
   });
 });

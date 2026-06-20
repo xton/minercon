@@ -61,6 +61,7 @@ export class RconConnectionManager {
     private readonly controllerFactory: ControllerFactory = defaultControllerFactory,
   ) {
     this._controller = controller;
+    this.wireCloseHandler(this._controller);
   }
 
   get controller(): RconController {
@@ -73,6 +74,22 @@ export class RconConnectionManager {
 
   get isReconnecting(): boolean {
     return this._isReconnecting;
+  }
+
+  /**
+   * Subscribes to unexpected-close notifications from the given controller.
+   * The handler fires when the socket drops without being triggered by an
+   * in-flight command — i.e. a silent socket timeout or server-side close.
+   * The guard conditions prevent double-triggering when the close is the
+   * result of a deliberate disconnect() or an in-progress reconnect attempt.
+   */
+  private wireCloseHandler(controller: RconController): void {
+    controller.setUnexpectedCloseHandler(() => {
+      if (this._isConnected && !this._isReconnecting) {
+        this.host.write(ansi.yellow('⚠  Connection lost. Auto-reconnecting...') + '\r\n');
+        this.reportConnectionLost();
+      }
+    });
   }
 
   /** Resets the reconnect-attempt counter, backoff delay, and any pending reconnect timer back to their initial state. */
@@ -121,7 +138,7 @@ export class RconConnectionManager {
 
     this._isConnected = false;
     this._isReconnecting = false;
-    this.host.write('Connection closed. Type ' + ansi.yellow('/reconnect') + ' to reconnect.\r\n\r\n');
+    this.host.write('Connection closed. Type ' + ansi.yellow('.reconnect') + ' to reconnect.\r\n\r\n');
     this.host.showPrompt();
   }
 
@@ -163,6 +180,7 @@ export class RconConnectionManager {
 
       // Create new controller
       this._controller = this.controllerFactory(this.serverHost, this.serverPort, this.password, this.logger);
+      this.wireCloseHandler(this._controller);
       await this._controller.connect();
 
       this._isConnected = true;
@@ -195,7 +213,7 @@ export class RconConnectionManager {
       } else {
         // Max attempts reached
         this.host.write(ansi.boldRed('✗ Reconnection failed after ' + MAX_RECONNECT_ATTEMPTS + ' attempts.') + '\r\n');
-        this.host.write('Type ' + ansi.yellow('/reconnect') + ' to try again.\r\n\r\n');
+        this.host.write('Type ' + ansi.yellow('.reconnect') + ' to try again.\r\n\r\n');
         this.resetReconnectState();
 
         this.host.showPrompt();
