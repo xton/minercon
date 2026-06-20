@@ -233,16 +233,14 @@ minercon
 | `Ctrl+C` | Copy selection → kill ring (if text selected); otherwise echo `^C` and clear line |
 | `Ctrl+V` | Paste from kill ring |
 
-In VS Code mode the kill ring is the system clipboard, so killed/copied text
-can be pasted into other applications. In the CLI the kill ring is
-session-local.
+The kill ring is session-local in both the CLI and VS Code extension.
 
 ### Terminal control
 
 | Key | Action |
 |---|---|
 | `Ctrl+L` | Clear screen and redraw |
-| `Ctrl+D` | Disconnect and exit |
+| `Ctrl+D` | On a non-empty line: delete character under cursor (forward delete). On an empty line: disconnect and exit |
 
 ---
 
