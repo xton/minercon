@@ -194,7 +194,7 @@ suite('RconConnectionManager auto-reconnect/backoff', () => {
     assert.deepStrictEqual(timers.pendingDelays(), [16000]);
   });
 
-  test('after maxReconnectAttempts (5) failures, retries stop and the user is told to /reconnect', async () => {
+  test('after maxReconnectAttempts (5) failures, retries stop and the user is told to .reconnect', async () => {
     const h = createHarness(['fail', 'fail', 'fail', 'fail', 'fail']);
     h.manager.reportConnectionLost();
 
@@ -213,7 +213,7 @@ suite('RconConnectionManager auto-reconnect/backoff', () => {
     assert.strictEqual(h.manager.isReconnecting, false);
     assert.deepStrictEqual(timers.pendingDelays(), [], 'no further retry is scheduled');
     assert.ok(h.writes.join('').includes('Reconnection failed after 5 attempts'));
-    assert.ok(h.writes.join('').includes('/reconnect'));
+    assert.ok(h.writes.join('').includes('.reconnect'));
     assert.strictEqual(h.reconnectedCalls, 0);
   });
 

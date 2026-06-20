@@ -132,8 +132,8 @@ Reconnection lifecycle (exponential backoff, recreating the controller) is
 
 ### Session Orchestration
 The `RconSession` class (`rconSession.ts`) provides:
-- Key dispatch and built-in `/` commands
-- Command history (`/history`, Ctrl+R search)
+- Key dispatch and built-in `.` commands
+- Command history (`.history`, Ctrl+R search)
 - Autocomplete orchestration via the completion engine
 - Reconnect handling
 
@@ -150,14 +150,14 @@ Add an entry to the array returned by `buildBuiltinCommands()` in
 `rconSession.ts`:
 ```typescript
 {
-    name: '/your-command', description: 'What it does',
+    name: '.your-command', description: 'What it does',
     run: () => this.handleYourCommand(),
 }
 ```
 This single table drives both `handleEnter`'s dispatch (via `builtinLookup`)
-and the `/help` listing — no separate registration step needed. Use
+and the `.help` listing — no separate registration step needed. Use
 `aliases: [...]` for alternate names that should dispatch but not appear in
-`/help`.
+`.help`.
 
 ### Modifying Autocomplete Behavior
 See `commandTreeParsingBrigadier.ts` and `commandTreeSuggestions.ts`:

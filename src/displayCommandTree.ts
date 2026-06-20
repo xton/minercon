@@ -1,7 +1,7 @@
 // src/displayCommandTree.ts
 //
 // Formats the command tree built by CommandTreeCrawler for human inspection.
-// Used by the /tree builtin.
+// Used by the .tree builtin.
 //
 // Output is one "usage line" per unique path through the tree — the same
 // style Minecraft's /help produces. A deep CHOICE_LIST (choices that have

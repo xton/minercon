@@ -219,27 +219,26 @@ suite('RconSession', () => {
         assert.ok(!h.output().includes(`\x1b[${rawColumn}C`), 'cursor restoration does not use the raw, un-wrapped offset');
     });
 
-    test('/help prints the built-in command reference without touching the server', async () => {
+    test('.help prints the built-in command reference without touching the server', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/help');
+        type(h, '.help');
         h.session.handleInput('\r');
 
         await waitUntil(() => h.output().includes('Built-in Commands'));
-        assert.ok(h.output().includes('/reconnect'), 'lists the built-in commands');
-        // Typing "/help" triggers live-as-you-type "tabcomplete -" fetches
-        // (any "/..." line does — exercised by the Tab test). What matters here
-        // is that the command itself never reaches the server as an RCON command.
+        assert.ok(h.output().includes('.reconnect'), 'lists the built-in commands');
+        // Typing ".help" does NOT trigger server tabcomplete fetches (only /... lines do).
+        // What matters here is that the command itself never reaches the server as an RCON command.
         const rconCommands = h.controller.sendCalls.filter(c => !c.startsWith('tabcomplete'));
         assert.deepStrictEqual(rconCommands, [], 'the built-in command is handled locally, not sent to the server');
     });
 
-    test('/clear clears the screen without sending an RCON command', async () => {
+    test('.clear clears the screen without sending an RCON command', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/clear');
+        type(h, '.clear');
         h.session.handleInput('\r');
 
         await waitUntil(() => h.output().includes('\x1b[2J\x1b[H'));
@@ -247,11 +246,11 @@ suite('RconSession', () => {
         assert.deepStrictEqual(rconCommands, [], 'the built-in command is handled locally, not sent to the server');
     });
 
-    test('/disconnect tears down the connection through the connection manager', async () => {
+    test('.disconnect tears down the connection through the connection manager', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/disconnect');
+        type(h, '.disconnect');
         h.session.handleInput('\r');
 
         await waitUntil(() => h.controller.disconnectCalls > 0);
@@ -262,7 +261,7 @@ suite('RconSession', () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/disconnect');
+        type(h, '.disconnect');
         h.session.handleInput('\r');
         await waitUntil(() => h.controller.disconnectCalls > 0);
         h.writes.length = 0;
@@ -361,7 +360,7 @@ suite('RconSession', () => {
         assert.ok(h.controller.disconnectCalls > 0);
     });
 
-    test('/history prints previously run commands without sending an RCON command', async () => {
+    test('.history prints previously run commands without sending an RCON command', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
@@ -376,7 +375,7 @@ suite('RconSession', () => {
         h.writes.length = 0;
         h.controller.sendCalls.length = 0;
 
-        type(h, '/history');
+        type(h, '.history');
         h.session.handleInput('\r');
 
         await waitUntil(() => h.output().includes('say two'));
@@ -385,11 +384,11 @@ suite('RconSession', () => {
         assert.deepStrictEqual(rconCommands, [], 'the built-in command is handled locally, not sent to the server');
     });
 
-    test('/history reports when there is nothing yet', async () => {
+    test('.history reports when there is nothing yet', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/history');
+        type(h, '.history');
         h.session.handleInput('\r');
 
         await waitUntil(() => h.output().includes('no history yet'));
@@ -399,19 +398,19 @@ suite('RconSession', () => {
         const h = createHarness();
         await openInPluginMode(h);
 
-        type(h, '/help');
+        type(h, '.help');
         h.session.handleInput('\r');
         await waitUntil(() => h.output().includes('Built-in Commands:'));
 
         h.writes.length = 0;
         h.session.handleInput('\x10'); // Ctrl+P / Up: recall the last entry
-        await waitUntil(() => h.output().includes('/help'));
+        await waitUntil(() => h.output().includes('.help'));
         h.session.handleInput('\r'); // clear the recalled line again
 
         h.writes.length = 0;
-        type(h, '/history');
+        type(h, '.history');
         h.session.handleInput('\r');
-        await waitUntil(() => h.output().includes('/help'));
+        await waitUntil(() => h.output().includes('.help'));
     });
 
     test('Ctrl+R opens a search popup showing recent history, newest first', async () => {
@@ -542,7 +541,7 @@ suite('RconSession', () => {
         assert.ok(h2.output().includes('say persisted'), 'second session loaded history saved by the first');
     });
 
-    test('a custom historySize caps both /history and what gets persisted to disk', async () => {
+    test('a custom historySize caps both .history and what gets persisted to disk', async () => {
         const h1 = createHarness(defaultSend, () => undefined, 2);
         await openInPluginMode(h1);
 
@@ -559,7 +558,7 @@ suite('RconSession', () => {
         await waitUntil(() => h1.controller.sendCalls.includes('say three'));
 
         h1.writes.length = 0;
-        type(h1, '/history');
+        type(h1, '.history');
         h1.session.handleInput('\r');
         await waitUntil(() => h1.output().includes('say three'));
         assert.ok(h1.output().includes('say two'), 'keeps the most recent entries');
@@ -571,9 +570,9 @@ suite('RconSession', () => {
 
         h2.session.handleInput('\x12'); // Ctrl+R
         await waitUntil(() => h2.output().includes('reverse-i-search'));
-        // /history was itself recorded after displaying (see handleEnter), so
+        // .history was itself recorded after displaying (see handleEnter), so
         // it now occupies the second slot, evicting "say two".
-        assert.ok(h2.output().includes('/history'), 'running /history itself is recorded too, and persists');
+        assert.ok(h2.output().includes('.history'), 'running .history itself is recorded too, and persists');
         assert.ok(h2.output().includes('say three'), 'persisted history respects the configured cap');
         assert.ok(!h2.output().includes('say two'), 'persisted history respects the configured cap');
         assert.ok(!h2.output().includes('say one'), 'persisted history respects the configured cap');

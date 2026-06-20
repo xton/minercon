@@ -50,11 +50,11 @@ function progressPhaseLabel(phase: ProgressPhase): string {
   }
 }
 
-/** A terminal-side `/` command: dispatched by name/alias, listed (by name only) in /help. */
+/** A terminal-side `.` command: dispatched by name/alias, listed (by name only) in .help. */
 interface BuiltinCommand {
   name: string;
   description: string;
-  /** Alternate names that dispatch to the same command but aren't listed in /help. */
+  /** Alternate names that dispatch to the same command but aren't listed in .help. */
   aliases?: string[];
   run: (args: string) => void;
 }
@@ -84,7 +84,18 @@ export class RconSession {
   private rconBackend: CompletionBackend;
   private localBackend: CompletionBackend;
   private get completionBackend(): CompletionBackend {
-    return this.pluginMode ? this.rconBackend : this.localBackend;
+    const inner = this.pluginMode ? this.rconBackend : this.localBackend;
+    const builtinNames = this.builtinCommands.map(c => c.name);
+    return {
+      fetchCompletions: async (line: string) => {
+        if (line.startsWith('.')) { return builtinNames.filter(n => n.startsWith(line)); }
+        return inner.fetchCompletions(line);
+      },
+      fetchUsage: async (line: string) => {
+        if (line.startsWith('.')) { return ''; }
+        return inner.fetchUsage(line);
+      },
+    };
   }
 
   private lastCommandOutputLines: number = 0;
@@ -176,7 +187,7 @@ export class RconSession {
     this.sessionHost.write(ansi.boldCyan('Minercon Terminal') + '\r\n');
     this.sessionHost.write('Connected to ' + ansi.yellow(this.serverHost + ':' + this.serverPort) + '\r\n\r\n');
     this.sessionHost.write(ansi.dim('Useful shortcuts:') + '\r\n');
-    this.sessionHost.write('  ' + ansi.dim('Tab: Autocomplete commands') + '\r\n');
+    this.sessionHost.write('  ' + ansi.dim('Tab: Autocomplete commands  |  Type ') + ansi.yellow('.help') + ansi.dim(' for built-in commands') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Ctrl+L: Clear screen  |  Ctrl+C: Cancel input') + '\r\n');
     this.sessionHost.write('  ' + ansi.dim('Up/Down: Command history  |  Ctrl+R: Search history  |  Esc: Clear line') + '\r\n\r\n');
   }
@@ -648,11 +659,11 @@ export class RconSession {
 
     if (command) {
       // Record every command, including minercon's own built-ins, so they're
-      // recallable via Up/Ctrl+R and listed by /history — just like a shell's
-      // history includes "history" itself. /history is the one exception:
+      // recallable via Up/Ctrl+R and listed by .history — just like a shell's
+      // history includes "history" itself. .history is the one exception:
       // it's recorded after displaying, so its own listing reflects the
       // history *before* this invocation, not including itself.
-      if (command !== '/history') {
+      if (command !== '.history') {
         this.lineEditor.pushHistory(command);
         this.historyStore.save(this.lineEditor.historyEntries);
       }
@@ -671,10 +682,10 @@ export class RconSession {
     }
   }
 
-  // ── built-in `/` commands ──
+  // ── built-in `.` commands ──
   //
   // One table drives both dispatch (handleEnter → builtinLookup) and the
-  // command list /help prints — adding a command here is the whole job.
+  // command list .help prints — adding a command here is the whole job.
   // Same lookup-table pattern as buildKeyHandlers; like there, the run()
   // closures resolve collaborators lazily at call time.
 
@@ -690,35 +701,35 @@ export class RconSession {
 
     return [
       {
-        name: '/help', description: 'Show this help message',
+        name: '.help', description: 'Show this help message',
         run: (_) => this.showHelp(),
       },
       {
-        name: '/clear', description: 'Clear the terminal screen',
+        name: '.clear', description: 'Clear the terminal screen',
         run: (_) => {
           this.sessionHost.write('\x1b[2J\x1b[H');
           this.showPrompt();
         },
       },
       {
-        name: '/history', description: 'Show command history',
+        name: '.history', description: 'Show command history',
         run: (_) => {
           this.showHistory();
-          this.lineEditor.pushHistory('/history');
+          this.lineEditor.pushHistory('.history');
           this.historyStore.save(this.lineEditor.historyEntries);
         },
       },
       {
-        name: '/reconnect', description: 'Reconnect to the server',
+        name: '.reconnect', description: 'Reconnect to the server',
         run: (_) => { this.connectionManager.manualReconnect(); },
       },
       {
-        name: '/disconnect', description: 'Disconnect from the server',
+        name: '.disconnect', description: 'Disconnect from the server',
         run: (_) => this.connectionManager.disconnect(),
       },
       {
-        name: '/reload-commands', description: 'Force reload command database from server',
-        aliases: ['/refresh-commands'],
+        name: '.reload-commands', description: 'Force reload command database from server',
+        aliases: ['.refresh-commands'],
         run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no command cache to reload.');
@@ -728,7 +739,7 @@ export class RconSession {
         },
       },
       {
-        name: '/clear-cache', description: 'Clear cached command database',
+        name: '.clear-cache', description: 'Clear cached command database',
         run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no cache.');
@@ -740,7 +751,7 @@ export class RconSession {
         },
       },
       {
-        name: '/cache-info', description: 'Show command cache information',
+        name: '.cache-info', description: 'Show command cache information',
         run: (_) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no cache.');
@@ -758,7 +769,7 @@ export class RconSession {
         },
       },
       {
-        name: '/tree', description: 'Print command tree. Usage: /tree [<command>]',
+        name: '.tree', description: 'Print command tree. Usage: .tree [<command>]',
         run: (args) => {
           if (this.pluginMode) {
             pluginModeNotice('Using server-side tab completion — no local command tree.');
@@ -827,7 +838,7 @@ export class RconSession {
     }
 
     if (!this.connectionManager.isConnected) {
-      this.sessionHost.write(ansi.red('Not connected. Type ' + ansi.yellow('/reconnect') + ' to reconnect.') + '\r\n\r\n');
+      this.sessionHost.write(ansi.red('Not connected. Type ' + ansi.yellow('.reconnect') + ' to reconnect.') + '\r\n\r\n');
       this.showPrompt();
       return;
     }
