@@ -21,6 +21,7 @@ import { splitCommandLine } from './commandLine';
  * remaining string matches every root command name.
  */
 export function buildCompletionsQuery(input: string): string | null {
+  if (input.startsWith('.')) { return input; }  // builtin commands: pass through for local handling
   if (!input.startsWith('/')) { return null; }
   const { parts, hasTrailingSpace } = splitCommandLine(input);
 

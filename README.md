@@ -154,7 +154,7 @@ session). Use `--log-level debug` for verbose per-command RCON send/receive
 logging.
 
 **History size:** `--history-size` controls how many commands are remembered
-for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `/history` command, and (with
+for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `.history` command, and (with
 `--save`) persists to the saved config.
 
 **`--no-plugin`:** forces local mode (crawling `/help` for tab completion)
@@ -246,21 +246,22 @@ The kill ring is session-local in both the CLI and VS Code extension.
 
 ## Built-in commands
 
-These are handled by the terminal itself and never sent to the server.
+These are handled by the terminal itself and never sent to the server. They
+use a `.` prefix so there is no conflict with server commands (which use `/`).
 
 | Command | Description |
 |---|---|
-| `/help` | Show this list of built-in commands and keyboard shortcuts |
-| `/clear` | Clear the terminal screen |
-| `/history` | Show command history |
-| `/reconnect` | Manually reconnect to the server |
-| `/disconnect` | Disconnect (stays open; use `Ctrl+D` to also exit) |
-| `/reload-commands` | Force a fresh crawl of the server's command tree (local mode only) |
-| `/clear-cache` | Delete the cached command tree for this server (local mode only) |
-| `/cache-info` | Show the age and location of the cached command tree |
+| `.help` | Show this list of built-in commands and keyboard shortcuts |
+| `.clear` | Clear the terminal screen |
+| `.history` | Show command history |
+| `.reconnect` | Manually reconnect to the server |
+| `.disconnect` | Disconnect (stays open; use `Ctrl+D` to also exit) |
+| `.reload-commands` | Force a fresh crawl of the server's command tree (local mode only) |
+| `.clear-cache` | Delete the cached command tree for this server (local mode only) |
+| `.cache-info` | Show the age and location of the cached command tree |
 
-Any command that does **not** start with `/`, or that starts with `/` but is
-not in the list above, is sent directly to the server as an RCON command.
+Everything else — including any `/command` — is sent directly to the server as
+an RCON command.
 
 ---
 
@@ -276,7 +277,7 @@ completion.
 
 **Local mode** (fallback) — the terminal fetches and parses your server's
 `/help` output once, builds a command tree, and caches it to disk. Subsequent
-connections load from cache (nearly instant). Use `/reload-commands` to
+connections load from cache (nearly instant). Use `.reload-commands` to
 refresh after a server update.
 
 Cache location:
@@ -334,8 +335,8 @@ and that the RCON port is not blocked by a firewall.
 `server.properties`. Passwords are case-sensitive.
 
 **Autocomplete not working in local mode**
-1. `/clear-cache` to discard the old tree
-2. `/reload-commands` to re-crawl
+1. `.clear-cache` to discard the old tree
+2. `.reload-commands` to re-crawl
 3. Check that your account has permission to run `/help` on the server
 4. In VS Code, check View → Output → Minercon for crawl diagnostics
 
@@ -343,7 +344,7 @@ and that the RCON port is not blocked by a firewall.
 an external library with a 4096-byte limit. The current implementation has no
 such limit.
 
-**Suggestion display looks wrong** — try `/clear` to redraw the screen. If
+**Suggestion display looks wrong** — try `.clear` to redraw the screen. If
 the issue persists in the CLI, ensure your terminal reports correct dimensions
 (`echo $COLUMNS $LINES`).
 

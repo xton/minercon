@@ -121,7 +121,7 @@ export class RconConnectionManager {
 
     this._isConnected = false;
     this._isReconnecting = false;
-    this.host.write('Connection closed. Type ' + ansi.yellow('/reconnect') + ' to reconnect.\r\n\r\n');
+    this.host.write('Connection closed. Type ' + ansi.yellow('.reconnect') + ' to reconnect.\r\n\r\n');
     this.host.showPrompt();
   }
 
@@ -195,7 +195,7 @@ export class RconConnectionManager {
       } else {
         // Max attempts reached
         this.host.write(ansi.boldRed('✗ Reconnection failed after ' + MAX_RECONNECT_ATTEMPTS + ' attempts.') + '\r\n');
-        this.host.write('Type ' + ansi.yellow('/reconnect') + ' to try again.\r\n\r\n');
+        this.host.write('Type ' + ansi.yellow('.reconnect') + ' to try again.\r\n\r\n');
         this.resetReconnectState();
 
         this.host.showPrompt();

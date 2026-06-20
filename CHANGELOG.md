@@ -66,8 +66,8 @@ rebuilt command-tree engine.
   (`Ctrl+R`).
 
 #### Built-in commands
-- `/history` — show command history.
-- `/tree <command>` — inspect the parsed command tree for a command (with
+- `.history` — show command history.
+- `.tree <command>` — inspect the parsed command tree for a command (with
   send/recv debug logging).
 
 ### 🔧 Changed
