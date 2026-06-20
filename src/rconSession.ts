@@ -492,11 +492,15 @@ export class RconSession {
   private handleHistorySearchInput(data: string): void {
     switch (data) {
       case '\x12':                 // Ctrl+R again: cycle to the next-older match
-      case '\x1b[A': case '\x10':  // Up
       case '\t':                   // Tab: cycle to the next-older match
         this.cycleHistorySearch(1);
         return;
-      case '\x1b[B': case '\x0e':  // Down: cycle to the next-newer match
+      case '\x1b[A': case '\x10':  // Up / Ctrl+P: move visual selection up (newer)
+        this.cycleHistorySearch(-1);
+        return;
+      case '\x1b[B': case '\x0e':  // Down / Ctrl+N: move visual selection down (older)
+        this.cycleHistorySearch(1);
+        return;
       case '\x1b[Z':               // Shift-Tab: cycle to the next-newer match
         this.cycleHistorySearch(-1);
         return;
