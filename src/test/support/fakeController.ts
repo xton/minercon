@@ -20,6 +20,7 @@ export class FakeController {
     sendCalls: string[] = [];
     disconnectCalls = 0;
     connected = true;
+    private closeHandler: (() => void) | null = null;
 
     constructor(private sendImpl: SendImpl) {}
 
@@ -31,6 +32,8 @@ export class FakeController {
     async disconnect(): Promise<void> { this.disconnectCalls++; this.connected = false; }
     async connect(): Promise<void> { this.connected = true; }
     isConnected(): boolean { return this.connected; }
+    setUnexpectedCloseHandler(handler: () => void): void { this.closeHandler = handler; }
+    simulateUnexpectedClose(): void { this.connected = false; this.closeHandler?.(); }
 }
 
 /** Polls until `predicate` is true, or fails with a clear message after `timeoutMs`. */

@@ -22,6 +22,7 @@ export class RconController {
   private sendQueue: Promise<unknown> = Promise.resolve();
 
   private readonly createProtocol: (host: string, port: number, password: string, logger: ConsolaInstance) => RconProtocol;
+  private unexpectedCloseHandler: (() => void) | null = null;
 
   constructor(
     host: string,
@@ -41,6 +42,11 @@ export class RconController {
     this.createProtocol = createProtocol;
   }
 
+  /** Called by `RconConnectionManager` so it can react to unexpected socket closes without polling. */
+  public setUnexpectedCloseHandler(handler: () => void): void {
+    this.unexpectedCloseHandler = handler;
+  }
+
   public async connect(): Promise<void> {
     this.client = this.createProtocol(this.host, this.port, this.password, this.logger);
 
@@ -53,6 +59,7 @@ export class RconController {
     this.client.on('close', () => {
       this.logger.info('RCON connection closed');
       this.client = null;
+      this.unexpectedCloseHandler?.();
     });
 
     await this.client.connect();
