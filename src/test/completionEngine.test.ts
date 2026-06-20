@@ -40,6 +40,9 @@ suite('completionEngine: query builders', () => {
     ['/gamemode ', 'gamemode -'],        // trailing space → "-" marker
     ['/gamemode sur', 'gamemode sur'],
     ['/gamemode  survival', 'gamemode survival'],   // collapses internal whitespace, like Brigadier does
+    ['.', '.'],                          // dot-prefix builtin commands: pass through for local handling
+    ['.help', '.help'],
+    ['.h', '.h'],
   ];
 
   for (const [input, expected] of cases) {

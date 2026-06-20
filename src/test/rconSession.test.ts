@@ -191,6 +191,19 @@ suite('RconSession', () => {
         await waitUntil(() => h.controller.sendCalls.includes('tabcomplete say hel'));
     });
 
+    test('Tab on a dot-prefixed line shows built-in command completions without touching the server', async () => {
+        const h = createHarness();
+        await openInPluginMode(h);
+
+        type(h, '.');
+        h.session.handleInput('\t');
+
+        // The suggestion list should appear with builtin names, not go to the server
+        await waitUntil(() => h.output().includes('.help'));
+        assert.ok(h.output().includes('.clear'), 'shows other built-ins too');
+        assert.ok(!h.controller.sendCalls.some(c => c.startsWith('tabcomplete ')), 'never sends tabcomplete to the server for dot-prefixed input');
+    });
+
     test('when the typed line wraps onto a second terminal row, the suggestion popup\'s cursor restoration accounts for the wrap', async () => {
         const h = createHarness(
             cmd => cmd === 'tabcomplete' ? PLUGIN_PROBE_RESPONSE
