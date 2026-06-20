@@ -167,7 +167,7 @@ suite('RconSession', () => {
         assert.deepStrictEqual(h.controller.sendCalls, [], 'nothing was sent to the server');
     });
 
-    test('Ctrl+L clears the screen and redraws the banner, prompt, and in-progress line', async () => {
+    test('Ctrl+L clears the screen and redraws the prompt and in-progress line without the banner', async () => {
         const h = createHarness();
         await openInPluginMode(h);
 
@@ -177,7 +177,7 @@ suite('RconSession', () => {
 
         const out = h.output();
         assert.ok(out.includes('\x1b[2J\x1b[H'), 'clears the screen');
-        assert.ok(out.includes('Minercon Terminal'), 'redraws the welcome banner');
+        assert.ok(!out.includes('Minercon Terminal'), 'does not redraw the welcome banner');
         assert.ok(out.includes('partial'), 'redraws the in-progress line');
     });
 

@@ -464,7 +464,6 @@ export class RconSession {
 
   private handleClearScreen(): void {
     this.sessionHost.write('\x1b[2J\x1b[H');
-    this.writeWelcomeBanner();
     this.showPrompt();
     this.sessionHost.write(this.lineEditor.line);
     if (this.lineEditor.cursor < this.lineEditor.line.length) {
