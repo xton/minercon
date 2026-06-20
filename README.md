@@ -10,6 +10,8 @@ tool** (`minercon`) that runs in any terminal.
 
 > Formerly published as "Minecraft RCON Terminal" — same project, new name.
 
+![Demo](images/demo-autocomplete.gif)
+
 ---
 
 ## Features
@@ -24,8 +26,7 @@ tool** (`minercon`) that runs in any terminal.
   command tree by crawling `/help` output once per server and caching it.
 
 **Emacs-style line editing**
-- Full cursor movement, word-jump, selection, and kill/yank (kill ring shared
-  with system clipboard in VS Code; in-process kill ring in the CLI)
+- Full cursor movement, word-jump, selection, and kill/yank (session-local kill ring)
 - Scrollable command history, persistent across reconnects
 
 **Minecraft color codes** — server responses render with full `§` color support
