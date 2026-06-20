@@ -8,7 +8,7 @@ tool** (`minercon`) that runs in any terminal.
 ![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.95.0-green)
 ![License](https://img.shields.io/badge/license-MIT-brightgreen)
 
-> Formerly published as "Minecraft RCON Terminal" — same project, new name.
+> A heavy fork of "Minecraft RCON Terminal"
 
 ![Demo](images/demo-autocomplete.gif)
 
@@ -21,13 +21,16 @@ tool** (`minercon`) that runs in any terminal.
 - Argument hints showing the full usage signature of the current command
 - Works with vanilla, Bukkit/Spigot/Paper, and plugin-extended servers
 - When the [Paper TabComplete](paper-plugin/) or [Spigot TabComplete](spigot-plugin/)
-  plugin is installed on your server, completions come directly from the
+  plugins or the [Fabric TabComplete](fabric-mod/) mod
+  is installed on your server, completions come directly from the
   server (fastest, most accurate). Without it, the extension builds a local
   command tree by crawling `/help` output once per server and caching it.
 
 **Emacs-style line editing**
 - Full cursor movement, word-jump, selection, and kill/yank (session-local kill ring)
 - Scrollable command history, persistent across reconnects
+
+**Ctrl-r command history search** -- with a filtered suggestion list
 
 **Minecraft color codes** — server responses render with full `§` color support
 
