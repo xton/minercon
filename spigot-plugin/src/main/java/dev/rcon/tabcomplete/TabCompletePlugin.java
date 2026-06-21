@@ -11,12 +11,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
-import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.help.HelpMap;
+import org.bukkit.help.HelpTopic;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -291,12 +290,17 @@ public class TabCompletePlugin extends JavaPlugin {
     }
 
     /**
-     * Runs the wrapped command and returns its full, *unpaginated* output in a
-     * single RCON response. Bukkit-layer commands (notably `/help`) paginate to
-     * ~9 lines because the RCON sender is a `RemoteConsoleCommandSender`, not a
-     * `ConsoleCommandSender` — Bukkit's `HelpCommand` only takes the unbounded
-     * branch for the latter. We re-dispatch through a `ConsoleCommandSender`
-     * proxy so the unbounded branch is taken, capturing the output here.
+     * Returns the full, *unpaginated* output for the wrapped command in a single
+     * RCON response. In practice the only Bukkit command that paginates badly
+     * over RCON is `/help` — its `HelpCommand` clamps to ~9 lines for non-console
+     * senders — so we special-case it: read the complete text straight from
+     * Bukkit's {@link HelpMap} (the same source `HelpCommand` paginates) and send
+     * it back. Everything else is dispatched normally.
+     *
+     * <p>Reading the HelpMap rather than re-dispatching `/help` through a fake
+     * console sender is what the `cmdusage` command already does reliably; it
+     * avoids the failure mode where a re-dispatched console command writes its
+     * output to the *server log* and returns an empty RCON response.
      */
     private boolean handleRcatCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (args.length == 0) {
@@ -313,28 +317,19 @@ public class TabCompletePlugin extends JavaPlugin {
 
         try {
             String rootName = commandLine.split("\\s+", 2)[0].toLowerCase();
-            Command target = ((CommandMap) bukkitCommandMap).getCommand(rootName);
-
-            if (target == null || isVanillaWrapper(target)) {
-                // Unknown command, or a vanilla (Brigadier) command. Vanilla
-                // commands don't paginate, and their output flows back through
-                // the RCON sender's own NMS source — running them through the
-                // console proxy would route that output to the *server console*
-                // and lose it. Dispatch as-is.
-                Bukkit.dispatchCommand(sender, commandLine);
-                return true;
+            if (isHelpCommand(rootName)) {
+                String fullHelp = fullHelpText(sender, commandLine);
+                if (fullHelp != null && !fullHelp.isEmpty()) {
+                    sender.sendMessage(fullHelp);
+                    return true;
+                }
+                // Couldn't resolve a topic — fall through to a normal dispatch.
             }
-
-            // A Bukkit/plugin command (HelpCommand, PluginCommand, ...) — these
-            // are the ones that paginate on `instanceof ConsoleCommandSender`.
-            // Dispatch as a console proxy and capture the (unbounded) output.
-            String captured = dispatchCapturingAsConsole(commandLine);
-            if (!captured.isEmpty()) {
-                sender.sendMessage(captured);
-            }
+            // Any other command: run it as-is. Its output flows back through the
+            // RCON sender into the response, exactly as it would without `rcat`.
+            Bukkit.dispatchCommand(sender, commandLine);
             return true;
         } catch (Throwable t) {
-            // Never worse than today: fall back to the normal (paginated) path.
             getLogger().warning("rcat fell back to direct dispatch for '" + commandLine + "': " + t);
             try {
                 Bukkit.dispatchCommand(sender, commandLine);
@@ -345,66 +340,70 @@ public class TabCompletePlugin extends JavaPlugin {
         }
     }
 
-    /**
-     * True if {@code command} is the CraftBukkit bridge that exposes a vanilla
-     * Brigadier command through the Bukkit CommandMap. Matched by simple class
-     * name so this compiles against `spigot-api` (no craftbukkit on the
-     * classpath).
-     */
-    static boolean isVanillaWrapper(Command command) {
-        return command.getClass().getSimpleName().equals("VanillaCommandWrapper");
-    }
-
-    /**
-     * Dispatches {@code commandLine} through a {@link ConsoleCommandSender}
-     * proxy that captures everything sent to it instead of printing it. The
-     * proxy delegates every other method to the real console sender, so
-     * `instanceof ConsoleCommandSender`, permissions, and identity all behave
-     * like the console (no privilege change — RCON is already console-level).
-     */
-    private String dispatchCapturingAsConsole(String commandLine) {
-        final List<String> captured = new ArrayList<>();
-        final ConsoleCommandSender realConsole = Bukkit.getConsoleSender();
-
-        ConsoleCommandSender proxy = (ConsoleCommandSender) Proxy.newProxyInstance(
-                ConsoleCommandSender.class.getClassLoader(),
-                new Class[]{ ConsoleCommandSender.class },
-                (p, method, methodArgs) -> {
-                    String name = method.getName();
-                    if (name.equals("sendMessage") || name.equals("sendRawMessage")) {
-                        if (methodArgs != null) {
-                            for (Object arg : methodArgs) {
-                                appendMessageArg(captured, arg);
-                            }
-                        }
-                        return null; // capture only; never echo to the real console
-                    }
-                    return method.invoke(realConsole, methodArgs);
-                });
-
-        Bukkit.dispatchCommand(proxy, commandLine);
-        return String.join("\n", captured);
-    }
-
-    /**
-     * Appends the textual content of one `sendMessage`/`sendRawMessage` argument
-     * to {@code out}. On Spigot the base `CommandSender` overloads carry String
-     * or String[] (one entry per line); BaseComponent output goes through
-     * `spigot()` and is out of scope. Non-text args contribute nothing.
-     */
-    static void appendMessageArg(List<String> out, Object arg) {
-        if (arg == null) {
-            return;
+    /** Matches Bukkit's help command and its aliases (`/help`, `/?`, and namespaced forms). */
+    static boolean isHelpCommand(String rootName) {
+        switch (rootName) {
+            case "help":
+            case "?":
+            case "bukkit:help":
+            case "bukkit:?":
+                return true;
+            default:
+                return false;
         }
-        if (arg instanceof String) {
-            out.add((String) arg);
-        } else if (arg instanceof String[]) {
-            for (String s : (String[]) arg) {
-                if (s != null) {
-                    out.add(s);
-                }
+    }
+
+    /**
+     * Builds the unpaginated help text by reading Bukkit's {@link HelpMap}
+     * directly. {@link HelpTopic#getFullText} returns the entire topic — the full
+     * command index for bare `/help`, or one command's full help for
+     * `/help <topic>` — with no {@code ChatPaginator} involvement. Returns
+     * {@code null} if no matching topic exists (the caller then falls back to a
+     * normal dispatch).
+     */
+    private String fullHelpText(CommandSender sender, String commandLine) {
+        String[] parts = commandLine.split("\\s+", 2);
+        HelpMap helpMap = Bukkit.getHelpMap();
+
+        if (parts.length < 2 || parts[1].isBlank()) {
+            // Bare `/help` → the index topic (registered under the empty key).
+            HelpTopic index = helpMap.getHelpTopic("");
+            String text = index == null ? null : index.getFullText(sender);
+            if (text != null && !text.isBlank()) {
+                return text;
+            }
+            // Some builds may not expose the index topic that way — build the
+            // command list ourselves from every visible topic so bare `/help`
+            // still returns the full, unpaginated index.
+            return buildIndex(sender, helpMap);
+        }
+
+        // `/help <topic>` → that topic, trying bare and "/"-prefixed keys.
+        String query = parts[1].trim();
+        HelpTopic topic = helpMap.getHelpTopic(query);
+        if (topic == null) {
+            topic = helpMap.getHelpTopic("/" + query);
+        }
+        return topic == null ? null : topic.getFullText(sender);
+    }
+
+    /** Builds the full command index from every help topic the sender can see. */
+    private static String buildIndex(CommandSender sender, HelpMap helpMap) {
+        StringBuilder sb = new StringBuilder();
+        for (HelpTopic topic : helpMap.getHelpTopics()) {
+            if (!topic.canSee(sender)) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(topic.getName());
+            String shortText = topic.getShortText();
+            if (shortText != null && !shortText.isEmpty()) {
+                sb.append(": ").append(shortText);
             }
         }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

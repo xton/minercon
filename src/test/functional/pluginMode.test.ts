@@ -131,9 +131,10 @@ for (const variant of addonVariants) {
     // ── rcat unpaginated-output wrapper ───────────────────────────────────────
     //
     // Bukkit-family servers (Paper/Spigot) paginate `/help` to ~9-line pages for
-    // the RCON sender; `rcat help` re-dispatches as a console sender so the full
-    // list comes back unpaginated. Fabric is pure Brigadier — nothing paginates
-    // and the mod ships no `rcat` — so these are gated on server type.
+    // the RCON sender; `rcat help` reads the full help index straight from
+    // Bukkit's HelpMap so the whole list comes back unpaginated. Fabric is pure
+    // Brigadier — nothing paginates and the mod ships no `rcat` — so these are
+    // gated on server type.
     const isBukkit = variant.type === 'PAPER' || variant.type === 'SPIGOT';
 
     if (isBukkit) {
@@ -142,6 +143,12 @@ for (const variant of addonVariants) {
         const raw = await ctrl.send('help');
         const wrapped = await ctrl.send('rcat help');
 
+        // Regression guard: the de-pagination once sent help to the *server log*
+        // and returned nothing ("(no response)"); a related regression would be
+        // a single ~9-line page leaking back. The full, de-paginated help index
+        // is the whole command list — multiple KB — so assert it's substantially
+        // large, not merely non-empty (a single page is only a few hundred bytes).
+        assert.ok(wrapped.length > 1000, `rcat help should return the full (multi-KB) command index, got ${wrapped.length} bytes (output leaked to the server log, or still paginated?)`);
         assert.ok(/Help: Index \(1\//i.test(raw), `expected raw /help to be paginated, got: ${JSON.stringify(raw.slice(0, 200))}`);
         assert.ok(!/Help: Index \(1\//i.test(wrapped), `rcat help should not carry a pagination header, got: ${JSON.stringify(wrapped.slice(0, 200))}`);
 
