@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- De-pagination now stitches plugin commands that paginate their *own* output
+  (independently of `rcat`). The client recognises the page chrome, re-issues
+  the command for each page, strips the headers, and shows the full result in
+  the pager. Multiverse-Core (`mv …`) is supported; the pattern registry in
+  `src/pagination.ts` is open for adding more plugin formats. (Multiverse-Portals
+  has no command to request a specific page of the unfiltered list, so it can't
+  be stitched.)
+
 ---
 
 ## [3.0.0] - 2026-06-17
