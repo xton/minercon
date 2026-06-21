@@ -26,6 +26,7 @@ import * as ansi from './ansi';
 import { progress } from '@clack/prompts';
 import { formatCommandTree, formatCommandLog } from './displayCommandTree';
 import { responseSupportsRcat, wrapForUnpagination } from './unpaginate';
+import { stitchPaginated } from './pagination';
 import { Pager, ArrayLineSource, FALLBACK_ROWS } from './pager';
 
 export interface RconSessionHost {
@@ -887,14 +888,36 @@ export class RconSession {
       // In plugin mode, route the command through the server-side `rcat`
       // de-pagination helper so its output comes back unpaginated in one
       // response (no-op unless the plugin supports it and the toggle is on).
-      const toSend = wrapForUnpagination(
-        command,
-        this.pluginMode && this.supportsUnpaginate && this.sessionHost.unpaginateOutput !== false,
-      );
+      const unpaginateActive =
+        this.pluginMode && this.supportsUnpaginate && this.sessionHost.unpaginateOutput !== false;
+      const toSend = wrapForUnpagination(command, unpaginateActive);
       const response = await this.connectionManager.controller.send(toSend);
 
-      if (response && response.trim()) {
-        const formatted = ansi.formatMinecraftColors(response);
+      // Some plugins paginate their OWN output (e.g. Multiverse-Core's
+      // "Page X of Y"), returning a single page per call regardless of `rcat`.
+      // When de-pagination is active, recognise that chrome and stitch every
+      // page into one response. Best-effort: any failure falls back to the
+      // single page we already have.
+      let combined = response;
+      if (unpaginateActive && response && response.trim()) {
+        try {
+          const stitched = await stitchPaginated(
+            response,
+            command,
+            (pageCommand) =>
+              this.connectionManager.controller.send(wrapForUnpagination(pageCommand, true)),
+            { log: (message) => this.logger.debug(message) },
+          );
+          if (stitched !== undefined) {
+            combined = stitched;
+          }
+        } catch (err) {
+          this.logger.debug(`pagination stitch failed: ${errorMessage(err)}`);
+        }
+      }
+
+      if (combined && combined.trim()) {
+        const formatted = ansi.formatMinecraftColors(combined);
         const lines = formatted.split('\n');
         outputLineCount = lines.length;
 

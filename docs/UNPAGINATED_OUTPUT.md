@@ -245,6 +245,35 @@ future async `ensureUpTo(i)`), not a fixed array. Option A supplies an in-memory
 `LazyPageLineSource` that fetches `cmd <n>` just-in-time as the user pages slots
 into the *same* pager UI unchanged.
 
+### Stitching plugin-paginated commands (`src/pagination.ts`)
+
+Some plugins paginate their *own* output independently of `rcat`: they only
+disable their pager for an `instanceof ConsoleCommandSender`, so the RCON sender
+still gets one page per call (`rcat` alone leaves you on page 1). For the
+families whose page navigation we can drive from the command line, the client
+recognises the page chrome and stitches every page into one response *before*
+it reaches the pager.
+
+`stitchPaginated(firstResponse, command, fetchPage)` walks a registry of
+`PaginationPattern`s (`DEFAULT_PATTERNS`). A pattern knows how to `detect` its
+"Page X of Y" chrome, build the `pageCommand` for page N, and strip the
+chrome (`contentLines` / `titleLines`). When de-pagination is active,
+`executeCommand` re-issues the command once per page (through the same `rcat`
+path), concatenates the bodies under a single title, and feeds the result to
+the pager. It's best-effort: an explicit page request, a single-page response,
+a fetch error, or a non-matching page all fall back to the single page already
+held — never worse than today.
+
+Implemented patterns:
+
+- **Multiverse-Core** (`mv …`): `====[ … ]====` banner + `[Page X of Y]`,
+  page fetched with `--page N`. Stitched.
+- **Multiverse-Portals** (`mvp …`): *no pattern.* Its `mvp list [filter] [page]`
+  grammar treats the first positional as a name filter, so there is no command
+  for "page 2 of the unfiltered list" — it cannot be stitched. If a future
+  version exposes a real page flag, add a `PaginationPattern` and it is picked
+  up automatically.
+
 ### Disabling
 
 Two `minercon.*` config settings, both default-on (see "Decisions"):
