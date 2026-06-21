@@ -117,6 +117,16 @@
           "default": 100,
           "minimum": 1,
           "description": "Number of commands to remember in history (in-memory and persisted to disk)"
+        },
+        "minercon.unpaginateOutput": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the server tab-complete plugin is installed, request full unpaginated output for commands (e.g. /help) instead of the server's small pages. No effect on servers without the plugin."
+        },
+        "minercon.terminalPager": {
+          "type": "boolean",
+          "default": true,
+          "description": "Page command output taller than the terminal window through a built-in pager (Space: more, G: all, q: quit). When off, tall output is printed all at once."
         }
       }
     }

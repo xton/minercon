@@ -11,13 +11,20 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 public class TabCompletePlugin extends JavaPlugin {
+
+    // Single line the RCON client greps for to confirm the server supports the
+    // `rcat` unpaginated-output wrapper (older plugin jars won't emit it).
+    static final String RCAT_PROBE_MARKER = "rcat: returns unpaginated command output";
 
     private Object nmsServer;
     private Object bukkitCommandMap;
@@ -34,6 +41,7 @@ public class TabCompletePlugin extends JavaPlugin {
         // servers (e.g. Spigot) where the NMS reflection chain differs.
         getCommand("tabcomplete").setExecutor(this::handleCommand);
         getCommand("cmdusage").setExecutor(this::handleUsageCommand);
+        getCommand("rcat").setExecutor(this::handleRcatCommand);
 
         try {
             Object craftServer = Bukkit.getServer();
@@ -280,6 +288,123 @@ public class TabCompletePlugin extends JavaPlugin {
             sender.sendMessage("Error getting usage: " + e.getMessage());
         }
         return true;
+    }
+
+    /**
+     * Runs the wrapped command and returns its full, *unpaginated* output in a
+     * single RCON response. Bukkit-layer commands (notably `/help`) paginate to
+     * ~9 lines because the RCON sender is a `RemoteConsoleCommandSender`, not a
+     * `ConsoleCommandSender` — Bukkit's `HelpCommand` only takes the unbounded
+     * branch for the latter. We re-dispatch through a `ConsoleCommandSender`
+     * proxy so the unbounded branch is taken, capturing the output here.
+     */
+    private boolean handleRcatCommand(CommandSender sender, Command cmd, String label, String[] args) {
+        if (args.length == 0) {
+            sender.sendMessage(RCAT_PROBE_MARKER);
+            sender.sendMessage("Usage: /" + label + " <command...>");
+            sender.sendMessage("Runs the command and returns its full, unpaginated output.");
+            return true;
+        }
+
+        String commandLine = String.join(" ", args);
+        if (commandLine.startsWith("/")) {
+            commandLine = commandLine.substring(1);
+        }
+
+        try {
+            String rootName = commandLine.split("\\s+", 2)[0].toLowerCase();
+            Command target = ((CommandMap) bukkitCommandMap).getCommand(rootName);
+
+            if (target == null || isVanillaWrapper(target)) {
+                // Unknown command, or a vanilla (Brigadier) command. Vanilla
+                // commands don't paginate, and their output flows back through
+                // the RCON sender's own NMS source — running them through the
+                // console proxy would route that output to the *server console*
+                // and lose it. Dispatch as-is.
+                Bukkit.dispatchCommand(sender, commandLine);
+                return true;
+            }
+
+            // A Bukkit/plugin command (HelpCommand, PluginCommand, ...) — these
+            // are the ones that paginate on `instanceof ConsoleCommandSender`.
+            // Dispatch as a console proxy and capture the (unbounded) output.
+            String captured = dispatchCapturingAsConsole(commandLine);
+            if (!captured.isEmpty()) {
+                sender.sendMessage(captured);
+            }
+            return true;
+        } catch (Throwable t) {
+            // Never worse than today: fall back to the normal (paginated) path.
+            getLogger().warning("rcat fell back to direct dispatch for '" + commandLine + "': " + t);
+            try {
+                Bukkit.dispatchCommand(sender, commandLine);
+            } catch (Throwable inner) {
+                sender.sendMessage("Error running command: " + inner.getMessage());
+            }
+            return true;
+        }
+    }
+
+    /**
+     * True if {@code command} is the CraftBukkit bridge that exposes a vanilla
+     * Brigadier command through the Bukkit CommandMap. Matched by simple class
+     * name so this compiles against `spigot-api` (no craftbukkit on the
+     * classpath).
+     */
+    static boolean isVanillaWrapper(Command command) {
+        return command.getClass().getSimpleName().equals("VanillaCommandWrapper");
+    }
+
+    /**
+     * Dispatches {@code commandLine} through a {@link ConsoleCommandSender}
+     * proxy that captures everything sent to it instead of printing it. The
+     * proxy delegates every other method to the real console sender, so
+     * `instanceof ConsoleCommandSender`, permissions, and identity all behave
+     * like the console (no privilege change — RCON is already console-level).
+     */
+    private String dispatchCapturingAsConsole(String commandLine) {
+        final List<String> captured = new ArrayList<>();
+        final ConsoleCommandSender realConsole = Bukkit.getConsoleSender();
+
+        ConsoleCommandSender proxy = (ConsoleCommandSender) Proxy.newProxyInstance(
+                ConsoleCommandSender.class.getClassLoader(),
+                new Class[]{ ConsoleCommandSender.class },
+                (p, method, methodArgs) -> {
+                    String name = method.getName();
+                    if (name.equals("sendMessage") || name.equals("sendRawMessage")) {
+                        if (methodArgs != null) {
+                            for (Object arg : methodArgs) {
+                                appendMessageArg(captured, arg);
+                            }
+                        }
+                        return null; // capture only; never echo to the real console
+                    }
+                    return method.invoke(realConsole, methodArgs);
+                });
+
+        Bukkit.dispatchCommand(proxy, commandLine);
+        return String.join("\n", captured);
+    }
+
+    /**
+     * Appends the textual content of one `sendMessage`/`sendRawMessage` argument
+     * to {@code out}. On Spigot the base `CommandSender` overloads carry String
+     * or String[] (one entry per line); BaseComponent output goes through
+     * `spigot()` and is out of scope. Non-text args contribute nothing.
+     */
+    static void appendMessageArg(List<String> out, Object arg) {
+        if (arg == null) {
+            return;
+        }
+        if (arg instanceof String) {
+            out.add((String) arg);
+        } else if (arg instanceof String[]) {
+            for (String s : (String[]) arg) {
+                if (s != null) {
+                    out.add(s);
+                }
+            }
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

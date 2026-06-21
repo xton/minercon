@@ -25,6 +25,8 @@ import { HistoryStore, HistorySearchState, startHistorySearch, setHistorySearchQ
 import * as ansi from './ansi';
 import { progress } from '@clack/prompts';
 import { formatCommandTree, formatCommandLog } from './displayCommandTree';
+import { responseSupportsRcat, wrapForUnpagination } from './unpaginate';
+import { Pager, ArrayLineSource, FALLBACK_ROWS } from './pager';
 
 export interface RconSessionHost {
   write(text: string): void;
@@ -38,6 +40,10 @@ export interface RconSessionHost {
   disablePlugin?: boolean;
   /** Diagnostic logs are going to a file rather than the console — report command-tree-loading progress via the logger instead of a clack progress bar. */
   logToFile?: boolean;
+  /** When `false`, never wrap commands in the plugin's `rcat` de-pagination helper (server pagination passes through). Defaults to enabled. */
+  unpaginateOutput?: boolean;
+  /** When `false`, dump large command output directly instead of paging it at the terminal height. Defaults to enabled. */
+  terminalPager?: boolean;
 }
 
 /** Phase labels shown on the command-tree-loading progress bar / logged when `logToFile` is set. */
@@ -80,6 +86,12 @@ export class RconSession {
   private suggestionDisplay: SuggestionDisplay;
 
   private pluginMode: boolean = false;
+  // Whether the detected plugin also exposes the `rcat` unpaginated-output
+  // command (Bukkit-family servers; not Fabric, whose probe finds no `rcat`).
+  private supportsUnpaginate: boolean = false;
+  // Active output pager, if the last command's output was too tall for the
+  // window. While set, keystrokes route to it (see handleInput).
+  private pager: Pager | null = null;
   private engine: Machine = createMachine();
   private rconBackend: CompletionBackend;
   private localBackend: CompletionBackend;
@@ -204,6 +216,7 @@ export class RconSession {
         this.pluginMode = true;
         this.commandTree.isReady = true;
         this.sessionHost.write('\r\n' + ansi.green('✓ Server tab-complete plugin detected — using server-side completions') + '\r\n\r\n');
+        await this.probeUnpaginateSupport();
         this.showPrompt();
         return;
       }
@@ -211,6 +224,23 @@ export class RconSession {
       // probe failed, fall through to normal init
     }
     await this.initializeCommands();
+  }
+
+  /**
+   * One-shot probe for the plugin's `rcat` command (sent with no args, it
+   * echoes RCAT_PROBE_MARKER). Distinct from the `tabcomplete` probe so an
+   * older plugin jar — or the Fabric mod, which has no `rcat` — leaves
+   * `supportsUnpaginate` false and the client never wraps. Failures are
+   * swallowed: de-pagination simply stays off.
+   */
+  private async probeUnpaginateSupport(): Promise<void> {
+    if (this.sessionHost.unpaginateOutput === false) { return; }
+    try {
+      const response = await this.connectionManager.controller.send('rcat');
+      this.supportsUnpaginate = responseSupportsRcat(response);
+    } catch {
+      this.supportsUnpaginate = false;
+    }
   }
 
   private async initializeCommands(forceRefresh: boolean = false): Promise<void> {
@@ -392,6 +422,14 @@ export class RconSession {
   }
 
   handleInput(data: string): void {
+    // The pager is a post-output interaction, active *after* a command has
+    // finished (isExecutingCommand is already false), so it's handled before
+    // that guard rather than gated by it.
+    if (this.pager) {
+      this.pager.handleKey(data);
+      return;
+    }
+
     if (this.isExecutingCommand) {
       return;
     }
@@ -846,23 +884,41 @@ export class RconSession {
     let outputLineCount = 0;
 
     try {
-      const response = await this.connectionManager.controller.send(command);
+      // In plugin mode, route the command through the server-side `rcat`
+      // de-pagination helper so its output comes back unpaginated in one
+      // response (no-op unless the plugin supports it and the toggle is on).
+      const toSend = wrapForUnpagination(
+        command,
+        this.pluginMode && this.supportsUnpaginate && this.sessionHost.unpaginateOutput !== false,
+      );
+      const response = await this.connectionManager.controller.send(toSend);
 
       if (response && response.trim()) {
         const formatted = ansi.formatMinecraftColors(response);
         const lines = formatted.split('\n');
         outputLineCount = lines.length;
 
-        lines.forEach(line => {
-          this.sessionHost.write(`${line}\r\n`);
-        });
+        const rows = this.sessionHost.dimensions()?.rows ?? FALLBACK_ROWS;
+        const shouldPage = this.sessionHost.terminalPager !== false && lines.length > rows - 1;
+
+        if (shouldPage) {
+          // The pager prints its own lines, draws/erases its status prompt, and
+          // restores the prompt itself when the user exits — so we skip the
+          // trailing newline + showPrompt below (guarded on `this.pager`).
+          this.startPager(lines);
+        } else {
+          lines.forEach(line => {
+            this.sessionHost.write(`${line}\r\n`);
+          });
+          this.sessionHost.write('\r\n');
+          outputLineCount++;
+        }
       } else {
         this.sessionHost.write(ansi.dim('(no response)') + '\r\n');
         outputLineCount = 1;
+        this.sessionHost.write('\r\n');
+        outputLineCount++;
       }
-
-      this.sessionHost.write('\r\n');
-      outputLineCount++;
 
     } catch (err) {
       const message = errorMessage(err);
@@ -889,7 +945,24 @@ export class RconSession {
       }
 
       this.isExecutingCommand = false;
-      this.showPrompt();
+      // When paging, the pager owns the prompt — it restores it on exit.
+      if (!this.pager) {
+        this.showPrompt();
+      }
     }
+  }
+
+  /** Starts an append-only pager over `lines`; restores the prompt when it exits. */
+  private startPager(lines: string[]): void {
+    this.pager = new Pager(
+      { write: (text) => this.sessionHost.write(text), dimensions: () => this.sessionHost.dimensions() },
+      new ArrayLineSource(lines),
+      () => {
+        this.pager = null;
+        this.sessionHost.write('\r\n');
+        this.showPrompt();
+      },
+    );
+    this.pager.start();
   }
 }

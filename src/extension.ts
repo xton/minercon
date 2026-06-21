@@ -82,6 +82,8 @@ async function createRconTerminalProfile(
   const defaultPort = config.get<number>('defaultPort');
   const defaultPassword = await context.secrets.get('minercon.defaultPassword');
   const historySize = config.get<number>('historySize', 100);
+  const unpaginateOutput = config.get<boolean>('unpaginateOutput', true);
+  const terminalPager = config.get<boolean>('terminalPager', true);
 
   let host: string | undefined;
   let port: number;
@@ -125,6 +127,9 @@ async function createRconTerminalProfile(
       ELECTRON_RUN_AS_NODE: '1',
       MCRCON_PASSWORD: password,
       MCRCON_HISTORY_SIZE: String(historySize),
+      // Booleans are passed as '0'/'1'; the CLI treats absent as the default-on.
+      MCRCON_UNPAGINATE: unpaginateOutput ? '1' : '0',
+      MCRCON_PAGER: terminalPager ? '1' : '0',
     },
   });
 

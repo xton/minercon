@@ -13,3 +13,6 @@ commands:
     description: "Returns usage syntax for a command. Example: /cmdusage gamemode"
     usage: "/<command> <command name>"
     aliases: [cu]
+  rcat:
+    description: "Runs a command and returns its full, unpaginated output. Example: /rcat help"
+    usage: "/<command> <command...>"
