@@ -142,6 +142,9 @@ for (const variant of addonVariants) {
         const raw = await ctrl.send('help');
         const wrapped = await ctrl.send('rcat help');
 
+        // Regression guard: the de-pagination once sent help to the *server log*
+        // and returned nothing, which the client renders as "(no response)".
+        assert.ok(wrapped.trim().length > 0, 'rcat help returned an empty response (output leaked to the server log?)');
         assert.ok(/Help: Index \(1\//i.test(raw), `expected raw /help to be paginated, got: ${JSON.stringify(raw.slice(0, 200))}`);
         assert.ok(!/Help: Index \(1\//i.test(wrapped), `rcat help should not carry a pagination header, got: ${JSON.stringify(wrapped.slice(0, 200))}`);
 

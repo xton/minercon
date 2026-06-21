@@ -16,7 +16,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -295,8 +294,9 @@ public class TabCompletePlugin extends JavaPlugin {
      * single RCON response. Bukkit-layer commands (notably `/help`) paginate to
      * ~9 lines because the RCON sender is a `RemoteConsoleCommandSender`, not a
      * `ConsoleCommandSender` — Bukkit's `HelpCommand` only takes the unbounded
-     * branch for the latter. We re-dispatch through a `ConsoleCommandSender`
-     * proxy so the unbounded branch is taken, capturing the output here.
+     * branch for the latter. We re-dispatch through a transparent
+     * `ConsoleCommandSender` proxy (see {@link #dispatchAsConsole}) so the
+     * unbounded branch is taken while output still flows back through RCON.
      */
     private boolean handleRcatCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (args.length == 0) {
@@ -327,11 +327,9 @@ public class TabCompletePlugin extends JavaPlugin {
 
             // A Bukkit/plugin command (HelpCommand, PluginCommand, ...) — these
             // are the ones that paginate on `instanceof ConsoleCommandSender`.
-            // Dispatch as a console proxy and capture the (unbounded) output.
-            String captured = dispatchCapturingAsConsole(commandLine);
-            if (!captured.isEmpty()) {
-                sender.sendMessage(captured);
-            }
+            // Dispatch through a console proxy that forwards output back to the
+            // RCON sender (unbounded, and the result reaches RCON as usual).
+            dispatchAsConsole(sender, commandLine);
             return true;
         } catch (Throwable t) {
             // Never worse than today: fall back to the normal (paginated) path.
@@ -356,55 +354,46 @@ public class TabCompletePlugin extends JavaPlugin {
     }
 
     /**
-     * Dispatches {@code commandLine} through a {@link ConsoleCommandSender}
-     * proxy that captures everything sent to it instead of printing it. The
-     * proxy delegates every other method to the real console sender, so
-     * `instanceof ConsoleCommandSender`, permissions, and identity all behave
-     * like the console (no privilege change — RCON is already console-level).
+     * Dispatches {@code commandLine} as if from the console, *transparently*: a
+     * {@link ConsoleCommandSender} proxy forwards every method to the real RCON
+     * {@code rconSender}. Two effects: (1) `instanceof ConsoleCommandSender` is
+     * now true, so Bukkit's pagination takes the unbounded branch; (2) every
+     * message the command sends — via `sendMessage` or `sender.spigot()` — is
+     * forwarded to the RCON sender and so flows back through the RCON response,
+     * exactly like a vanilla command.
+     *
+     * <p>This replaces an earlier capture-and-resend proxy that delegated
+     * non-`sendMessage` calls to {@link Bukkit#getConsoleSender()}: any command
+     * that emitted output through a path the proxy didn't intercept (notably
+     * `sender.spigot().sendMessage(...)`) printed to the *server log* and
+     * returned an empty RCON response. Forwarding everything to the RCON sender
+     * removes that whole class of leak.
+     *
+     * <p>{@link ConsoleCommandSender} adds the {@code Conversable} methods that a
+     * {@code RemoteConsoleCommandSender} doesn't implement, so those are handled
+     * here (raw messages forwarded to `sendMessage`; sane defaults otherwise).
      */
-    private String dispatchCapturingAsConsole(String commandLine) {
-        final List<String> captured = new ArrayList<>();
-        final ConsoleCommandSender realConsole = Bukkit.getConsoleSender();
-
+    private void dispatchAsConsole(CommandSender rconSender, String commandLine) {
         ConsoleCommandSender proxy = (ConsoleCommandSender) Proxy.newProxyInstance(
                 ConsoleCommandSender.class.getClassLoader(),
                 new Class[]{ ConsoleCommandSender.class },
                 (p, method, methodArgs) -> {
-                    String name = method.getName();
-                    if (name.equals("sendMessage") || name.equals("sendRawMessage")) {
-                        if (methodArgs != null) {
-                            for (Object arg : methodArgs) {
-                                appendMessageArg(captured, arg);
+                    if (method.getDeclaringClass().isInstance(rconSender)) {
+                        return method.invoke(rconSender, methodArgs);
+                    }
+                    // Methods from interfaces the RCON sender lacks (Conversable).
+                    if (method.getName().equals("sendRawMessage") && methodArgs != null) {
+                        for (Object arg : methodArgs) {
+                            if (arg instanceof String) {
+                                rconSender.sendMessage((String) arg);
                             }
                         }
-                        return null; // capture only; never echo to the real console
+                        return null;
                     }
-                    return method.invoke(realConsole, methodArgs);
+                    return method.getReturnType() == boolean.class ? Boolean.FALSE : null;
                 });
 
         Bukkit.dispatchCommand(proxy, commandLine);
-        return String.join("\n", captured);
-    }
-
-    /**
-     * Appends the textual content of one `sendMessage`/`sendRawMessage` argument
-     * to {@code out}. On Spigot the base `CommandSender` overloads carry String
-     * or String[] (one entry per line); BaseComponent output goes through
-     * `spigot()` and is out of scope. Non-text args contribute nothing.
-     */
-    static void appendMessageArg(List<String> out, Object arg) {
-        if (arg == null) {
-            return;
-        }
-        if (arg instanceof String) {
-            out.add((String) arg);
-        } else if (arg instanceof String[]) {
-            for (String s : (String[]) arg) {
-                if (s != null) {
-                    out.add(s);
-                }
-            }
-        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

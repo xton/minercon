@@ -48,9 +48,9 @@ is never paginated. That is the seam this feature generalizes.
 
 ## Chosen approach
 
-**Option A — a plugin command that re-dispatches the wrapped command as a
-`ConsoleCommandSender` and captures its output**, returning it unpaginated in a
-single RCON response.
+**Option A — a plugin command that re-dispatches the wrapped command through a
+transparent `ConsoleCommandSender` proxy** (which forwards all output back to the
+RCON sender), so it returns unpaginated in a single RCON response.
 
 Decisions (agreed, as implemented):
 
@@ -90,7 +90,7 @@ dispatch (never double-dispatch — that would run state-changing commands twice
 
 | Wrapped command resolves to…                | Routing                                                        | Why |
 |---|---|---|
-| Bukkit `HelpCommand` / `PluginCommand` / any non-vanilla `Command` | dispatch via a **console-proxy** sender, capture, return | These are the ones that paginate; their output flows through Bukkit `sendMessage`, which the proxy captures. `instanceof ConsoleCommandSender` ⇒ unbounded. |
+| Bukkit `HelpCommand` / `PluginCommand` / any non-vanilla `Command` | dispatch via a **transparent console proxy** that forwards to the RCON sender | These are the ones that paginate; making the sender `instanceof ConsoleCommandSender` ⇒ unbounded, while forwarding every send back to the RCON sender so the output reaches the response. |
 | `VanillaCommandWrapper` (vanilla command)   | dispatch via the **original RCON sender** unchanged           | Vanilla commands don't paginate; their output already flows back through the RCON NMS source into the response buffer. Proxying would lose it. |
 | unknown command (`getCommand` ⇒ null)       | dispatch via the **original RCON sender**                     | Let the server emit its normal "Unknown command" message. |
 
@@ -100,45 +100,51 @@ against `spigot-api` only): check `cmd.getClass().getSimpleName()` against
 `org.bukkit.craftbukkit` + `VanillaCommandWrapper` as the match). This works
 identically on Paper and Spigot.
 
-### The console-proxy sender
+### The transparent console proxy
 
-Implement a capturing sender that **`instanceof ConsoleCommandSender`** is true
-for, delegating all real behavior to `Bukkit.getConsoleSender()` and collecting
-output instead of printing it. A `java.lang.reflect.Proxy` over
-`new Class[]{ ConsoleCommandSender.class }` is the cleanest form:
+Implement a `ConsoleCommandSender` that the command sees as
+**`instanceof ConsoleCommandSender`** (so pagination is unbounded) but whose
+behavior is otherwise *the real RCON sender*. A `java.lang.reflect.Proxy` over
+`new Class[]{ ConsoleCommandSender.class }` whose handler **forwards every method
+to the original RCON `sender`** (`dispatchAsConsole(sender, commandLine)`):
 
-- Every invoked method delegates to the real `Bukkit.getConsoleSender()` …
-- …**except** methods named `sendMessage` / `sendRawMessage` / `sendMessage`
-  Adventure overloads, whose arguments are serialized to a legacy `§`-coded
-  string and appended to a capture buffer (and **not** forwarded, so nothing is
-  printed to the real server console).
+```java
+(proxy, method, args) -> {
+    if (method.getDeclaringClass().isInstance(rconSender)) {
+        return method.invoke(rconSender, args);   // sendMessage, Audience, spigot(), perms, identity…
+    }
+    // Conversable methods a RemoteConsoleCommandSender lacks:
+    if (method.getName().equals("sendRawMessage")) { /* forward text to sendMessage */ }
+    return method.getReturnType() == boolean.class ? false : null;
+}
+```
 
-Because the proxy delegates `getServer`, `getName`, `isOp`, `hasPermission`,
-etc. to the real console sender, all `instanceof`, permission, and identity
-behavior matches the console. **No privilege escalation:** the RCON sender
-already runs at console/op level, so dispatching as console grants nothing new.
+Because **all** sends (`sendMessage(String)`, Adventure `Audience` overloads,
+and crucially `sender.spigot().sendMessage(BaseComponent…)`) are forwarded to the
+RCON sender, the unbounded output flows back through the RCON response exactly
+like a vanilla command — no capture buffer, no serialization, no `§`-handling.
 
-Component serialization differs per platform (separate plugin codebases, so this
-is fine):
+> **Why not capture-and-resend?** The first implementation delegated
+> *non-`sendMessage`* methods to `Bukkit.getConsoleSender()` and captured only
+> intercepted-by-name sends. Any command that emitted output through a path the
+> proxy didn't intercept — notably `sender.spigot().sendMessage(...)`, which
+> returned the *real* console's `Spigot` helper — printed to the **server log**
+> and produced an empty RCON response (client showed `(no response)`).
+> Forwarding everything to the RCON sender removes that entire class of leak and
+> is simpler.
 
-- **Paper:** `sendMessage` overloads may carry Adventure `Component`s. Serialize
-  with the bundled `LegacyComponentSerializer.legacySection().serialize(component)`.
-  Also handle plain `String` overloads.
-- **Spigot:** handle `String` overloads and `spigot().sendMessage(BaseComponent…)`
-  via `net.md_5.bungee.api.chat.BaseComponent.toLegacyText(...)`. (Bukkit's
-  `HelpCommand` uses `String` `sendMessage`, so the `String` path is the one
-  that matters for help; component paths cover plugin commands that use them.)
-
-Keep `§` color codes intact — the client already runs output through
-`ansi.formatMinecraftColors`.
+**No privilege escalation:** the proxy *is* the RCON sender for all permission
+and identity checks; RCON already runs at console/op level, so nothing new is
+granted. `§` color codes pass through untouched — the client already runs output
+through `ansi.formatMinecraftColors`.
 
 ### Plugin command surface
 
 - New command **`rcat`** (mnemonic: "rcon — return full/cat output"),
   registered in both plugins' `plugin.yml` alongside `tabcomplete`/`cmdusage`.
 - `rcat <command...>` → reconstruct the wrapped command as `String.join(" ",
-  args)`, route per the table above, return captured output (one `sendMessage`
-  to the original RCON sender).
+  args)`, route per the table above; the Bukkit-command path dispatches through
+  the transparent console proxy so output flows straight back to RCON.
 - `rcat` with **no args** → emit a probe/usage marker line (see client probe
   below), mirroring how `tabcomplete` returns its usage banner.
 - On any `Throwable` during the proxy path, **fall back** to dispatching the
@@ -277,22 +283,17 @@ CLI equivalents: `--no-unpaginate`, `--no-pager`.
 
 ### Plugin unit tests (JUnit, run by gradle `test`)
 
-The dispatch-as-console path needs a live server, but the **pure pieces** are
-extracted and unit-tested without one:
+The dispatch-as-console path needs a live server (covered by the functional
+suite); the transparent proxy carries no serialization logic to unit-test. The
+**pure piece** worth a unit test:
 
-- An `OutputCapture` (or equivalently named) buffer: accumulates messages,
-  joins with `\n`, preserves `§` codes. Test append/order/join.
-- Component→legacy serialization helpers: Adventure is on Paper's classpath and
-  `BaseComponent` on Spigot's, so construct real components and assert the
-  legacy `§`-string output (paper: `LegacyComponentSerializer.legacySection()`;
-  spigot: `BaseComponent.toLegacyText`).
 - Vanilla-wrapper detection helper: feed it fake `Command` subclasses whose
   `getClass().getSimpleName()` is/ isn't `VanillaCommandWrapper` and assert the
   routing decision.
 
-Wire a `test` source set + `junit-jupiter` into both `paper-plugin/build.gradle`
-and `spigot-plugin/build.gradle` (`useJUnitPlatform()`). This is new test infra
-for the plugins — currently they have none.
+Wire a `test` source set + `junit-jupiter` (plus `junit-platform-launcher` on
+the test runtime classpath for Gradle 9) into both `paper-plugin/build.gradle`
+and `spigot-plugin/build.gradle` (`useJUnitPlatform()`).
 
 ### Client unit tests (TS, existing mocha suite)
 
@@ -348,8 +349,8 @@ without standing up the full terminal.
 
 Plugin (×2: paper, spigot):
 - `*/src/main/java/dev/rcon/tabcomplete/TabCompletePlugin.java` — register
-  `rcat`, add handler, console-proxy sender, capture buffer, routing,
-  component serialization, fallback.
+  `rcat`, add handler, transparent console proxy (`dispatchAsConsole`),
+  vanilla/unknown routing, fallback.
 - `*/src/main/resources/plugin.yml` — declare `rcat`.
 - `*/build.gradle` — add JUnit test source set.
 - `*/src/test/java/...` — new unit tests for the pure helpers.
