@@ -10,7 +10,7 @@ tool** (`minercon`) that runs in any terminal.
 
 > A heavy fork of "Minecraft RCON Terminal"
 
-![Demo](images/demo-autocomplete.gif)
+![Demo](https://raw.githubusercontent.com/xton/minercon/main/images/demo-autocomplete.gif)
 
 ---
 
