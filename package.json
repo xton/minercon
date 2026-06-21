@@ -40,7 +40,7 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "bin": {
-    "minercon": "./out/minercon"
+    "minercon": "out/minercon"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile && node esbuild.js --production",
