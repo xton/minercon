@@ -42,6 +42,8 @@ dependencies {
     testImplementation 'org.spigotmc:spigot-api:1.21.4-R0.1-SNAPSHOT'
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    // Gradle 9 requires the launcher explicitly on the test runtime classpath.
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 test {
