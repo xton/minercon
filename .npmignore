@@ -1,0 +1,55 @@
+# Files to exclude from the npm package (the standalone CLI + compiled out/).
+# The VS Code extension package uses .vscodeignore instead — vsce does not
+# allow a package.json "files" whitelist and a .vscodeignore to coexist, so
+# each publish target gets its own blacklist. npm always ships package.json,
+# README.md and LICENSE regardless of this file.
+
+# Version control / editor / tooling
+.git/**
+.github/**
+.vscode/**
+.vscode-test/**
+.vscode-test.mjs
+.vscodeignore
+.claude/**
+
+# Sources & bundler — npm ships the tsc output in out/, not src/ or dist/
+src/**
+dist/**
+tsconfig.json
+esbuild.js
+eslint.config.mjs
+
+# Compiled output: keep only top-level out/*.js + the `minercon` launcher
+out/test
+*.map
+*.d.ts
+
+# Server-side addons (shipped via the GitHub Release, not npm)
+docker/**
+paper-plugin/**
+spigot-plugin/**
+fabric-mod/**
+scripts/**
+
+# Docs & project meta (only README + CHANGELOG ship)
+docs/**
+CLAUDE.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+TODO.md
+PUBLISHING.md
+MIGRATION.md
+
+# Images: only the icon ships
+images/*
+!images/icon.png
+
+# Misc
+*.vsix
+package-lock.json
+.env
+.env.*
+.DS_Store
+Thumbs.db

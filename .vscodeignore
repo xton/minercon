@@ -9,13 +9,13 @@
 .vscode/**
 .vscode-test/**
 .vscode-test.mjs
+.claude/**
 eslint.config.mjs
 
-# Source files (TypeScript)
+# Source files (TypeScript) — dist/extension.js is bundled, so no .d.ts needed
 src/**
 **/*.ts
 **/*.map
-!**/*.d.ts
 
 # Dev/test build output (superseded by dist/ for packaging)
 out/**
@@ -26,6 +26,28 @@ node_modules/**
 # Build configurations
 tsconfig.json
 esbuild.js
+.vscodeignore
+.npmignore
+scripts/**
+
+# Server-side addons (shipped via the GitHub Release, not the extension)
+docker/**
+paper-plugin/**
+spigot-plugin/**
+fabric-mod/**
+
+# CI / project meta
+.github/**
+*.yml
+*.yaml
+
+# Images: ship the extension's runtime assets — the gallery icon plus the
+# light/dark command icons loaded by extension.ts. The README's demo media is
+# referenced via absolute raw URLs, so it stays out of the package.
+images/**
+!images/icon.png
+!images/light.png
+!images/dark.png
 
 # Documentation
 docs/**

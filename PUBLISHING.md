@@ -61,9 +61,9 @@ already produces a clean 33-file / 94 kB tarball.
 - [ ] **Cut the release**: `git tag v3.0.0 && git push origin v3.0.0`. After it
   lands, verify with a cold `npm install -g minercon` on a clean
   machine/container and run against a real server.
-- [ ] **Attach the `.vsix`** to the GitHub Release once §3 adds the `publisher`
-  field to `package.json` (`vsce package` fails without it, so the mod/plugin
-  jars ship in §2 and the `.vsix` follows in §3).
+- [x] **Attach the `.vsix`** to the GitHub Release — `release.yml` now runs
+  `vsce package` (the `publisher` field was added in §3) and drops the `.vsix`
+  into `dist-artifacts/`, so it ships with the jars + npm tarball on every tag.
 
 ## 3. Publish to the VS Code Marketplace
 
@@ -76,27 +76,33 @@ The Marketplace is run through Azure DevOps; the steps are:
   Access Tokens → new token with org "All accessible organizations" and the
   **Marketplace → Manage** scope. (This is the step everyone fumbles —
   the scope must be Marketplace/Manage, not the defaults.)
-- [ ] **Add Marketplace fields to package.json**: `"publisher": "<your-id>"`
-  (required — packaging fails without it), and improve the listing:
-  `keywords` show in Marketplace search, `galleryBanner` colors the header,
-  `icon` is already set. Consider whether `categories: ["Other"]` is right
-  (there's no great category for terminals; "Other" is what similar
-  extensions use).
-- [ ] **Create `.vscodeignore`** — without it the `.vsix` bundles everything
-  (src, tests, docker/, plugin/, fabric-mod/, docs/). Exclude all of those;
-  `vsce ls` shows exactly what will ship. (There are no runtime deps, so no
-  bundler is needed — the compiled `out/` is already self-contained.)
-- [ ] **Package and publish**: `npm i -g @vscode/vsce` → `vsce package`
-  (produces `minercon-3.0.0.vsix`; install it locally via "Install from
-  VSIX" as a final check) → `vsce login <publisher>` with the PAT →
-  `vsce publish`. Subsequent releases: `vsce publish minor` bumps and
-  publishes in one step.
-- [ ] **Also publish to Open VSX** (https://open-vsx.org, `npx ovsx publish`)
-  — it's the registry used by VSCodium, Gitpod, and many Cursor/forks
-  setups; it's ~10 minutes of extra work for a real chunk of audience.
-- [ ] README *is* the listing page — make sure the demo GIF is near the top
-  and image links are absolute URLs (Marketplace can't resolve repo-relative
-  paths for some setups; `vsce` rewrites most but verify the rendered page).
+- [x] **Add Marketplace fields to package.json**: `"publisher": "xton"` added
+  (required — packaging fails without it; this must match the publisher ID you
+  create above), plus `galleryBanner` (`#1e1e1e`, dark theme). `keywords`,
+  `icon`, and `categories: ["Other"]` were already set ("Other" is what similar
+  terminal extensions use).
+- [x] **Split the package ignore strategy** — `vsce` refuses to run when both a
+  `files` whitelist and a `.vscodeignore` exist, so the `files` whitelist was
+  replaced with a `.npmignore` (npm ships the CLI in `out/`, 33 files / 94 kB,
+  unchanged from §1) and `.vscodeignore` was hardened for the `.vsix` (excludes
+  `src/`, tests, `docker/`, the plugin/mod dirs, `scripts/`, `.github/`, docs,
+  and `node_modules` `.d.ts` leaks). `vsce ls` confirms the `.vsix` ships only
+  `dist/extension.js`, `dist/minercon.js`, the runtime icons, and
+  README/LICENSE/CHANGELOG. (No runtime deps — esbuild bundles `dist/`.)
+- [x] **Package and publish (CI)** — `release.yml` now `vsce package`s the
+  `.vsix` on every tag and, if a `VSCE_PAT` repo secret is present, runs
+  `vsce publish`. Remaining manual prerequisites: create the publisher + PAT
+  (above), then add the PAT as the `VSCE_PAT` secret. For a one-off local
+  publish instead: `npm i -g @vscode/vsce` → `vsce package` → install the
+  `.vsix` locally as a final check → `vsce login xton` → `vsce publish`.
+- [x] **Also publish to Open VSX** (CI) — `release.yml` runs `npx ovsx publish`
+  when an `OVSX_TOKEN` repo secret is present. Open VSX serves VSCodium,
+  Gitpod, and many Cursor/forks setups. Remaining manual step: create an
+  open-vsx.org access token and add it as `OVSX_TOKEN`.
+- [x] README *is* the listing page — the demo GIF sits near the top and now
+  uses an absolute `raw.githubusercontent.com` URL (Marketplace can't resolve
+  repo-relative paths for some setups). Verify the rendered listing page after
+  the first publish.
 
 ## 4. Publish the server-side addon where admins actually look
 

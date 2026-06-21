@@ -3,8 +3,13 @@
   "displayName": "Minercon",
   "description": "A powerful RCON client for Minecraft servers with fancy tab completion",
   "version": "3.0.4",
+  "publisher": "xton",
   "author": "xton <thisischriston@gmail.com>",
   "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "license": "MIT",
   "homepage": "https://github.com/xton/minercon",
   "bugs": {
@@ -23,12 +28,6 @@
     "minecraft-server",
     "console",
     "rcon-client"
-  ],
-  "files": [
-    "out/*.js",
-    "out/minercon",
-    "images/icon.png",
-    "CHANGELOG.md"
   ],
   "engines": {
     "vscode": "^1.95.0",

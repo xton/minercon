@@ -79,6 +79,30 @@ jobs:
       - name: Publish to npm (trusted publishing + provenance)
         run: npm publish --provenance --access public
 
+      - name: Package VS Code extension (.vsix)
+        run: |
+          mkdir -p dist-artifacts
+          VERSION="$(node -p "require('./package.json').version")"
+          # vsce runs the `vscode:prepublish` script (compile + esbuild) itself.
+          npx --yes @vscode/vsce package --out "dist-artifacts/minercon-${VERSION}.vsix"
+          echo "VSIX=dist-artifacts/minercon-${VERSION}.vsix" >> "$GITHUB_ENV"
+
+      - name: Publish to VS Code Marketplace
+        # Skipped until a VSCE_PAT secret (Azure DevOps PAT, Marketplace/Manage
+        # scope) is configured; the .vsix is still attached to the Release below.
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --packagePath "$VSIX"
+
+      - name: Publish to Open VSX
+        # Skipped until an OVSX_TOKEN secret (open-vsx.org access token) is
+        # configured. Open VSX serves VSCodium, Gitpod, and many Cursor/forks.
+        if: env.OVSX_TOKEN != ''
+        env:
+          OVSX_TOKEN: ${{ secrets.OVSX_TOKEN }}
+        run: npx --yes ovsx publish "$VSIX" -p "$OVSX_TOKEN"
+
       - name: Collect release artifacts
         run: |
           mkdir -p dist-artifacts
