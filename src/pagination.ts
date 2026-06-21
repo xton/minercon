@@ -60,6 +60,9 @@ const MV_PAGE_LINE = /\[Page (\d+) of (\d+)\]/i;
 const MV_TITLE_LINE = /^={2,}\[.*\]={2,}$/;
 const MV_PAGE_ARG = /\s--page(?:=|\s+)\d+\b/i;
 
+/** Hard cap on pages we'll fetch — a clamp against bogus/huge page counts. */
+const MAX_PAGES = 1000;
+
 const multiverseCore: PaginationPattern = {
   name: 'multiverse-core',
 
@@ -69,10 +72,9 @@ const multiverseCore: PaginationPattern = {
       return undefined;
     }
     const page = Number(match[1]);
-    const totalPages = Number(match[2]);
-    if (!Number.isFinite(page) || !Number.isFinite(totalPages)) {
-      return undefined;
-    }
+    // totalPages comes from untrusted server output; clamp it to MAX_PAGES so a
+    // bogus or huge value can't drive an unbounded fetch walk.
+    const totalPages = Math.min(Number(match[2]), MAX_PAGES);
     return { page, totalPages };
   },
 
@@ -100,13 +102,9 @@ const multiverseCore: PaginationPattern = {
 /** Recognised paginated-output formats, tried in order. */
 export const DEFAULT_PATTERNS: readonly PaginationPattern[] = [multiverseCore];
 
-const DEFAULT_MAX_PAGES = 100;
-
 export interface StitchOptions {
   /** Override the recognised formats (defaults to DEFAULT_PATTERNS). */
   patterns?: readonly PaginationPattern[];
-  /** Safety cap on how many pages to fetch (defaults to 100). */
-  maxPages?: number;
   /** Optional sink for diagnostic messages. */
   log?: (message: string) => void;
 }
@@ -129,7 +127,6 @@ export async function stitchPaginated(
   options: StitchOptions = {},
 ): Promise<string | undefined> {
   const patterns = options.patterns ?? DEFAULT_PATTERNS;
-  const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
 
   for (const pattern of patterns) {
     if (pattern.hasExplicitPage(command)) {
@@ -140,7 +137,8 @@ export async function stitchPaginated(
       continue;
     }
 
-    const totalPages = Math.min(detected.totalPages, maxPages);
+    // detect() already clamps totalPages to a safe maximum.
+    const totalPages = detected.totalPages;
     if (totalPages <= 1) {
       return undefined; // single page — nothing to stitch
     }

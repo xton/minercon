@@ -9,7 +9,6 @@ import {
   stitchPaginated,
   DEFAULT_PATTERNS,
   PaginationPattern,
-  StitchOptions,
 } from '../pagination';
 
 const mvCore = DEFAULT_PATTERNS.find(p => p.name === 'multiverse-core') as PaginationPattern;
@@ -42,6 +41,13 @@ suite('multiverse-core pattern', () => {
 
   test('does not detect unrelated output', () => {
     assert.strictEqual(mvCore.detect('Just some plain command output\nwith two lines'), undefined);
+  });
+
+  test('clamps a bogus/huge total page count', () => {
+    assert.deepStrictEqual(mvCore.detect(mvPage(1, 999999, WORLDS[1])), {
+      page: 1,
+      totalPages: 1000,
+    });
   });
 
   test('detects through Minecraft color codes', () => {
@@ -153,17 +159,22 @@ suite('stitchPaginated', () => {
     }
   });
 
-  test('respects the maxPages safety cap', async () => {
+  test('does not fetch past the clamped page count', async () => {
     const sent: string[] = [];
     const fetch = async (command: string): Promise<string> => {
       sent.push(command);
       const page = Number((command.match(/--page (\d+)/) ?? [])[1] ?? 1);
-      return mvPage(page, 999, [`world${page}`]);
+      // Report 5 total so the walk is short and fully exercised.
+      return mvPage(page, 5, [`world${page}`]);
     };
-    const first = mvPage(1, 999, ['world1']);
-    const options: StitchOptions = { maxPages: 3 };
-    await stitchPaginated(first, 'mv list', fetch, options);
-    // Page 1 held; only 2 and 3 fetched given the cap of 3.
-    assert.deepStrictEqual(sent, ['mv list --page 2', 'mv list --page 3']);
+    const first = mvPage(1, 5, ['world1']);
+    await stitchPaginated(first, 'mv list', fetch);
+    // Page 1 held; pages 2..5 fetched, none beyond.
+    assert.deepStrictEqual(sent, [
+      'mv list --page 2',
+      'mv list --page 3',
+      'mv list --page 4',
+      'mv list --page 5',
+    ]);
   });
 });
