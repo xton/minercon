@@ -1,0 +1,98 @@
+name: Release
+
+# Publishes minercon to npm with build provenance and creates a GitHub Release
+# with the server-side plugin/mod jars attached. Triggered by pushing a version
+# tag, e.g.:
+#
+#   git tag v3.0.0 && git push origin v3.0.0
+#
+# Requirements:
+#   - An `NPM_TOKEN` repository secret holding an npm *automation* token with
+#     publish rights for the `minercon` package. An automation token publishes
+#     non-interactively, which is what lets CI skip the 2FA/`npm login` prompt.
+#   - `id-token: write` (below) so npm can attach a provenance attestation.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # create the GitHub Release and upload assets
+  id-token: write   # OIDC token for `npm publish --provenance`
+
+jobs:
+  release:
+    name: Publish and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Set up Java (for plugin/mod build)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: xvfb-run -a npm test
+
+      - name: Build paper-plugin
+        run: cd paper-plugin && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Build spigot-plugin
+        run: cd spigot-plugin && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Build fabric mod
+        run: cd fabric-mod && ./gradlew build
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Publish to npm (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p dist-artifacts
+          # The installable jars only — exclude loom/paperweight -dev and
+          # -sources jars that also land in build/libs.
+          find paper-plugin/build/libs spigot-plugin/build/libs fabric-mod/build/libs \
+            -name '*-tabcomplete-*.jar' ! -name '*-sources.jar' ! -name '*-dev.jar' \
+            -exec cp -v {} dist-artifacts/ \;
+          # The exact tarball that was published to npm, for non-npm users.
+          npm pack --pack-destination dist-artifacts
+          ls -la dist-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-artifacts/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
