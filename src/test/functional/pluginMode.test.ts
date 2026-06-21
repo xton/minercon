@@ -131,9 +131,10 @@ for (const variant of addonVariants) {
     // ── rcat unpaginated-output wrapper ───────────────────────────────────────
     //
     // Bukkit-family servers (Paper/Spigot) paginate `/help` to ~9-line pages for
-    // the RCON sender; `rcat help` re-dispatches as a console sender so the full
-    // list comes back unpaginated. Fabric is pure Brigadier — nothing paginates
-    // and the mod ships no `rcat` — so these are gated on server type.
+    // the RCON sender; `rcat help` reads the full help index straight from
+    // Bukkit's HelpMap so the whole list comes back unpaginated. Fabric is pure
+    // Brigadier — nothing paginates and the mod ships no `rcat` — so these are
+    // gated on server type.
     const isBukkit = variant.type === 'PAPER' || variant.type === 'SPIGOT';
 
     if (isBukkit) {
