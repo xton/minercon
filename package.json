@@ -2,7 +2,7 @@
   "name": "minercon",
   "displayName": "Minercon",
   "description": "A powerful RCON client for Minecraft servers with fancy tab completion",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "author": "xton <thisischriston@gmail.com>",
   "icon": "images/icon.png",
   "license": "MIT",
