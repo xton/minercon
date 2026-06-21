@@ -52,21 +52,29 @@ is never paginated. That is the seam this feature generalizes.
 `ConsoleCommandSender` and captures its output**, returning it unpaginated in a
 single RCON response.
 
-Decisions (agreed):
+Decisions (agreed, as implemented):
 
-- **Auto-wrap all commands in plugin mode, no toggle.** When the server
-  tab-complete plugin is present, the interactive terminal transparently routes
-  every server-bound command through the new plugin command. No user-facing
-  escape hatch.
+- **Auto-wrap all commands in plugin mode by default, with two config
+  toggles.** When the server tab-complete plugin is present *and* exposes
+  `rcat`, the terminal transparently routes every server-bound command through
+  it. Two `minercon.*` settings (both default-on) opt out:
+  `minercon.unpaginateOutput` (stop wrapping → server pages return) and
+  `minercon.terminalPager` (stop paging → dump tall output). Wired through the
+  same path as `historySize`: `package.json` → `src/extension.ts` (env vars
+  `MCRCON_UNPAGINATE`/`MCRCON_PAGER`) → `src/cli.ts` (`--no-unpaginate`/
+  `--no-pager`) → `RconSessionHost` fields.
 - **Add a client-side pager that respects the real terminal size.** Option A
   removes the *server's* hardcoded 9-line pagination, but a full `help` dump is
-  still hundreds of lines. Rather than flooding scrollback, the terminal pages
-  large output itself at the user's actual screen height (`less`-like). See
-  "Client-side pager" below. This is part of *this* change.
+  still hundreds of lines. The terminal pages large output itself at the user's
+  actual screen height. The pager is **append-only (`more`-style)** so the paged
+  output stays in the terminal scrollback after exit — see "Client-side pager".
+- **Fabric: no mod change.** Fabric/vanilla are pure Brigadier with no
+  `ChatPaginator`; `/help` is already one-shot. The `rcat` capability probe
+  finds no command on Fabric, so `supportsUnpaginate` stays false and the client
+  never wraps. The client pager still applies. Covered by a functional test.
 - **Defer option C** (client-side detect-and-fetch-all-pages for the no-plugin
-  path). Tracked as future work; not in this change. Vanilla/Paper-without-
-  plugin terminals stay paginated for now — but the pager built here is
-  source-agnostic, so option C later feeds the same pager.
+  path). Tracked as future work; not in this change — but the pager built here
+  is source-agnostic (`LineSource`), so option C later feeds the same pager.
 
 ### Critical design constraint: route by command type
 
@@ -197,55 +205,56 @@ the client. The fix is two halves: (A) stop the server from paginating, then
   is a *post-output* interaction, so it must **not** be gated by
   `isExecutingCommand` (unlike line input). Drive it through its own branch.
 
-### Rendering
+### Rendering — append-only, scrollback-preserving (`src/pager.ts`)
 
-- `PagerState` holds the full `lines: string[]`, a `top` index, and is otherwise
-  derived. Page height is recomputed **on every render** from
-  `dimensions()?.rows ?? FALLBACK_ROWS` minus one row reserved for the status
-  line — this makes terminal resizes "just work" without subscribing to a
-  resize event.
-- Render = clear screen region, write `lines.slice(top, top + pageHeight)`, then
-  a status line, e.g. `-- More -- (lines 1-43/512)  Space next · b prev · q quit`.
-- Long lines: wrap to `dimensions()?.columns` using **ANSI-aware** width (reuse
-  the existing `ansi` helpers — `stripColors`/visible-width — so `§`/SGR codes
-  aren't counted or split mid-sequence). Each source line may occupy multiple
-  visual rows; the pager counts *visual* rows toward the page height. (A simpler
-  v1 may page by source line and rely on the terminal's own soft-wrap; note the
-  trade-off and pick one — recommend ANSI-aware visual rows for correctness.)
+The paged output **must remain in the terminal scrollback after the pager
+exits.** A `less`-style repaint/alternate-screen pager would restore the screen
+and wipe it (a regression). So the pager is **append-only**: it only ever prints
+*forward*, below what's already shown. Implemented in `Pager`:
 
-### Keybindings (within pager mode)
+- Print the first screenful of lines normally (they enter scrollback), then draw
+  a one-line status prompt on the cursor's row:
+  `-- More -- (43/512)  Space: more · G: all · q: quit`.
+- On advance, **erase the status line in place** (`\r\x1b[K`) and print the next
+  batch below it. **Never** clear the screen (`\x1b[2J`) or switch to the
+  alternate buffer (`\x1b[?1049h`) — that is the scrollback guarantee, asserted
+  by `src/test/pager.test.ts`.
+- Page height = `dimensions()?.rows ?? FALLBACK_ROWS` minus one status row,
+  recomputed **every batch** so resizes "just work".
+- Long lines: the terminal soft-wraps them; the pager only needs to *count* how
+  many visual rows each occupies toward the page height. `visualRowCount(line,
+  columns)` strips ANSI (`stripAnsi`) before measuring, so `§`/SGR codes don't
+  count and — since we never split the line — are never broken.
+
+### Keybindings (forward-only)
+
+Backward viewing is the terminal's **own scrollback** (which works precisely
+because nothing is ever cleared), so the pager has no back-scroll keys:
 
 | Keys | Action |
 |---|---|
 | Space, `f`, PageDown (`\x1b[6~`) | next page |
-| `b`, PageUp (`\x1b[5~`) | previous page |
-| `j`, ↓ (`\x1b[B`) | down one line |
-| `k`, ↑ (`\x1b[A`) | up one line |
-| `g` / `G` | jump to top / bottom |
-| `q`, Ctrl+C (`\x03`) | exit pager, restore prompt |
-| Enter | down one line (less-style) |
+| Enter, `j`, ↓ (`\x1b[B`) | down one line |
+| `G` | print all remaining at once |
+| `q`, Ctrl+C (`\x03`) | stop; leave shown content, restore prompt |
 
-On exit, leave the last page on screen (don't wipe it), write a newline, and
-`showPrompt()`. Clamp `top` to `[0, max(0, total - pageHeight)]` on every move.
+On exit (or reaching the end) the status line is erased; the session writes a
+newline and `showPrompt()` via the pager's `onDone` callback.
 
 ### Source-agnostic design (forward-compat with option C)
 
-The pager consumes an abstraction, not a fixed array — e.g. a `LineSource` with
-`length()` / `lineAt(i)` (and, for the future, an async `ensureUpTo(i):
-Promise<void>`). Option A supplies an in-memory `ArrayLineSource` over the full
-response. When option C lands, a `LazyPageLineSource` that fetches `cmd <n>`
-just-in-time as the user pages past the current page slots into the *same*
-pager UI unchanged. Build the array-backed source now; design the interface to
-admit the lazy one.
+The pager consumes a `LineSource` (`length()` / `lineAt(i)`, with room for a
+future async `ensureUpTo(i)`), not a fixed array. Option A supplies an in-memory
+`ArrayLineSource` over the full response. When option C lands, a
+`LazyPageLineSource` that fetches `cmd <n>` just-in-time as the user pages slots
+into the *same* pager UI unchanged.
 
 ### Disabling
 
-Consistent with the "no toggle" decision for wrapping, paging is automatic.
-However, paging is a more intrusive UI than de-pagination, so expose a single
-opt-out via the existing settings/CLI surface (default: paging **on**) for users
-who prefer a raw dump into native terminal scrollback — kept minimal, not a
-per-command toggle. (If even that is unwanted, drop it; flagged here as the one
-arguable point.)
+Two `minercon.*` config settings, both default-on (see "Decisions"):
+`minercon.unpaginateOutput` disables the `rcat` wrap (server pages return);
+`minercon.terminalPager` disables paging (tall output is printed all at once).
+CLI equivalents: `--no-unpaginate`, `--no-pager`.
 
 ## Edge cases & limitations (document in-code and here)
 

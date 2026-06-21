@@ -124,6 +124,9 @@ Options:
   --history-size <n>    Number of commands to remember in history (default: 100)
   --no-plugin           Skip the server-side tab-complete plugin probe (manual
                          testing only; not persisted to config)
+  --no-unpaginate       Do not request unpaginated output via the plugin
+                         (keep the server's small pages)
+  --no-pager            Do not page tall output; print it all at once
   -h, --help            Show help
 
 Environment variables:
@@ -131,6 +134,8 @@ Environment variables:
   MCRCON_LOG_FILE       Log file path (used when --log-file is not given)
   MCRCON_LOG_LEVEL      Log level (used when --log-level is not given)
   MCRCON_HISTORY_SIZE   History size (used when --history-size is not given)
+  MCRCON_UNPAGINATE     Set to 0 to disable unpaginated output (default on)
+  MCRCON_PAGER          Set to 0 to disable the output pager (default on)
 ```
 
 **Password handling:** the CLI never writes the password to disk. Supply it
@@ -161,6 +166,17 @@ for `Up`/`Ctrl+P`/`Ctrl+R` recall and the `.history` command, and (with
 even if the server-side TabComplete plugin/mod is installed. Intended for
 testing the local-mode crawl — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#terminology)
 for what "local mode" vs. "plugin mode" means.
+
+**Unpaginated output & pager:** on Paper/Spigot, the TabComplete plugin exposes
+an `rcat` command that re-runs a command as the console so Bukkit's tiny RCON
+pagination (e.g. the `/help` "Help: Index (1/N)" pages) is bypassed — the
+terminal requests this automatically in plugin mode. Output taller than the
+window is then shown through a built-in pager (Space: more, `G`: all, `q`:
+quit) that keeps the content in your terminal scrollback. Disable either with
+`--no-unpaginate` / `--no-pager`, the `MCRCON_UNPAGINATE` / `MCRCON_PAGER`
+environment variables, or the `minercon.unpaginateOutput` /
+`minercon.terminalPager` VS Code settings. See
+[docs/UNPAGINATED_OUTPUT.md](docs/UNPAGINATED_OUTPUT.md).
 
 ### Quick examples
 

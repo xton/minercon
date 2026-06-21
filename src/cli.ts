@@ -40,6 +40,8 @@ async function main(): Promise<void> {
       'log-level': { type: 'string' },
       'history-size': { type: 'string' },
       'no-plugin': { type: 'boolean', default: false },
+      'no-unpaginate': { type: 'boolean', default: false },
+      'no-pager': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
       version: { type: 'boolean', short: 'V', default: false },
     },
@@ -65,6 +67,8 @@ async function main(): Promise<void> {
       '  --history-size <n>    Number of commands to remember in history (default: 100)',
       '  --no-plugin           Skip the server-side tab-complete plugin probe (manual testing only;',
       '                        not persisted to config)',
+      '  --no-unpaginate       Do not request unpaginated output via the plugin (keep server pages)',
+      '  --no-pager            Do not page tall output; print it all at once',
       '  -V, --version         Print version and exit',
       '  -h, --help            Show this help',
       '',
@@ -73,6 +77,8 @@ async function main(): Promise<void> {
       '  MCRCON_LOG_FILE       Log file path (used if --log-file is not given)',
       '  MCRCON_LOG_LEVEL      Log level (used if --log-level is not given)',
       '  MCRCON_HISTORY_SIZE   History size (used if --history-size is not given)',
+      '  MCRCON_UNPAGINATE     Set to 0 to disable unpaginated output (default on)',
+      '  MCRCON_PAGER          Set to 0 to disable the output pager (default on)',
       '',
     ].join('\n'));
     process.exit(0);
@@ -192,6 +198,9 @@ async function main(): Promise<void> {
         : undefined,
     historySize,
     disablePlugin: values['no-plugin'] as boolean,
+    // Both default-on: disabled only by their --no-* flag or env var set to '0'.
+    unpaginateOutput: !(values['no-unpaginate'] as boolean) && process.env['MCRCON_UNPAGINATE'] !== '0',
+    terminalPager: !(values['no-pager'] as boolean) && process.env['MCRCON_PAGER'] !== '0',
     logToFile: logFilePath !== undefined,
   };
 
