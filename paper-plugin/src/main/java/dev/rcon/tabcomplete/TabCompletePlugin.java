@@ -245,7 +245,14 @@ public class TabCompletePlugin extends JavaPlugin {
         if (parts.length < 2 || parts[1].isBlank()) {
             // Bare `/help` → the index topic (registered under the empty key).
             HelpTopic index = helpMap.getHelpTopic("");
-            return index == null ? null : index.getFullText(sender);
+            String text = index == null ? null : index.getFullText(sender);
+            if (text != null && !text.isBlank()) {
+                return text;
+            }
+            // Some builds may not expose the index topic that way — build the
+            // command list ourselves from every visible topic so bare `/help`
+            // still returns the full, unpaginated index.
+            return buildIndex(sender, helpMap);
         }
 
         // `/help <topic>` → that topic, trying bare and "/"-prefixed keys.
@@ -255,6 +262,25 @@ public class TabCompletePlugin extends JavaPlugin {
             topic = helpMap.getHelpTopic("/" + query);
         }
         return topic == null ? null : topic.getFullText(sender);
+    }
+
+    /** Builds the full command index from every help topic the sender can see. */
+    private static String buildIndex(CommandSender sender, HelpMap helpMap) {
+        StringBuilder sb = new StringBuilder();
+        for (HelpTopic topic : helpMap.getHelpTopics()) {
+            if (!topic.canSee(sender)) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append(topic.getName());
+            String shortText = topic.getShortText();
+            if (shortText != null && !shortText.isEmpty()) {
+                sb.append(": ").append(shortText);
+            }
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     private boolean handleCommand(CommandSender sender, Command cmd, String label, String[] args) {
