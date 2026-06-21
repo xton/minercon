@@ -42,14 +42,16 @@ registry** — grab it early.
 
 The tag-driven release pipeline (`.github/workflows/release.yml`) now handles
 the publish, provenance, and GitHub Release in one shot — the remaining manual
-work is one-time account/secret setup. `npm publish --dry-run` already produces
-a clean 33-file / 94 kB tarball.
+work is one-time account + trusted-publisher setup. `npm publish --dry-run`
+already produces a clean 33-file / 94 kB tarball.
 
-- [ ] **Create/verify the npm account** with 2FA, then mint an **automation
-  token** (npm → Access Tokens → Granular/Automation) with publish rights for
-  `minercon` and store it as the `NPM_TOKEN` repo secret. An automation token
-  publishes non-interactively, so CI never hits the 2FA prompt — no `npm login`
-  on a laptop needed.
+- [ ] **Create/verify the npm account** with 2FA, then configure **trusted
+  publishing** (OIDC) instead of a long-lived token — npm → the `minercon`
+  package → Settings → Publishing access → add a GitHub Actions trusted
+  publisher with org/user `xton`, repository `minercon`, workflow filename
+  `release.yml`, environment blank. CI then publishes via a short-lived OIDC
+  token (no `NPM_TOKEN` secret, no `npm login`, no 2FA prompt), and provenance
+  is attached automatically.
 - [x] **Release workflow** — `.github/workflows/release.yml` runs on a `v*`
   tag: it checks the tag matches `package.json`, runs unit tests, builds the
   paper/spigot/fabric jars, runs `npm publish --provenance --access public`

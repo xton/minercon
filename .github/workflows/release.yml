@@ -6,11 +6,11 @@ name: Release
 #
 #   git tag v3.0.0 && git push origin v3.0.0
 #
-# Requirements:
-#   - An `NPM_TOKEN` repository secret holding an npm *automation* token with
-#     publish rights for the `minercon` package. An automation token publishes
-#     non-interactively, which is what lets CI skip the 2FA/`npm login` prompt.
-#   - `id-token: write` (below) so npm can attach a provenance attestation.
+# Publishing uses npm "trusted publishing" (OIDC) — no NPM_TOKEN secret. npm is
+# configured (Package -> Settings -> Publishing access) to trust this repo's
+# `release.yml` workflow, and the `id-token: write` permission below lets the
+# job mint the short-lived OIDC token npm verifies. Provenance is attached
+# automatically under trusted publishing.
 on:
   push:
     tags:
@@ -18,7 +18,7 @@ on:
 
 permissions:
   contents: write   # create the GitHub Release and upload assets
-  id-token: write   # OIDC token for `npm publish --provenance`
+  id-token: write   # OIDC token for npm trusted publishing + provenance
 
 jobs:
   release:
@@ -35,6 +35,9 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+
+      - name: Upgrade npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
 
       - name: Set up Java (for plugin/mod build)
         uses: actions/setup-java@v4
@@ -73,10 +76,8 @@ jobs:
         env:
           GRADLE_OPTS: -Dorg.gradle.daemon=false
 
-      - name: Publish to npm (with provenance)
+      - name: Publish to npm (trusted publishing + provenance)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Collect release artifacts
         run: |
