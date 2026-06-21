@@ -143,8 +143,11 @@ for (const variant of addonVariants) {
         const wrapped = await ctrl.send('rcat help');
 
         // Regression guard: the de-pagination once sent help to the *server log*
-        // and returned nothing, which the client renders as "(no response)".
-        assert.ok(wrapped.trim().length > 0, 'rcat help returned an empty response (output leaked to the server log?)');
+        // and returned nothing ("(no response)"); a related regression would be
+        // a single ~9-line page leaking back. The full, de-paginated help index
+        // is the whole command list — multiple KB — so assert it's substantially
+        // large, not merely non-empty (a single page is only a few hundred bytes).
+        assert.ok(wrapped.length > 1000, `rcat help should return the full (multi-KB) command index, got ${wrapped.length} bytes (output leaked to the server log, or still paginated?)`);
         assert.ok(/Help: Index \(1\//i.test(raw), `expected raw /help to be paginated, got: ${JSON.stringify(raw.slice(0, 200))}`);
         assert.ok(!/Help: Index \(1\//i.test(wrapped), `rcat help should not carry a pagination header, got: ${JSON.stringify(wrapped.slice(0, 200))}`);
 
