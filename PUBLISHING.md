@@ -60,7 +60,10 @@ already produces a clean 33-file / 94 kB tarball.
   `.tgz` attached for non-npm users.
 - [ ] **Cut the release**: `git tag v3.0.0 && git push origin v3.0.0`. After it
   lands, verify with a cold `npm install -g minercon` on a clean
-  machine/container and run against a real server.
+  machine/container and run against a real server. `scripts/smoke-test-install.sh
+  --registry` does the clean-container install + `--version`/`--help`/non-TTY
+  checks in one shot (run it with no flags *before* tagging to smoke-test the
+  packed tarball itself).
 - [ ] **Attach the `.vsix`** to the GitHub Release once §3 adds the `publisher`
   field to `package.json` (`vsce package` fails without it, so the mod/plugin
   jars ship in §2 and the `.vsix` follows in §3).
