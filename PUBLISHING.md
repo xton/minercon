@@ -71,14 +71,19 @@ The Marketplace is run through Azure DevOps; the steps are:
 
 - [ ] **Create a publisher**: sign in at
   https://marketplace.visualstudio.com/manage with a Microsoft account →
-  "Create publisher" → pick the publisher ID (e.g. `xton`) and display name.
+  "Create publisher" → publisher ID `christondewan`, display name
+  "Christon DeWan". Note: the `xton` slug is rejected by Marketplace spam/policy
+  review (`PublisherSpamValidationException`) because it collides with an
+  existing brand (Xton Technologies / Xton Access Manager), so the publisher
+  identity intentionally uses a personal slug — `xton` stays as the GitHub org
+  and handle only.
 - [ ] **Create a PAT**: at https://dev.azure.com → user settings → Personal
   Access Tokens → new token with org "All accessible organizations" and the
   **Marketplace → Manage** scope. (This is the step everyone fumbles —
   the scope must be Marketplace/Manage, not the defaults.)
-- [x] **Add Marketplace fields to package.json**: `"publisher": "xton"` added
-  (required — packaging fails without it; this must match the publisher ID you
-  create above), plus `galleryBanner` (`#1e1e1e`, dark theme). `keywords`,
+- [x] **Add Marketplace fields to package.json**: `"publisher": "christondewan"`
+  added (required — packaging fails without it; this must match the publisher ID
+  you create above), plus `galleryBanner` (`#1e1e1e`, dark theme). `keywords`,
   `icon`, and `categories: ["Other"]` were already set ("Other" is what similar
   terminal extensions use).
 - [x] **Split the package ignore strategy** — `vsce` refuses to run when both a
@@ -94,7 +99,7 @@ The Marketplace is run through Azure DevOps; the steps are:
   `vsce publish`. Remaining manual prerequisites: create the publisher + PAT
   (above), then add the PAT as the `VSCE_PAT` secret. For a one-off local
   publish instead: `npm i -g @vscode/vsce` → `vsce package` → install the
-  `.vsix` locally as a final check → `vsce login xton` → `vsce publish`.
+  `.vsix` locally as a final check → `vsce login christondewan` → `vsce publish`.
 - [x] **Also publish to Open VSX** (CI) — `release.yml` runs `npx ovsx publish`
   when an `OVSX_TOKEN` repo secret is present. Open VSX serves VSCodium,
   Gitpod, and many Cursor/forks setups. Remaining manual step: create an
